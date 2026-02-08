@@ -5108,10 +5108,22 @@ def ensure_dummy_image():
 
 
 if __name__ == '__main__':
+    import argparse
+    
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Velvet Reverie - ComfyUI Web UI')
+    parser.add_argument('--host', type=str, default=None, help='Host address (default: 0.0.0.0)')
+    parser.add_argument('--port', type=int, default=None, help='Port number (default: 4879)')
+    args = parser.parse_args()
+    
+    # Priority: CLI args > Environment variables > Defaults
+    host = args.host or os.environ.get('VELVET_HOST', '0.0.0.0')
+    port = args.port or int(os.environ.get('VELVET_PORT', '4879'))
+    
     print("=" * 60)
     print("ComfyUI Web UI Starting...")
     print("=" * 60)
-    print(f"Server: http://0.0.0.0:4879")
+    print(f"Server: http://{host}:{port}")
     print(f"Output Directory: {OUTPUT_DIR.absolute()}")
     print(f"ComfyUI Server: http://127.0.0.1:8188")
     print("=" * 60)
@@ -5120,4 +5132,4 @@ if __name__ == '__main__':
     ensure_dummy_image()
     
     print("=" * 60)
-    app.run(host='0.0.0.0', port=4879, debug=False, threaded=True)
+    app.run(host=host, port=port, debug=False, threaded=True)

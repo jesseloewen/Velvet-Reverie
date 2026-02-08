@@ -39,6 +39,22 @@ Flask-based web UI for AI image/video generation, chat, and text-to-speech with 
    ```bash
    python app.py
    ```
+   
+   **With custom host/port:**
+   ```bash
+   python app.py --host 127.0.0.1 --port 5000
+   ```
+   
+   **Using environment variables:**
+   ```bash
+   # Windows
+   set VELVET_HOST=127.0.0.1
+   set VELVET_PORT=5000
+   python app.py
+   
+   # Linux/Mac
+   VELVET_HOST=127.0.0.1 VELVET_PORT=5000 python app.py
+   ```
 
 2. **Open in browser:**
    ```
@@ -48,6 +64,10 @@ Flask-based web UI for AI image/video generation, chat, and text-to-speech with 
 3. **Login:**
    - Default password: `password`
    - Change this in production!
+
+## Pinokio Integration
+
+This application can be installed and run through [Pinokio](https://pinokio.computer) for automated setup with isolated Python environment. See the parent directory's README for details.
 
 ## Structure
 
@@ -88,11 +108,19 @@ If ComfyUI has password protection, set the token in `app.py` (line ~45):
 COMFYUI_TOKEN = "$2b$12$..."  # From ComfyUI's ./PASSWORD file
 ```
 
-### Server Port
-Default port is `4879`. Change in `app.py` (last line):
-```python
-app.run(host='0.0.0.0', port=4879, debug=False)
+### Server Configuration
+Configure host and port via command-line arguments (highest priority):
+```bash
+python app.py --host 127.0.0.1 --port 5000
 ```
+
+Or environment variables:
+```bash
+set VELVET_HOST=127.0.0.1
+set VELVET_PORT=5000
+```
+
+Or edit defaults in `app.py` if running standalone without arguments.
 
 ## License
 
