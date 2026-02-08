@@ -1,0 +1,797 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "Velvet",
+      "images": [
+        "3:3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "31": {
+    "inputs": {
+      "value": 1024
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "32": {
+    "inputs": {
+      "value": 512
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "33": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Male LoRA"
+    }
+  },
+  "34": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Use Image Size"
+    }
+  },
+  "35": {
+    "inputs": {
+      "value": 716719981174809
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "seed"
+    }
+  },
+  "36": {
+    "inputs": {
+      "value": 4
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "steps"
+    }
+  },
+  "38": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Use Image"
+    }
+  },
+  "39": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "cfg"
+    }
+  },
+  "40": {
+    "inputs": {
+      "value": 3
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "shift"
+    }
+  },
+  "41": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "MCNL LoRA"
+    }
+  },
+  "42": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Snofs LoRA"
+    }
+  },
+  "43": {
+    "inputs": {
+      "image": "violet.webp"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image 1"
+    }
+  },
+  "45": {
+    "inputs": {
+      "value": "make image photo realistic"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Prompt"
+    }
+  },
+  "3:22": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 64,
+      "image": [
+        "43",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "3:10": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "3:3": {
+    "inputs": {
+      "samples": [
+        "3:1",
+        0
+      ],
+      "vae": [
+        "3:10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "3:1": {
+    "inputs": {
+      "seed": [
+        "35",
+        0
+      ],
+      "steps": [
+        "36",
+        0
+      ],
+      "cfg": [
+        "39",
+        0
+      ],
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "3:62:2",
+        0
+      ],
+      "positive": [
+        "3:60:28",
+        0
+      ],
+      "negative": [
+        "3:60:29",
+        0
+      ],
+      "latent_image": [
+        "3:61:30",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "3:61:46": {
+    "inputs": {
+      "boolean": [
+        "38",
+        0
+      ],
+      "on_true": [
+        "34",
+        0
+      ],
+      "on_false": [
+        "3:61:32",
+        0
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:61:32": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Boolean"
+    }
+  },
+  "3:61:24": {
+    "inputs": {
+      "width": [
+        "32",
+        0
+      ],
+      "height": [
+        "31",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "3:61:30": {
+    "inputs": {
+      "boolean": [
+        "3:61:46",
+        0
+      ],
+      "on_true": [
+        "3:61:4",
+        0
+      ],
+      "on_false": [
+        "3:61:24",
+        0
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:61:4": {
+    "inputs": {
+      "pixels": [
+        "3:22",
+        0
+      ],
+      "vae": [
+        "3:10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "3:60:27": {
+    "inputs": {
+      "text": "low quality, lowres, bad hands, extra limbs, missing fingers, poorly drawn face, bad anatomy, blurred, jpeg artifacts, deformed, ugly, bad proportions, disfigured, watermark, text, logo, signature, unrealistic eyes, cross-eyed, lopsided, bad lighting, harsh shadows, flat shading, unshapely body, pixelated, duplicate limbs, bad perspective, morphed, distorted, glitch, malformed hands, distorted fingers, noisy background, overly saturated, unnatural colors, lens distortion, grainy, low detail,",
+      "clip": [
+        "3:62:33:142",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "3:60:12": {
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "3:62:33:142",
+        0
+      ],
+      "vae": [
+        "3:10",
+        0
+      ],
+      "image1": [
+        "3:22",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "TextEncodeQwenImageEditPlus"
+    }
+  },
+  "3:60:26": {
+    "inputs": {
+      "text": [
+        "45",
+        0
+      ],
+      "clip": [
+        "3:62:33:142",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "3:60:11": {
+    "inputs": {
+      "prompt": [
+        "45",
+        0
+      ],
+      "clip": [
+        "3:62:33:142",
+        0
+      ],
+      "vae": [
+        "3:10",
+        0
+      ],
+      "image1": [
+        "3:22",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "TextEncodeQwenImageEditPlus"
+    }
+  },
+  "3:60:28": {
+    "inputs": {
+      "boolean": [
+        "38",
+        0
+      ],
+      "on_true": [
+        "3:60:11",
+        0
+      ],
+      "on_false": [
+        "3:60:26",
+        0
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:60:29": {
+    "inputs": {
+      "boolean": [
+        "38",
+        0
+      ],
+      "on_true": [
+        "3:60:12",
+        0
+      ],
+      "on_false": [
+        "3:60:27",
+        0
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:7": {
+    "inputs": {
+      "unet_name": "qwen_image_fp8_e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "3:62:6": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "3:62:9": {
+    "inputs": {
+      "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "3:62:25": {
+    "inputs": {
+      "boolean": [
+        "38",
+        0
+      ],
+      "on_true": [
+        "3:62:9",
+        0
+      ],
+      "on_false": [
+        "3:62:7",
+        0
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:35": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1,
+      "model": [
+        "3:62:33:141",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "3:62:2": {
+    "inputs": {
+      "shift": [
+        "40",
+        0
+      ],
+      "model": [
+        "3:62:35",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "3:62:33:123": {
+    "inputs": {
+      "A or B": [
+        "3:62:33:115",
+        0
+      ],
+      "in": [
+        "3:62:6",
+        0
+      ]
+    },
+    "class_type": "easy ab",
+    "_meta": {
+      "title": "A or B"
+    }
+  },
+  "3:62:33:121": {
+    "inputs": {
+      "A or B": [
+        "3:62:33:115",
+        0
+      ],
+      "in": [
+        "3:62:25",
+        0
+      ]
+    },
+    "class_type": "easy ab",
+    "_meta": {
+      "title": "A or B"
+    }
+  },
+  "3:62:33:122": {
+    "inputs": {
+      "boolean": [
+        "3:62:33:115",
+        0
+      ],
+      "on_true": [
+        "3:62:33:114",
+        0
+      ],
+      "on_false": [
+        "3:62:33:121",
+        1
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:33:124": {
+    "inputs": {
+      "boolean": [
+        "3:62:33:115",
+        0
+      ],
+      "on_true": [
+        "3:62:33:114",
+        1
+      ],
+      "on_false": [
+        "3:62:33:123",
+        1
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:33:127": {
+    "inputs": {
+      "A or B": [
+        "3:62:33:130",
+        0
+      ],
+      "in": [
+        "3:62:33:124",
+        0
+      ]
+    },
+    "class_type": "easy ab",
+    "_meta": {
+      "title": "A or B"
+    }
+  },
+  "3:62:33:128": {
+    "inputs": {
+      "A or B": [
+        "3:62:33:130",
+        0
+      ],
+      "in": [
+        "3:62:33:122",
+        0
+      ]
+    },
+    "class_type": "easy ab",
+    "_meta": {
+      "title": "A or B"
+    }
+  },
+  "3:62:33:139": {
+    "inputs": {
+      "A or B": [
+        "3:62:33:145",
+        0
+      ],
+      "in": [
+        "3:62:33:126",
+        0
+      ]
+    },
+    "class_type": "easy ab",
+    "_meta": {
+      "title": "A or B"
+    }
+  },
+  "3:62:33:140": {
+    "inputs": {
+      "A or B": [
+        "3:62:33:145",
+        0
+      ],
+      "in": [
+        "3:62:33:129",
+        0
+      ]
+    },
+    "class_type": "easy ab",
+    "_meta": {
+      "title": "A or B"
+    }
+  },
+  "3:62:33:138": {
+    "inputs": {
+      "lora_name": "nsfw\\male\\2025-11-29_09-52-02-save-78280-61-0.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "3:62:33:140",
+        0
+      ],
+      "clip": [
+        "3:62:33:139",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "3:62:33:129": {
+    "inputs": {
+      "boolean": [
+        "3:62:33:130",
+        0
+      ],
+      "on_true": [
+        "3:62:33:125",
+        0
+      ],
+      "on_false": [
+        "3:62:33:128",
+        1
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:33:126": {
+    "inputs": {
+      "boolean": [
+        "3:62:33:130",
+        0
+      ],
+      "on_true": [
+        "3:62:33:125",
+        1
+      ],
+      "on_false": [
+        "3:62:33:127",
+        1
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:33:141": {
+    "inputs": {
+      "boolean": [
+        "3:62:33:145",
+        0
+      ],
+      "on_true": [
+        "3:62:33:138",
+        0
+      ],
+      "on_false": [
+        "3:62:33:140",
+        1
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:33:142": {
+    "inputs": {
+      "boolean": [
+        "3:62:33:145",
+        0
+      ],
+      "on_true": [
+        "3:62:33:138",
+        1
+      ],
+      "on_false": [
+        "3:62:33:139",
+        1
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "If else"
+    }
+  },
+  "3:62:33:115": {
+    "inputs": {
+      "value": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "MCNL LoRA Bool"
+    }
+  },
+  "3:62:33:130": {
+    "inputs": {
+      "value": [
+        "42",
+        0
+      ]
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Snofs LoRA Bool"
+    }
+  },
+  "3:62:33:145": {
+    "inputs": {
+      "value": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Male LoRA Bool"
+    }
+  },
+  "3:62:33:114": {
+    "inputs": {
+      "lora_name": "nsfw\\female\\qwen_MCNL_v1.0.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "3:62:33:121",
+        0
+      ],
+      "clip": [
+        "3:62:33:123",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "3:62:33:125": {
+    "inputs": {
+      "lora_name": "nsfw\\female\\Qwen_Snofs_1_3.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "3:62:33:128",
+        0
+      ],
+      "clip": [
+        "3:62:33:127",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  }
+}

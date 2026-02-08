@@ -1,0 +1,303 @@
+{
+  "97": {
+    "inputs": {
+      "image": "violet.webp"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Start Frame Image"
+    }
+  },
+  "108": {
+    "inputs": {
+      "filename_prefix": "video/Wan2.2_image_to_video",
+      "format": "mp4",
+      "codec": "auto",
+      "video-preview": "",
+      "video": [
+        "116:94",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "116:90": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "116:103": {
+    "inputs": {
+      "shift": 5.000000000000001,
+      "model": [
+        "116:102",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "116:87": {
+    "inputs": {
+      "samples": [
+        "116:85",
+        0
+      ],
+      "vae": [
+        "116:90",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "116:86": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 678210030285627,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "116:104",
+        0
+      ],
+      "positive": [
+        "116:98",
+        0
+      ],
+      "negative": [
+        "116:98",
+        1
+      ],
+      "latent_image": [
+        "116:98",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "116:85": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 2,
+      "end_at_step": 4,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "116:103",
+        0
+      ],
+      "positive": [
+        "116:98",
+        0
+      ],
+      "negative": [
+        "116:98",
+        1
+      ],
+      "latent_image": [
+        "116:86",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "116:98": {
+    "inputs": {
+      "width": [
+        "116:117",
+        0
+      ],
+      "height": [
+        "116:117",
+        1
+      ],
+      "length": 65,
+      "batch_size": 1,
+      "positive": [
+        "116:93",
+        0
+      ],
+      "negative": [
+        "116:89",
+        0
+      ],
+      "vae": [
+        "116:90",
+        0
+      ],
+      "start_image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "WanImageToVideo",
+    "_meta": {
+      "title": "WanImageToVideo"
+    }
+  },
+  "116:94": {
+    "inputs": {
+      "fps": 16,
+      "images": [
+        "116:87",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "116:104": {
+    "inputs": {
+      "shift": 5.000000000000001,
+      "model": [
+        "116:101",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "116:95": {
+    "inputs": {
+      "unet_name": "Wan2.2_Remix_NSFW_i2v_14b_high_lighting_v2.0.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "116:96": {
+    "inputs": {
+      "unet_name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "116:84": {
+    "inputs": {
+      "clip_name": "nsfw_wan_umt5-xxl_fp8_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "116:101": {
+    "inputs": {
+      "lora_name": "Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors",
+      "strength_model": 1.0000000000000002,
+      "model": [
+        "116:95",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "116:102": {
+    "inputs": {
+      "lora_name": "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+      "strength_model": 1.0000000000000002,
+      "model": [
+        "116:96",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "116:93": {
+    "inputs": {
+      "text": "She stands looking directly at the camera. She reaches down and grips the hem of her shirt, lifting it upward. As the fabric pulls over them, her small breasts are briefly lifted and then revealed, exposing her nude chest and torso. She holds the shirt just above her chest, keeping it exposed. Her head tilts slightly, she opens her mouth wide, and sticks her tongue out.",
+      "clip": [
+        "116:84",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "116:116": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 0.25,
+      "resolution_steps": 64,
+      "image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "116:117": {
+    "inputs": {
+      "image": [
+        "116:116",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "116:89": {
+    "inputs": {
+      "text": "low quality, lowres, bad hands, extra limbs, missing fingers, poorly drawn face, bad anatomy, blurred, jpeg artifacts, deformed, ugly, bad proportions, disfigured, watermark, text, logo, signature, unrealistic eyes, cross-eyed, lopsided, bad lighting, harsh shadows, flat shading, unshapely body, pixelated, duplicate limbs, bad perspective, morphed, distorted, glitch, malformed hands, distorted fingers, noisy background, overly saturated, unnatural colors, lens distortion, grainy, low detail,",
+      "clip": [
+        "116:84",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  }
+}
