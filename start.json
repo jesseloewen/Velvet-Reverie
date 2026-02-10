@@ -1,0 +1,29 @@
+{
+  "run": [
+    {
+      "method": "shell.run",
+      "params": {
+        "env": {
+          "PYTHONUNBUFFERED": "1"
+        },
+        "message": "{{platform==='win32' ? '.\\\\venv\\\\Scripts\\\\python.exe' : './venv/bin/python'}} app.py",
+        "on": [{
+          "event": "/.*./",
+          "return": true
+        }]
+      }
+    },
+    {
+      "method": "local.set",
+      "params": {
+        "url": "http://localhost:4879"
+      }
+    },
+    {
+      "method": "browser.open",
+      "params": {
+        "uri": "{{local.url}}"
+      }
+    }
+  ]
+}

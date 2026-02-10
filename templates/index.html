@@ -6,63 +6,66 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Velvet Reverie</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/icon.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/velvet_icon.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="app-container">
-        <!-- Collapsible Queue Sidebar -->
-        <aside class="queue-sidebar" id="queueSidebar">
-            <div class="queue-header">
-                <h2>Queue <span id="queueCounter" class="queue-counter">0</span></h2>
-                <div class="queue-header-actions">
-                    <button class="btn-icon" id="unloadModelsBtn" title="Unload Models">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                        </svg>
-                    </button>
-                    <button class="btn-icon" id="pauseQueueBtn" title="Pause Queue">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="6" y="4" width="4" height="16"></rect>
-                            <rect x="14" y="4" width="4" height="16"></rect>
-                        </svg>
-                    </button>
-                    <button class="btn-icon" id="clearQueueBtn" title="Clear Queue">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                    </button>
-                    <button class="toggle-queue" id="toggleQueue" title="Toggle Queue">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="15 18 9 12 15 6"></polyline>
-                        </svg>
-                    </button>
-                </div>
+        <!-- Mobile Sidebar Backdrop -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+        
+        <!-- Collapsible Tabs Sidebar (Left) -->
+        <aside class="tabs-sidebar" id="tabsSidebar">
+            <div class="tabs-sidebar-header">
+                <h2>Tabs</h2>
+                <button class="toggle-tabs" id="toggleTabs" title="Toggle Tabs">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
             </div>
             
-            <div class="queue-content">
-                <div class="queue-list" id="queueList">
-                    <!-- Queued items will be displayed here -->
-                </div>
-                
-                <div class="active-job" id="activeJob">
-                    <!-- Active/generating job will be displayed here -->
-                </div>
-                
-                <div class="completed-list" id="completedList">
-                    <!-- Completed items will be displayed here -->
-                </div>
-                
-                <div class="queue-empty" id="queueEmpty">
-                    <p>Queue is empty</p>
+            <div class="tabs-sidebar-content">
+                <!-- Tab Navigation -->
+                <div class="tab-navigation-sidebar">
+                    <div class="tab-group">
+                        <div class="tab-group-header">Images</div>
+                        <button class="tab-btn active" data-tab="single">Image</button>
+                        <button class="tab-btn" data-tab="batch">Text Batch</button>
+                        <button class="tab-btn" data-tab="image-batch">Image Batch</button>
+                    </div>
+                    
+                    <div class="tab-group">
+                        <div class="tab-group-header">Videos</div>
+                        <button class="tab-btn" data-tab="video">Video</button>
+                        <button class="tab-btn" data-tab="video-batch">Video Batch</button>
+                        <button class="tab-btn" data-tab="frame-edit">Frame Edit</button>
+                    </div>
+                    
+                    <div class="tab-group">
+                        <div class="tab-group-header">Browsers</div>
+                        <button class="tab-btn" data-tab="browser">Image Browser</button>
+                        <button class="tab-btn" data-tab="videos">Video Browser</button>
+                        <button class="tab-btn" data-tab="viewer">Viewer</button>
+                    </div>
+                    
+                    <div class="tab-group">
+                        <div class="tab-group-header">Chats</div>
+                        <button class="tab-btn" data-tab="chat">Chat</button>
+                        <button class="tab-btn" data-tab="story">Story</button>
+                        <button class="tab-btn" data-tab="autochat">Auto Chat</button>
+                    </div>
+                    
+                    <div class="tab-group">
+                        <div class="tab-group-header">Audio</div>
+                        <button class="tab-btn" data-tab="tts">TTS</button>
+                        <button class="tab-btn" data-tab="audio">Audio</button>
+                    </div>
                 </div>
             </div>
         </aside>
-
-        <!-- Main Content -->
+        
+        <!-- Collapsible Queue Sidebar (Right) -->
         <main class="main-content">
             <!-- Collapsible Header Container -->
             <div class="collapsible-header-container" id="headerContainer">
@@ -75,18 +78,25 @@
                         </svg>
                     </button>
                     <div class="header-title">
-                        <img src="{{ url_for('static', filename='assets/icon.png') }}" alt="Velvet Reverie" class="header-icon">
+                        <img id="themeIcon" src="{{ url_for('static', filename='assets/velvet_icon.png') }}" alt="Velvet Reverie" class="header-icon">
                         <h1>Velvet Reverie</h1>
                     </div>
                     <div class="theme-selector" style="margin-left: auto; margin-right: 0.75rem;">
                         <select id="themeSelector" class="theme-dropdown" title="Change Theme">
-                            <option value="violet">🎨 Violet</option>
+                            <option value="velvet">💜 Velvet</option>
                             <option value="dark">🌙 Dark</option>
                             <option value="light">☀️ Light</option>
                             <option value="ocean">🌊 Ocean</option>
                             <option value="sunset">🌅 Sunset</option>
                         </select>
                     </div>
+                    <button class="btn-icon" id="unloadModelsBtn" title="Unload Models">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                    </button>
                     <button class="btn-icon" id="logoutBtn" title="Logout">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -94,8 +104,19 @@
                             <line x1="21" y1="12" x2="9" y2="12"></line>
                         </svg>
                     </button>
+                    <button class="mobile-queue-btn" id="mobileQueueBtn" title="Toggle Queue">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                    </button>
                 </header>
 
+            
             <!-- Hardware Monitor -->
             <div class="hardware-monitor" id="hardwareMonitor">
                 <!-- Auto-Unload Models Setting -->
@@ -185,50 +206,35 @@
                 </div>
             </div>
 
-            <!-- Tab Navigation -->
-            <div class="tab-navigation">
-                <div class="tab-group">
-                    <div class="tab-group-header">Images</div>
-                    <button class="tab-btn active" data-tab="single">Image</button>
-                    <button class="tab-btn" data-tab="batch">Text Batch</button>
-                    <button class="tab-btn" data-tab="image-batch">Image Batch</button>
-                </div>
-                
-                <div class="tab-group">
-                    <div class="tab-group-header">Videos</div>
-                    <button class="tab-btn" data-tab="video">Video</button>
-                    <button class="tab-btn" data-tab="video-batch">Video Batch</button>
-                </div>
-                
-                <div class="tab-group">
-                    <div class="tab-group-header">Browsers</div>
-                    <button class="tab-btn" data-tab="browser">Image Browser</button>
-                    <button class="tab-btn" data-tab="videos">Video Browser</button>
-                    <button class="tab-btn" data-tab="viewer">Viewer</button>
-                </div>
-                
-                <div class="tab-group">
-                    <div class="tab-group-header">Chats</div>
-                    <button class="tab-btn" data-tab="chat">Chat</button>
-                    <button class="tab-btn" data-tab="story">Story</button>
-                    <button class="tab-btn" data-tab="autochat">Auto Chat</button>
-                </div>
-                
-                <div class="tab-group">
-                    <div class="tab-group-header">Audio</div>
-                    <button class="tab-btn" data-tab="tts">TTS</button>
-                    <button class="tab-btn" data-tab="audio">Audio</button>
-                </div>
-            </div>
+
             </div>
             <!-- End Collapsible Header Container -->
 
             <!-- Header Toggle Button -->
-            <button class="header-toggle-btn" id="headerToggleBtn" title="Toggle Header">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="18 15 12 9 6 15"></polyline>
-                </svg>
-            </button>
+            <div class="header-toggle-btn" id="headerToggleBtn">
+                <button class="header-toggle-tab-btn" id="headerToggleTabBtn" title="Toggle Tabs">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <button class="header-toggle-chevron" title="Toggle Header">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+                <button class="header-toggle-queue-btn" id="headerToggleQueueBtn" title="Toggle Queue">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6"></line>
+                        <line x1="8" y1="12" x2="21" y2="12"></line>
+                        <line x1="8" y1="18" x2="21" y2="18"></line>
+                        <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                        <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                        <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
 
             <div class="content-wrapper">
                 <!-- Single Generation Tab -->
@@ -1234,6 +1240,300 @@
                     <div class="gallery-empty" id="galleryEmpty">
                         <p>No items in this folder</p>
                     </div>
+                    </div>
+                </section>
+
+                <!-- Frame Edit Tab -->
+                <section class="tab-content" id="frameEditTab">
+                    <div class="generation-panel">
+                        <div class="batch-header" style="margin-bottom: 1.5rem;">
+                            <h2 style="margin: 0 0 0.5rem 0;">Frame Edit</h2>
+                            <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
+                                Extract frames from video, apply AI edits to each frame, then recompile to video
+                            </p>
+                        </div>
+
+                        <!-- Step 1: Extract Frames -->
+                        <button class="collapsible-header active" data-target="frameEditStep1">
+                            <span>Step 1: Extract Frames from Video</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="frameEditStep1">
+                            <!-- Video Upload/Selection -->
+                            <div class="form-group">
+                                <label for="frameEditVideoUpload">Source Video</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input 
+                                        type="file" 
+                                        id="frameEditVideoUpload" 
+                                        accept="video/mp4,video/webm,video/mov,video/avi,video/mkv"
+                                        class="form-control"
+                                        style="flex: 1;"
+                                    >
+                                    <button type="button" class="btn btn-sm" id="browseFrameEditVideoBtn" title="Browse Existing Videos">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none;">
+                                            <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                                        </svg>
+                                        Browse Videos
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-danger" id="clearFrameEditVideoBtn" style="display: none;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none;">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                        Clear
+                                    </button>
+                                </div>
+                                <div id="frameEditVideoPreview" style="margin-top: 0.5rem; display: none;">
+                                    <video id="frameEditPreviewVideo" controls style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid var(--border);"></video>
+                                    <div id="frameEditVideoInfo" style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.875rem;"></div>
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Upload a video or browse from input/output folders
+                                </small>
+                            </div>
+
+                            <!-- Frame Extraction Controls -->
+                            <div id="frameExtractControls" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="frameStartTime">Start Time (seconds)</label>
+                                        <input type="number" id="frameStartTime" class="form-control" value="0" min="0" step="0.1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEndTime">End Time (seconds)</label>
+                                        <input type="number" id="frameEndTime" class="form-control" value="0" min="0" step="0.1">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="frameSkip">Frame Skip (extract every Nth frame)</label>
+                                    <input type="number" id="frameSkip" class="form-control" value="1" min="1" max="60" step="1">
+                                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                        1 = extract all frames, 2 = every 2nd frame, 3 = every 3rd frame, etc.
+                                    </small>
+                                </div>
+
+                                <!-- Video Info Display -->
+                                <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                                    <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--text-secondary);">Video Information</h3>
+                                    <div class="info-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Original FPS</div>
+                                            <div id="videoOriginalFPS" style="font-weight: 500;">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Selected Section</div>
+                                            <div id="videoSelectedDuration" style="font-weight: 500;">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Total Frames (Selected)</div>
+                                            <div id="videoTotalFrames" style="font-weight: 500;">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Frames to Extract</div>
+                                            <div id="videoExtractedFrames" style="font-weight: 500; color: var(--accent-primary);">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Playback FPS (Same Speed)</div>
+                                            <div id="videoPlaybackFPS" style="font-weight: 500; color: var(--accent-primary);">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="frameOutputFolder">Output Folder Name <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                                    <input type="text" id="frameOutputFolder" class="form-control" value="" placeholder="Leave empty to auto-generate">
+                                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                        Auto-generated format: video_name_[fps]fps_timestamp. Saved to: input/frame_edit/[folder_name]/
+                                    </small>
+                                </div>
+
+                                <button type="button" class="btn btn-primary" id="extractFramesBtn" style="width: 100%; margin-bottom: 1rem;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                        <rect x="3" y="3" width="7" height="7"></rect>
+                                        <rect x="14" y="3" width="7" height="7"></rect>
+                                        <rect x="14" y="14" width="7" height="7"></rect>
+                                        <rect x="3" y="14" width="7" height="7"></rect>
+                                    </svg>
+                                    Extract Frames
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Process Frames -->
+                        <button class="collapsible-header" data-target="frameEditStep2">
+                            <span>Step 2: Apply AI to Extracted Frames</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="frameEditStep2">
+                            <!-- Prompt -->
+                            <div class="form-group">
+                                <label for="frameEditPrompt">Prompt</label>
+                                <div class="prompt-container">
+                                    <textarea 
+                                        id="frameEditPrompt" 
+                                        rows="4" 
+                                        placeholder="Enter your prompt for all frames..."
+                                        class="form-control"
+                                    ></textarea>
+                                    <button class="btn btn-primary" id="queueFrameEditBtn">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                        </svg>
+                                        <span>Queue Frame Batch</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Folder Selection -->
+                            <div class="form-group">
+                                <label>Extracted Frames Folder</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <button type="button" class="btn" id="chooseFrameEditFolderBtn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                        Choose Folder
+                                    </button>
+                                    <span id="frameEditFolderDisplay" style="color: var(--text-muted);">None selected</span>
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Select a folder from input/frame_edit/ containing extracted frames
+                                </small>
+                                <div id="frameEditFrameCount" style="color: var(--accent-primary); font-size: 0.875rem; margin-top: 0.5rem; display: none;">
+                                    <strong>0 frames</strong> ready to process
+                                </div>
+                            </div>
+
+                            <!-- Parameters -->
+                            <button class="collapsible-header" data-target="frameEditParameters">
+                                <span>Parameters</span>
+                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="collapsible-content active" id="frameEditParameters">
+                                <div class="parameters-grid">
+                                    <div class="form-group">
+                                        <label for="frameEditSteps">Steps</label>
+                                        <input type="number" id="frameEditSteps" value="4" min="1" max="100" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditCfg">CFG Scale</label>
+                                        <input type="number" id="frameEditCfg" value="1.0" min="0.1" max="20.0" step="0.1" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditShift">Shift</label>
+                                        <input type="number" id="frameEditShift" value="3.0" min="0.0" max="10.0" step="0.1" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditSeed">Seed (optional)</label>
+                                        <input type="number" id="frameEditSeed" placeholder="Random" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditFilePrefix">File Prefix</label>
+                                        <input type="text" id="frameEditFilePrefix" placeholder="frame_edit" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditOutputFolder">Output Folder <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                                        <input type="text" id="frameEditOutputFolder" class="form-control" value="" placeholder="auto">
+                                        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                            Leave empty or "auto" for input folder name
+                                        </small>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- LoRA Settings -->
+                            <button class="collapsible-header" data-target="frameEditLoraSettings">
+                                <span>LoRA Settings</span>
+                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="collapsible-content" id="frameEditLoraSettings">
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="frameEditMcnlLora" class="checkbox-input">
+                                        <span>MCNL LoRA (Female)</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="frameEditSnofsLora" class="checkbox-input">
+                                        <span>Snofs LoRA (Female)</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="frameEditMaleLora" class="checkbox-input">
+                                        <span>Male LoRA</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: Stitch Frames to Video -->
+                        <button class="collapsible-header" data-target="frameEditStep3">
+                            <span>Step 3: Stitch Frames to Video</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="frameEditStep3">
+                            <!-- Folder Selection -->
+                            <div class="form-group">
+                                <label>Frames Folder</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <button type="button" class="btn" id="chooseStitchFolderBtn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                        Choose Folder
+                                    </button>
+                                    <span id="stitchFolderDisplay" style="color: var(--text-muted);">None selected</span>
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Select from input/frame_edit/ (extracted) or outputs/images/frame_edit/ (processed)
+                                </small>
+                                <div id="stitchFrameCount" style="color: var(--accent-primary); font-size: 0.875rem; margin-top: 0.5rem; display: none;">
+                                    <strong>0 frames</strong> found
+                                </div>
+                            </div>
+
+                            <!-- FPS Setting -->
+                            <div class="form-group">
+                                <label for="stitchFps">Output FPS</label>
+                                <input type="number" id="stitchFps" class="form-control" value="30" min="1" max="120" step="0.01">
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Frames per second for the output video (auto-filled from folder name if available)
+                                </small>
+                            </div>
+
+                            <!-- Output Filename -->
+                            <div class="form-group">
+                                <label for="stitchOutputName">Output Video Name <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                                <input type="text" id="stitchOutputName" class="form-control" value="" placeholder="Leave empty to auto-generate">
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Auto-generated format: folder_name.mp4. Saved to: outputs/videos/frame_edit/
+                                </small>
+                            </div>
+
+                            <!-- Stitch Button -->
+                            <button type="button" class="btn btn-primary" id="stitchFramesBtn" style="width: 100%;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                Stitch Frames to Video
+                            </button>
+                        </div>
                     </div>
                 </section>
 
@@ -2504,6 +2804,49 @@
 
             </div>
         </main>
+
+        <aside class="queue-sidebar" id="queueSidebar">
+            <div class="queue-header">
+                <div class="queue-header-actions">
+                    <button class="toggle-queue" id="toggleQueue" title="Toggle Queue">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" id="clearQueueBtn" title="Clear Queue">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" id="pauseQueueBtn" title="Pause Queue">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="6" y="4" width="4" height="16"></rect>
+                            <rect x="14" y="4" width="4" height="16"></rect>
+                        </svg>
+                    </button>
+                </div>
+                <h2>Queue <span id="queueCounter" class="queue-counter">0</span></h2>
+            </div>
+            
+            <div class="queue-content">
+                <div class="queue-list" id="queueList">
+                    <!-- Queued items will be displayed here -->
+                </div>
+                
+                <div class="active-job" id="activeJob">
+                    <!-- Active/generating job will be displayed here -->
+                </div>
+                
+                <div class="completed-list" id="completedList">
+                    <!-- Completed items will be displayed here -->
+                </div>
+                
+                <div class="queue-empty" id="queueEmpty">
+                    <p>Queue is empty</p>
+                </div>
+            </div>
+        </aside>
     </div>
 
     <!-- Image Detail Modal -->
@@ -2548,8 +2891,8 @@
                         </label>
                         <div id="hoverRadiusControl" style="display: none; align-items: center; gap: 0.5rem; margin: 0 0.5rem;">
                             <label style="font-size: 0.875rem; color: var(--text-secondary);">Size:</label>
-                            <input type="range" id="hoverRadiusSlider" min="50" max="400" value="150" step="10" style="width: 100px;">
-                            <span id="hoverRadiusValue" style="font-size: 0.875rem; color: var(--text-secondary); min-width: 45px;">150px</span>
+                            <input type="range" id="hoverRadiusSlider" min="50" max="400" value="80" step="10" style="width: 100px;">
+                            <span id="hoverRadiusValue" style="font-size: 0.875rem; color: var(--text-secondary); min-width: 45px;">80px</span>
                         </div>
                         <button class="btn btn-primary import-btn" id="importBtn">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2643,8 +2986,8 @@
             <!-- Hover Radius Control -->
             <div class="fullscreen-hover-radius-control" id="fullscreenHoverRadiusControl" style="display: none; align-items: center; gap: 0.5rem; margin: 0 0.5rem;">
                 <label style="font-size: 0.875rem; color: white;">Size:</label>
-                <input type="range" id="fullscreenHoverRadiusSlider" min="50" max="400" value="150" step="10" style="width: 100px;">
-                <span id="fullscreenHoverRadiusValue" style="font-size: 0.875rem; color: white; min-width: 45px;">150px</span>
+                <input type="range" id="fullscreenHoverRadiusSlider" min="50" max="400" value="80" step="10" style="width: 100px;">
+                <span id="fullscreenHoverRadiusValue" style="font-size: 0.875rem; color: white; min-width: 45px;">80px</span>
             </div>
             
             <!-- Autoplay Controls -->
@@ -2776,6 +3119,69 @@
             <div class="custom-modal-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
                 <button class="btn btn-secondary" id="closeBrowserBtn">Cancel</button>
                 <button class="btn btn-primary" id="useThisFolderBtn" style="display: none;">Use This Folder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Browser Modal -->
+    <div class="custom-modal" id="videoBrowserModal" style="display: none;">
+        <div class="custom-modal-overlay"></div>
+        <div class="custom-modal-content" style="max-width: 900px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+            <!-- Grid View Container -->
+            <div id="videoBrowserGridView" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+                <h3>Browse Videos</h3>
+                
+                <!-- Folder Tabs -->
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.5rem;">
+                    <button class="btn btn-sm video-browser-tab active" data-folder="input">Input Folder</button>
+                    <button class="btn btn-sm video-browser-tab" data-folder="output">Output Folder</button>
+                </div>
+                
+                <!-- Current Path -->
+                <div id="videoBrowserPath" style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span id="videoBrowserPathText">Loading...</span>
+                </div>
+                
+                <!-- Video Grid -->
+                <div id="videoBrowserGrid" style="flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: max-content; gap: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: 4px;">
+                    <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2rem;">
+                        Loading videos...
+                    </div>
+                </div>
+                
+                <!-- Modal Actions -->
+                <div class="custom-modal-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary" id="closeVideoBrowserBtn">Cancel</button>
+                </div>
+            </div>
+            
+            <!-- Full Video Preview Container -->
+            <div id="videoPreviewContainer" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                    <h3 style="margin: 0;">Video Preview</h3>
+                    <button class="btn btn-sm btn-secondary" id="backToVideosGridBtn" style="display: flex; align-items: center; gap: 0.5rem;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"></path>
+                        </svg>
+                        Back to Grid
+                    </button>
+                </div>
+                
+                <div id="videoPreviewName" style="font-weight: 500; margin-bottom: 1rem; color: var(--text-secondary);">Video Preview</div>
+                
+                <div style="flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--bg-secondary); border-radius: 8px; overflow: hidden;">
+                    <video id="videoPreviewPlayer" controls autoplay style="width: 100%; height: 100%; max-height: 100%; object-fit: contain;">
+                        Your browser does not support the video element.
+                    </video>
+                </div>
+                
+                <div class="custom-modal-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" id="selectVideoBrowserBtn">Select This Video</button>
+                    <button class="btn btn-secondary" id="closeVideoPreviewBtn">Cancel</button>
+                </div>
             </div>
         </div>
     </div>

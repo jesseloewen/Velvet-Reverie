@@ -82,7 +82,7 @@ let storyAutoScrollEnabled = true;
 
 // Hover comparison state
 let hoverCompareEnabled = false;
-let hoverCompareRadius = 150; // Default radius in pixels
+let hoverCompareRadius = 80; // Default radius in pixels
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -434,44 +434,91 @@ function exitDeviceFullscreen() {
 // Mobile Overlay for Sidebar
 function initializeMobileOverlay() {
     const mainContent = document.querySelector('.main-content');
-    const sidebar = document.getElementById('queueSidebar');
+    const queueSidebar = document.getElementById('queueSidebar');
+    const tabsSidebar = document.getElementById('tabsSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
     
-    // Start with sidebar collapsed on mobile
-    if (sidebar && window.innerWidth <= 768) {
-        sidebar.classList.add('collapsed');
+    // Start with both sidebars collapsed on mobile
+    if (window.innerWidth <= 768) {
+        if (queueSidebar) queueSidebar.classList.add('collapsed');
+        if (tabsSidebar) tabsSidebar.classList.add('collapsed');
     }
     
-    // Prevent clicks inside sidebar from closing it
-    if (sidebar) {
-        sidebar.addEventListener('click', function(e) {
+    // Function to update backdrop visibility
+    function updateBackdrop() {
+        if (window.innerWidth <= 768 && backdrop) {
+            const queueOpen = queueSidebar && !queueSidebar.classList.contains('collapsed');
+            const tabsOpen = tabsSidebar && !tabsSidebar.classList.contains('collapsed');
+            
+            if (queueOpen || tabsOpen) {
+                backdrop.classList.add('active');
+                // Prevent body scroll when sidebar is open on mobile
+                document.body.style.overflow = 'hidden';
+            } else {
+                backdrop.classList.remove('active');
+                // Restore body scroll when sidebars are closed
+                document.body.style.overflow = '';
+            }
+        } else if (backdrop) {
+            backdrop.classList.remove('active');
+            // Restore body scroll on desktop
+            document.body.style.overflow = '';
+        }
+    }
+    
+    // Close sidebars when clicking backdrop
+    if (backdrop) {
+        backdrop.addEventListener('click', function() {
+            if (queueSidebar) queueSidebar.classList.add('collapsed');
+            if (tabsSidebar) tabsSidebar.classList.add('collapsed');
+            updateBackdrop();
+        });
+    }
+    
+    // Prevent clicks inside sidebars from closing them
+    if (queueSidebar) {
+        queueSidebar.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    }
+    if (tabsSidebar) {
+        tabsSidebar.addEventListener('click', function(e) {
             e.stopPropagation();
         });
     }
     
-    // Close sidebar when clicking on main content on mobile
-    if (mainContent && sidebar) {
+    // Close sidebars when clicking on main content on mobile
+    if (mainContent) {
         mainContent.addEventListener('click', function(e) {
-            if (window.innerWidth <= 768 && !sidebar.classList.contains('collapsed')) {
-                // Only close if we're on mobile and sidebar is open
-                sidebar.classList.add('collapsed');
+            if (window.innerWidth <= 768) {
+                if (queueSidebar && !queueSidebar.classList.contains('collapsed')) {
+                    queueSidebar.classList.add('collapsed');
+                }
+                if (tabsSidebar && !tabsSidebar.classList.contains('collapsed')) {
+                    tabsSidebar.classList.add('collapsed');
+                }
+                updateBackdrop();
             }
         });
     }
     
     // Handle window resize
     window.addEventListener('resize', function() {
-        if (sidebar) {
-            if (window.innerWidth > 768) {
-                // On desktop, remove collapsed class to show normal behavior
-                sidebar.classList.remove('collapsed');
-            } else {
-                // On mobile, ensure it's collapsed by default
-                if (!sidebar.classList.contains('collapsed')) {
-                    // Only add if user hasn't manually opened it
-                }
-            }
+        if (window.innerWidth > 768) {
+            // On desktop, remove collapsed class to show normal behavior
+            if (queueSidebar) queueSidebar.classList.remove('collapsed');
+            if (tabsSidebar) tabsSidebar.classList.remove('collapsed');
+        } else {
+            // On mobile, update backdrop based on current state
+            updateBackdrop();
         }
     });
+    
+    // Initial backdrop state
+    updateBackdrop();
+    
+    // Make updateBackdrop available globally for toggle functions
+    window.updateMobileSidebarBackdrop = updateBackdrop;
 }
 
 // Mobile Keyboard Fix - Prevent header cutoff after keyboard dismissal
@@ -547,13 +594,40 @@ function initializeEventListeners() {
     // Header toggle
     const headerToggleBtn = document.getElementById('headerToggleBtn');
     if (headerToggleBtn) {
-        headerToggleBtn.addEventListener('click', toggleHeader);
+        // Main chevron button toggles header
+        const headerToggleChevron = headerToggleBtn.querySelector('.header-toggle-chevron');
+        if (headerToggleChevron) {
+            headerToggleChevron.addEventListener('click', toggleHeader);
+        }
+        
+        // Tab button toggles tabs sidebar (only shown when header collapsed on mobile)
+        const headerToggleTabBtn = document.getElementById('headerToggleTabBtn');
+        if (headerToggleTabBtn) {
+            headerToggleTabBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleMobileMenu();
+            });
+        }
+        
+        // Queue button toggles queue sidebar (only shown when header collapsed on mobile)
+        const headerToggleQueueBtn = document.getElementById('headerToggleQueueBtn');
+        if (headerToggleQueueBtn) {
+            headerToggleQueueBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleMobileQueue();
+            });
+        }
     }
     
     // Mobile menu
     const mobileMenuBtn = document.getElementById('mobileMenuBtn');
     if (mobileMenuBtn) {
         mobileMenuBtn.addEventListener('click', toggleMobileMenu);
+    }
+    
+    const mobileQueueBtn = document.getElementById('mobileQueueBtn');
+    if (mobileQueueBtn) {
+        mobileQueueBtn.addEventListener('click', toggleMobileQueue);
     }
     
     // Collapsible sections
@@ -574,6 +648,7 @@ function initializeEventListeners() {
 
     // Queue toggle
     document.getElementById('toggleQueue').addEventListener('click', toggleQueue);
+    document.getElementById('toggleTabs').addEventListener('click', toggleTabs);
     document.getElementById('pauseQueueBtn').addEventListener('click', toggleQueuePause);
     document.getElementById('clearQueueBtn').addEventListener('click', clearQueue);
     document.getElementById('unloadModelsBtn').addEventListener('click', unloadModels);
@@ -684,7 +759,7 @@ function initializeEventListeners() {
         closeAudioBrowserBtn.addEventListener('click', closeAudioBrowser);
     }
 
-    // Use This Folder (Image Batch or Video Batch)
+    // Use This Folder (Image Batch or Video Batch or Frame Edit)
     const useFolderBtn = document.getElementById('useThisFolderBtn');
     if (useFolderBtn) {
         useFolderBtn.addEventListener('click', async () => {
@@ -694,6 +769,42 @@ function initializeEventListeners() {
                     selectedImageBatchFolder = currentBrowserSubpath || '';
                     const display = document.getElementById('imageBatchFolderDisplay');
                     display.textContent = selectedImageBatchFolder ? selectedImageBatchFolder : 'Root';
+                    closeImageBrowser();
+                } else if (imageBrowserMode === 'frame-edit' && currentBrowserFolder === 'input') {
+                    // Frame Edit: select folder from input/frame_edit/
+                    selectedFrameEditFolder = currentBrowserSubpath || '';
+                    const display = document.getElementById('frameEditFolderDisplay');
+                    // Remove 'frame_edit/' prefix from display
+                    const displayPath = selectedFrameEditFolder.replace(/^frame_edit\//, '');
+                    display.textContent = displayPath || 'No folder selected';
+                    
+                    // Fetch and display frame count
+                    updateFrameEditCount(selectedFrameEditFolder);
+                    
+                    closeImageBrowser();
+                } else if (imageBrowserMode === 'stitch') {
+                    // Stitch: select folder from input/frame_edit/ or output/images/frame_edit/
+                    selectedStitchFolder = currentBrowserSubpath || '';
+                    selectedStitchSource = currentBrowserFolder; // Track which folder type
+                    const display = document.getElementById('stitchFolderDisplay');
+                    
+                    // Remove prefix from display based on source
+                    let displayPath;
+                    if (currentBrowserFolder === 'input') {
+                        displayPath = selectedStitchFolder.replace(/^frame_edit\//, '');
+                    } else {
+                        displayPath = selectedStitchFolder.replace(/^images\/frame_edit\//, '');
+                    }
+                    display.textContent = displayPath || 'No folder selected';
+                    
+                    // Parse and set FPS from folder name
+                    const folderName = displayPath.split('/').pop() || displayPath;
+                    const fps = parseFpsFromFolderName(folderName);
+                    document.getElementById('stitchFps').value = fps;
+                    
+                    // Fetch and display frame count
+                    updateStitchFrameCount(selectedStitchFolder, currentBrowserFolder);
+                    
                     closeImageBrowser();
                 } else if (imageBrowserMode === 'video-batch') {
                     // Video batch: handle both input and output folders
@@ -943,6 +1054,62 @@ function initializeEventListeners() {
     } else {
         console.error('✗ Browse video image button not found');
     }
+
+    // Frame Edit video controls
+    const frameEditVideoUpload = document.getElementById('frameEditVideoUpload');
+    const clearFrameEditVideoBtn = document.getElementById('clearFrameEditVideoBtn');
+    const browseFrameEditVideoBtn = document.getElementById('browseFrameEditVideoBtn');
+    const extractFramesBtn = document.getElementById('extractFramesBtn');
+    
+    if (frameEditVideoUpload) {
+        frameEditVideoUpload.addEventListener('change', handleFrameEditVideoPreview);
+    }
+    if (clearFrameEditVideoBtn) {
+        clearFrameEditVideoBtn.addEventListener('click', clearFrameEditVideo);
+    }
+    if (browseFrameEditVideoBtn) {
+        browseFrameEditVideoBtn.addEventListener('click', () => openVideoBrowser());
+    }
+    if (extractFramesBtn) {
+        extractFramesBtn.addEventListener('click', extractFrames);
+    }
+    
+    // Frame extraction calculation inputs
+    const frameStartTime = document.getElementById('frameStartTime');
+    const frameEndTime = document.getElementById('frameEndTime');
+    const frameSkip = document.getElementById('frameSkip');
+    
+    if (frameStartTime) {
+        frameStartTime.addEventListener('input', updateFrameCalculations);
+    }
+    if (frameEndTime) {
+        frameEndTime.addEventListener('input', updateFrameCalculations);
+    }
+    if (frameSkip) {
+        frameSkip.addEventListener('input', updateFrameCalculations);
+    }
+    
+    // Frame Edit Step 2 controls
+    const chooseFrameEditFolderBtn = document.getElementById('chooseFrameEditFolderBtn');
+    const queueFrameEditBtn = document.getElementById('queueFrameEditBtn');
+    
+    if (chooseFrameEditFolderBtn) {
+        chooseFrameEditFolderBtn.addEventListener('click', openFrameEditFolderBrowser);
+    }
+    if (queueFrameEditBtn) {
+        queueFrameEditBtn.addEventListener('click', queueFrameEditBatch);
+    }
+    
+    // Frame Edit Step 3 controls
+    const chooseStitchFolderBtn = document.getElementById('chooseStitchFolderBtn');
+    const stitchFramesBtn = document.getElementById('stitchFramesBtn');
+    
+    if (chooseStitchFolderBtn) {
+        chooseStitchFolderBtn.addEventListener('click', openStitchFolderBrowser);
+    }
+    if (stitchFramesBtn) {
+        stitchFramesBtn.addEventListener('click', stitchFramesToVideo);
+    }
 }
 
 // Mobile Menu Toggle
@@ -952,6 +1119,31 @@ function toggleMobileMenu(event) {
         event.stopPropagation();
     }
     
+    // Toggle the tabs sidebar (left) on mobile
+    const sidebar = document.getElementById('tabsSidebar');
+    const isCollapsed = sidebar.classList.contains('collapsed');
+    
+    if (isCollapsed) {
+        // Opening the sidebar
+        sidebar.classList.remove('collapsed');
+    } else {
+        // Closing the sidebar
+        sidebar.classList.add('collapsed');
+    }
+    
+    // Update backdrop on mobile
+    if (window.updateMobileSidebarBackdrop) {
+        window.updateMobileSidebarBackdrop();
+    }
+}
+
+function toggleMobileQueue(event) {
+    // Prevent event from bubbling to main content
+    if (event) {
+        event.stopPropagation();
+    }
+    
+    // Toggle the queue sidebar (right) on mobile
     const sidebar = document.getElementById('queueSidebar');
     const isCollapsed = sidebar.classList.contains('collapsed');
     
@@ -961,6 +1153,11 @@ function toggleMobileMenu(event) {
     } else {
         // Closing the sidebar
         sidebar.classList.add('collapsed');
+    }
+    
+    // Update backdrop on mobile
+    if (window.updateMobileSidebarBackdrop) {
+        window.updateMobileSidebarBackdrop();
     }
 }
 
@@ -1015,6 +1212,18 @@ function switchTab(tabName) {
         content.classList.remove('active');
     });
     
+    // Close tabs sidebar on mobile after selection
+    if (window.innerWidth <= 768) {
+        const tabsSidebar = document.getElementById('tabsSidebar');
+        if (tabsSidebar) {
+            tabsSidebar.classList.add('collapsed');
+            // Update backdrop
+            if (window.updateMobileSidebarBackdrop) {
+                window.updateMobileSidebarBackdrop();
+            }
+        }
+    }
+    
     const tabs = {
         'single': 'singleTab',
         'batch': 'batchTab',
@@ -1023,6 +1232,7 @@ function switchTab(tabName) {
         'reveal': 'revealTab',
         'video': 'videoTab',
         'video-batch': 'videoBatchTab',
+        'frame-edit': 'frameEditTab',
         'videos': 'videosTab',
         'chat': 'chatTab',
         'story': 'storyTab',
@@ -1254,6 +1464,21 @@ function clearTTSSeed() {
 function toggleQueue() {
     const sidebar = document.getElementById('queueSidebar');
     sidebar.classList.toggle('collapsed');
+    
+    // Update backdrop on mobile
+    if (window.updateMobileSidebarBackdrop) {
+        window.updateMobileSidebarBackdrop();
+    }
+}
+
+function toggleTabs() {
+    const sidebar = document.getElementById('tabsSidebar');
+    sidebar.classList.toggle('collapsed');
+    
+    // Update backdrop on mobile
+    if (window.updateMobileSidebarBackdrop) {
+        window.updateMobileSidebarBackdrop();
+    }
 }
 
 function toggleHeader() {
@@ -2202,6 +2427,8 @@ async function handleBatchImageUpload() {
 // ============================================================================
 
 let uploadedVideoImageFilename = null;
+let uploadedFrameEditVideoFilename = null; // Frame Edit video
+let currentFrameEditVideoData = null; // Store video metadata (fps, duration, etc.)
 
 async function generateVideo() {
     const prompt = document.getElementById('videoPrompt').value.trim();
@@ -2335,15 +2562,586 @@ function clearVideoImage() {
 }
 
 // ============================================================================
+// FRAME EDIT VIDEO FUNCTIONS
+// ============================================================================
+
+async function handleFrameEditVideoUpload() {
+    const videoUpload = document.getElementById('frameEditVideoUpload');
+    const file = videoUpload.files[0];
+    
+    if (!file) {
+        return false;
+    }
+    
+    const formData = new FormData();
+    formData.append('video', file);
+    
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            uploadedFrameEditVideoFilename = result.filename;
+            showNotification('Video uploaded successfully', 'Success', 'success', 2000);
+            return true;
+        } else {
+            showNotification(result.error || 'Upload failed', 'Error', 'error');
+            return false;
+        }
+    } catch (error) {
+        console.error('Error uploading video:', error);
+        showNotification('Error uploading video', 'Error', 'error');
+        return false;
+    }
+}
+
+async function handleFrameEditVideoPreview() {
+    const videoUpload = document.getElementById('frameEditVideoUpload');
+    const videoPreview = document.getElementById('frameEditVideoPreview');
+    const videoPreviewEl = document.getElementById('frameEditPreviewVideo');
+    const videoInfo = document.getElementById('frameEditVideoInfo');
+    const clearVideoBtn = document.getElementById('clearFrameEditVideoBtn');
+    const frameExtractControls = document.getElementById('frameExtractControls');
+    const outputFolder = document.getElementById('frameOutputFolder');
+    
+    const file = videoUpload.files[0];
+    if (file) {
+        // Clear output folder to allow auto-generation for new video
+        if (outputFolder) {
+            outputFolder.value = '';
+        }
+        
+        // Upload the video file first and wait for it to complete
+        await handleFrameEditVideoUpload();
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            videoPreviewEl.src = e.target.result;
+            videoPreview.style.display = 'block';
+            clearVideoBtn.style.display = 'inline-block';
+            
+            // Display video info
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            videoInfo.textContent = `${file.name} (${fileSizeMB} MB)`;
+            
+            // Get video metadata when loaded
+            videoPreviewEl.onloadedmetadata = () => {
+                const duration = videoPreviewEl.duration;
+                const width = videoPreviewEl.videoWidth;
+                const height = videoPreviewEl.videoHeight;
+                
+                // Estimate FPS (most videos are 24, 30, or 60 fps)
+                // We'll get the actual FPS from the backend when extracting
+                const estimatedFPS = 30;
+                
+                videoInfo.textContent = `${file.name} • ${width}×${height} • ${duration.toFixed(1)}s • ${fileSizeMB} MB`;
+                
+                // Store video data globally
+                currentFrameEditVideoData = {
+                    filename: uploadedFrameEditVideoFilename,
+                    duration: duration,
+                    width: width,
+                    height: height,
+                    fps: estimatedFPS  // Estimated, will be accurate when backend processes
+                };
+                
+                // Initialize frame extraction controls
+                const endTimeInput = document.getElementById('frameEndTime');
+                if (endTimeInput) {
+                    endTimeInput.value = duration.toFixed(1);
+                    endTimeInput.max = duration.toFixed(1);
+                }
+                
+                const startTimeInput = document.getElementById('frameStartTime');
+                if (startTimeInput) {
+                    startTimeInput.max = duration.toFixed(1);
+                }
+                
+                // Show frame extraction controls
+                if (frameExtractControls) {
+                    frameExtractControls.style.display = 'block';
+                }
+                
+                // Calculate and display initial values
+                updateFrameCalculations();
+            };
+        };
+        reader.readAsDataURL(file);
+        
+        // Note: uploadedFrameEditVideoFilename is already set by handleFrameEditVideoUpload()
+    } else {
+        videoPreview.style.display = 'none';
+        clearVideoBtn.style.display = 'none';
+        if (frameExtractControls) {
+            frameExtractControls.style.display = 'none';
+        }
+        uploadedFrameEditVideoFilename = null;
+        currentFrameEditVideoData = null;
+    }
+}
+
+function clearFrameEditVideo() {
+    const videoUpload = document.getElementById('frameEditVideoUpload');
+    const videoPreview = document.getElementById('frameEditVideoPreview');
+    const videoPreviewEl = document.getElementById('frameEditPreviewVideo');
+    const clearVideoBtn = document.getElementById('clearFrameEditVideoBtn');
+    const frameExtractControls = document.getElementById('frameExtractControls');
+    const outputFolder = document.getElementById('frameOutputFolder');
+    
+    videoUpload.value = '';
+    videoPreviewEl.src = '';
+    videoPreview.style.display = 'none';
+    clearVideoBtn.style.display = 'none';
+    if (frameExtractControls) {
+        frameExtractControls.style.display = 'none';
+    }
+    if (outputFolder) {
+        outputFolder.value = '';
+    }
+    uploadedFrameEditVideoFilename = null;
+    currentFrameEditVideoData = null;
+}
+
+function selectVideoBrowserFile(filepath, folder) {
+    // Set the selected video from browser
+    uploadedFrameEditVideoFilename = filepath;
+    
+    // Update preview
+    const videoPreview = document.getElementById('frameEditVideoPreview');
+    const videoPreviewEl = document.getElementById('frameEditPreviewVideo');
+    const videoInfo = document.getElementById('frameEditVideoInfo');
+    const clearVideoBtn = document.getElementById('clearFrameEditVideoBtn');
+    const frameExtractControls = document.getElementById('frameExtractControls');
+    const outputFolder = document.getElementById('frameOutputFolder');
+    
+    // Clear output folder to allow auto-generation
+    if (outputFolder) {
+        outputFolder.value = '';
+    }
+    
+    // Construct the URL for the video
+    const videoUrl = folder === 'output' ? `/outputs/${filepath}` : `/api/video/${encodeURIComponent(filepath)}`;
+    
+    videoPreviewEl.src = videoUrl;
+    videoPreview.style.display = 'block';
+    clearVideoBtn.style.display = 'inline-block';
+    
+    // Display video info
+    const filename = filepath.split('/').pop();
+    videoInfo.textContent = `Selected: ${filename}`;
+    
+    // Get video metadata when loaded
+    videoPreviewEl.onloadedmetadata = () => {
+        const duration = videoPreviewEl.duration;
+        const width = videoPreviewEl.videoWidth;
+        const height = videoPreviewEl.videoHeight;
+        const estimatedFPS = 30;
+        
+        videoInfo.textContent = `${filename} • ${width}×${height} • ${duration.toFixed(1)}s`;
+        
+        // Store video data globally
+        currentFrameEditVideoData = {
+            filename: uploadedFrameEditVideoFilename,
+            duration: duration,
+            width: width,
+            height: height,
+            fps: estimatedFPS
+        };
+        
+        // Initialize frame extraction controls
+        const endTimeInput = document.getElementById('frameEndTime');
+        if (endTimeInput) {
+            endTimeInput.value = duration.toFixed(1);
+            endTimeInput.max = duration.toFixed(1);
+        }
+        
+        const startTimeInput = document.getElementById('frameStartTime');
+        if (startTimeInput) {
+            startTimeInput.max = duration.toFixed(1);
+        }
+        
+        // Show frame extraction controls
+        if (frameExtractControls) {
+            frameExtractControls.style.display = 'block';
+        }
+        
+        // Calculate and display initial values
+        updateFrameCalculations();
+    };
+    
+    // Close the browser modal
+    closeVideoBrowser();
+    
+    showNotification('Video selected successfully', 'Success', 'success', 2000);
+}
+
+function updateFrameCalculations() {
+    if (!currentFrameEditVideoData) return;
+    
+    const startTime = parseFloat(document.getElementById('frameStartTime')?.value || 0);
+    const endTime = parseFloat(document.getElementById('frameEndTime')?.value || currentFrameEditVideoData.duration);
+    const frameSkip = parseInt(document.getElementById('frameSkip')?.value || 1);
+    
+    // Validate inputs
+    if (startTime >= endTime) return;
+    if (frameSkip < 1) return;
+    
+    const selectedDuration = endTime - startTime;
+    const fps = currentFrameEditVideoData.fps;
+    
+    // Calculate frames
+    const totalFrames = Math.floor(selectedDuration * fps);
+    const extractedFrames = Math.floor(totalFrames / frameSkip);
+    const playbackFPS = fps / frameSkip;
+    
+    // Update display
+    document.getElementById('videoOriginalFPS').textContent = `${fps} fps`;
+    document.getElementById('videoSelectedDuration').textContent = `${selectedDuration.toFixed(1)}s`;
+    document.getElementById('videoTotalFrames').textContent = totalFrames.toLocaleString();
+    document.getElementById('videoExtractedFrames').textContent = extractedFrames.toLocaleString();
+    document.getElementById('videoPlaybackFPS').textContent = `${playbackFPS.toFixed(2)} fps`;
+}
+
+async function extractFrames() {
+    if (!uploadedFrameEditVideoFilename) {
+        showNotification('Please select a video first', 'No Video', 'warning');
+        return;
+    }
+    
+    const startTime = parseFloat(document.getElementById('frameStartTime')?.value || 0);
+    const endTime = parseFloat(document.getElementById('frameEndTime')?.value || currentFrameEditVideoData.duration);
+    const frameSkip = parseInt(document.getElementById('frameSkip')?.value || 1);
+    const outputFolder = document.getElementById('frameOutputFolder')?.value.trim() || '';
+    
+    if (startTime >= endTime) {
+        showNotification('Start time must be less than end time', 'Invalid Range', 'warning');
+        return;
+    }
+    
+    const confirmed = await showConfirm(
+        `Extract frames from ${startTime.toFixed(1)}s to ${endTime.toFixed(1)}s (every ${frameSkip} frame${frameSkip > 1 ? 's' : ''})?\n\nThis will create ${Math.floor((endTime - startTime) * currentFrameEditVideoData.fps / frameSkip)} images.`,
+        'Extract Frames'
+    );
+    
+    if (!confirmed) return;
+    
+    const extractBtn = document.getElementById('extractFramesBtn');
+    const originalText = extractBtn.innerHTML;
+    extractBtn.disabled = true;
+    extractBtn.innerHTML = '<span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> Extracting...';
+    
+    try {
+        const response = await fetch('/api/frame-edit/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                video_filename: uploadedFrameEditVideoFilename,
+                start_time: startTime,
+                end_time: endTime,
+                frame_skip: frameSkip,
+                output_folder: outputFolder
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(
+                `Extracted ${result.frame_count} frames to ${result.folder_path}`,
+                'Frames Extracted',
+                'success',
+                5000
+            );
+            
+            // Optionally update output folder input to show where frames were saved
+            document.getElementById('frameOutputFolder').value = result.folder_name;
+        } else {
+            showNotification(result.error || 'Failed to extract frames', 'Error', 'error');
+        }
+    } catch (error) {
+        console.error('Error extracting frames:', error);
+        showNotification('Error extracting frames', 'Error', 'error');
+    } finally {
+        extractBtn.disabled = false;
+        extractBtn.innerHTML = originalText;
+    }
+}
+
+// Frame Edit Step 2: Folder Browser and Batch Processing
+let selectedFrameEditFolder = '';
+
+function openFrameEditFolderBrowser() {
+    imageBrowserMode = 'frame-edit';
+    currentBrowserFolder = 'input';
+    currentBrowserSubpath = 'frame_edit'; // Start in frame_edit folder
+    selectedFrameEditFolder = '';
+    
+    // Open modal
+    const modal = document.getElementById('imageBrowserModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        const modalTitle = modal.querySelector('h3');
+        if (modalTitle) {
+            modalTitle.textContent = 'Select Frame Folder';
+        }
+        
+        // Load frame_edit folders
+        loadImageBrowserFolder('input', 'frame_edit');
+    }
+}
+
+async function updateFrameEditCount(folder) {
+    if (!folder) {
+        const countDisplay = document.getElementById('frameEditFrameCount');
+        if (countDisplay) {
+            countDisplay.style.display = 'none';
+        }
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/frame-edit/count?folder=${encodeURIComponent(folder)}`);
+        const result = await response.json();
+        
+        const countDisplay = document.getElementById('frameEditFrameCount');
+        if (countDisplay && result.success) {
+            const count = result.frame_count;
+            countDisplay.innerHTML = `<strong>${count.toLocaleString()} frame${count !== 1 ? 's' : ''}</strong> ready to process`;
+            countDisplay.style.display = 'block';
+            
+            if (count === 0) {
+                countDisplay.style.color = 'var(--error)';
+            } else {
+                countDisplay.style.color = 'var(--accent-primary)';
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching frame count:', error);
+    }
+}
+
+async function queueFrameEditBatch() {
+    if (!selectedFrameEditFolder) {
+        showNotification('Please select a frame folder first', 'No Folder Selected', 'warning');
+        return;
+    }
+    
+    const prompt = document.getElementById('frameEditPrompt')?.value.trim();
+    if (!prompt) {
+        showNotification('Please enter a prompt', 'No Prompt', 'warning');
+        return;
+    }
+    
+    const steps = parseInt(document.getElementById('frameEditSteps')?.value || 4);
+    const cfg = parseFloat(document.getElementById('frameEditCfg')?.value || 1.0);
+    const shift = parseFloat(document.getElementById('frameEditShift')?.value || 3.0);
+    const seed = document.getElementById('frameEditSeed')?.value.trim();
+    const filePrefix = document.getElementById('frameEditFilePrefix')?.value.trim() || 'frame_edit';
+    const outputFolder = document.getElementById('frameEditOutputFolder')?.value.trim() || '';
+    
+    // LoRA settings
+    const mcnlLora = document.getElementById('frameEditMcnlLora')?.checked || false;
+    const snofsLora = document.getElementById('frameEditSnofsLora')?.checked || false;
+    const maleLora = document.getElementById('frameEditMaleLora')?.checked || false;
+    
+    const confirmed = await showConfirm(
+        `Process all frames in ${selectedFrameEditFolder} with AI?\n\nThis will queue one job per frame.`,
+        'Queue Frame Edit Batch'
+    );
+    
+    if (!confirmed) return;
+    
+    const queueBtn = document.getElementById('queueFrameEditBtn');
+    const originalText = queueBtn.innerHTML;
+    queueBtn.disabled = true;
+    queueBtn.innerHTML = '<span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> Queueing...';
+    
+    try {
+        const response = await fetch('/api/frame-edit/process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                folder: selectedFrameEditFolder,
+                prompt: prompt,
+                steps: steps,
+                cfg: cfg,
+                shift: shift,
+                seed: seed || undefined,
+                file_prefix: filePrefix,
+                output_folder: outputFolder,
+                mcnl_lora: mcnlLora,
+                snofs_lora: snofsLora,
+                male_lora: maleLora
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(
+                `Queued ${result.job_count} frames for processing`,
+                'Batch Queued',
+                'success',
+                5000
+            );
+        } else {
+            showNotification(result.error || 'Failed to queue batch', 'Error', 'error');
+        }
+    } catch (error) {
+        console.error('Error queueing frame edit batch:', error);
+        showNotification('Error queueing batch', 'Error', 'error');
+    } finally {
+        queueBtn.disabled = false;
+        queueBtn.innerHTML = originalText;
+    }
+}
+
+// Frame Edit Step 3: Stitch Frames to Video
+let selectedStitchFolder = '';
+let selectedStitchSource = 'input'; // 'input' or 'output'
+
+function openStitchFolderBrowser() {
+    imageBrowserMode = 'stitch';
+    currentBrowserFolder = 'input';
+    currentBrowserSubpath = 'frame_edit'; // Start in frame_edit input folder
+    selectedStitchFolder = '';
+    selectedStitchSource = 'input'; // Track source folder
+    
+    // Open modal
+    const modal = document.getElementById('imageBrowserModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        const modalTitle = modal.querySelector('h3');
+        if (modalTitle) {
+            modalTitle.textContent = 'Select Frames Folder';
+        }
+        
+        // Load frame_edit folders (start with input)
+        loadImageBrowserFolder('input', 'frame_edit');
+    }
+}
+
+async function updateStitchFrameCount(folder, source) {
+    if (!folder) {
+        const countDisplay = document.getElementById('stitchFrameCount');
+        if (countDisplay) {
+            countDisplay.style.display = 'none';
+        }
+        return;
+    }
+    
+    try {
+        // Use appropriate endpoint based on source
+        const endpoint = source === 'input' ? '/api/frame-edit/count' : '/api/frame-edit/count-output';
+        const response = await fetch(`${endpoint}?folder=${encodeURIComponent(folder)}`);
+        const result = await response.json();
+        
+        const countDisplay = document.getElementById('stitchFrameCount');
+        if (countDisplay && result.success) {
+            const count = result.frame_count;
+            countDisplay.innerHTML = `<strong>${count.toLocaleString()} frame${count !== 1 ? 's' : ''}</strong> found`;
+            countDisplay.style.display = 'block';
+            
+            if (count === 0) {
+                countDisplay.style.color = 'var(--error)';
+            } else {
+                countDisplay.style.color = 'var(--accent-primary)';
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching frame count:', error);
+    }
+}
+
+function parseFpsFromFolderName(folderName) {
+    // Try to extract FPS from folder name pattern: "name_30fps" or "name_23.98fps"
+    const fpsMatch = folderName.match(/(\d+(?:\.\d+)?)fps/i);
+    if (fpsMatch) {
+        return parseFloat(fpsMatch[1]);
+    }
+    return 30; // Default fallback
+}
+
+async function stitchFramesToVideo() {
+    if (!selectedStitchFolder) {
+        showNotification('Please select a folder first', 'No Folder Selected', 'warning');
+        return;
+    }
+    
+    const fps = parseFloat(document.getElementById('stitchFps')?.value || 30);
+    const outputName = document.getElementById('stitchOutputName')?.value.trim();
+    
+    if (fps <= 0 || fps > 120) {
+        showNotification('FPS must be between 1 and 120', 'Invalid FPS', 'warning');
+        return;
+    }
+    
+    const confirmed = await showConfirm(
+        `Stitch all frames in ${selectedStitchFolder} to video at ${fps} FPS?`,
+        'Stitch Frames'
+    );
+    
+    if (!confirmed) return;
+    
+    const stitchBtn = document.getElementById('stitchFramesBtn');
+    const originalText = stitchBtn.innerHTML;
+    stitchBtn.disabled = true;
+    stitchBtn.innerHTML = '<span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span> Stitching...';
+    
+    try {
+        const response = await fetch('/api/frame-edit/stitch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                folder: selectedStitchFolder,
+                fps: fps,
+                output_name: outputName || undefined,
+                source: selectedStitchSource || 'input'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(
+                `Video created: ${result.video_path}`,
+                'Video Created',
+                'success',
+                5000
+            );
+            
+            // Clear output name for next use
+            document.getElementById('stitchOutputName').value = '';
+        } else {
+            showNotification(result.error || 'Failed to stitch frames', 'Error', 'error');
+        }
+    } catch (error) {
+        console.error('Error stitching frames:', error);
+        showNotification('Error stitching frames', 'Error', 'error');
+    } finally {
+        stitchBtn.disabled = false;
+        stitchBtn.innerHTML = originalText;
+    }
+}
+
+// ============================================================================
 // IMAGE BROWSER
 // ============================================================================
 
 // Image Browser Functions
-let imageBrowserMode = 'single'; // 'single' | 'batch' | 'image-batch'
+let imageBrowserMode = 'single'; // 'single' | 'batch' | 'image-batch' | 'frame-edit' | 'stitch'
 let currentBrowserFolder = 'input'; // 'input' or 'output'
 let currentBrowserSubpath = ''; // Current subfolder path
 let selectedImageBatchFolder = '';
 let selectedVideoBatchFolder = '';
+
+// Video Browser Functions
+let currentVideoBrowserFolder = 'input'; // 'input' or 'output'
+let currentVideoBrowserSubpath = ''; // Current subfolder path
 
 function openImageBrowser(mode) {
     console.log('openImageBrowser called with mode:', mode);
@@ -2371,6 +3169,310 @@ function openImageBrowser(mode) {
     
     // Load input folder by default
     loadImageBrowserFolder('input', '');
+}
+
+// ============================================================================
+// VIDEO BROWSER MODAL
+// ============================================================================
+
+function openVideoBrowser() {
+    currentVideoBrowserSubpath = ''; // Reset to root
+    const modal = document.getElementById('videoBrowserModal');
+    if (!modal) {
+        console.error('Video browser modal not found!');
+        return;
+    }
+    
+    modal.style.display = 'flex';
+    
+    // Show grid view, hide preview
+    const gridView = document.getElementById('videoBrowserGridView');
+    const previewContainer = document.getElementById('videoPreviewContainer');
+    if (gridView) gridView.style.display = 'flex';
+    if (previewContainer) previewContainer.style.display = 'none';
+    
+    // Setup tab listeners
+    const tabs = modal.querySelectorAll('.video-browser-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const folder = tab.dataset.folder;
+            loadVideoBrowserFolder(folder, '');
+        });
+    });
+    
+    // Setup close button for grid view
+    const closeBtn = document.getElementById('closeVideoBrowserBtn');
+    if (closeBtn) {
+        closeBtn.onclick = closeVideoBrowser;
+    }
+    
+    // Setup close button for preview view
+    const closePreviewBtn = document.getElementById('closeVideoPreviewBtn');
+    if (closePreviewBtn) {
+        closePreviewBtn.onclick = closeVideoBrowser;
+    }
+    
+    // Setup back button
+    const backBtn = document.getElementById('backToVideosGridBtn');
+    if (backBtn) {
+        backBtn.onclick = () => {
+            // Hide preview, show grid
+            if (previewContainer) previewContainer.style.display = 'none';
+            if (gridView) gridView.style.display = 'flex';
+            
+            // Stop video
+            const videoPlayer = document.getElementById('videoPreviewPlayer');
+            if (videoPlayer) {
+                videoPlayer.pause();
+                videoPlayer.src = '';
+            }
+        };
+    }
+    
+    // Load input folder by default
+    loadVideoBrowserFolder('input', '');
+}
+
+function closeVideoBrowser() {
+    const modal = document.getElementById('videoBrowserModal');
+    const videoPlayer = document.getElementById('videoPreviewPlayer');
+    const videoPreviewContainer = document.getElementById('videoPreviewContainer');
+    const gridView = document.getElementById('videoBrowserGridView');
+    
+    // Stop and reset video player
+    if (videoPlayer) {
+        videoPlayer.pause();
+        videoPlayer.src = '';
+    }
+    
+    // Reset views to default state
+    if (videoPreviewContainer) videoPreviewContainer.style.display = 'none';
+    if (gridView) gridView.style.display = 'flex';
+    
+    modal.style.display = 'none';
+}
+
+async function loadVideoBrowserFolder(folder, subpath) {
+    currentVideoBrowserFolder = folder;
+    currentVideoBrowserSubpath = subpath || '';
+    
+    // Update tab active state
+    document.querySelectorAll('.video-browser-tab').forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.dataset.folder === folder) {
+            tab.classList.add('active');
+        }
+    });
+    
+    // Update path display
+    renderVideoBrowserPath(folder, subpath);
+    
+    try {
+        // For output folder, default to 'videos' subfolder if at root
+        let effectiveSubpath = subpath;
+        if (folder === 'output' && !subpath) {
+            effectiveSubpath = 'videos';
+        }
+        
+        // Fetch files from appropriate folder
+        const endpoint = folder === 'input' 
+            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}`
+            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}`;
+        
+        const response = await fetch(endpoint);
+        const data = await response.json();
+        
+        if (!data.success && data.success !== undefined) {
+            throw new Error(data.error || 'Failed to load videos');
+        }
+        
+        // Get folders and files from response
+        const folders = data.folders || [];
+        // For input folder, browse_images returns image objects with {filename, path, mtime}
+        // For output folder, browse returns file metadata objects
+        let files = folder === 'input' ? (data.images || []) : (data.files || []);
+        
+        // Filter to only show videos
+        const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+        const videoFiles = files.filter(file => {
+            // Handle both string and object formats
+            const filename = typeof file === 'string' ? file : (file.filename || file.path || '');
+            const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+            return videoExtensions.includes(ext);
+        });
+        
+        // Render folders and videos
+        renderVideoBrowserGrid(data.folders || [], videoFiles);
+    } catch (error) {
+        console.error('Error loading video browser folder:', error);
+        showNotification('Error loading videos', 'Error', 'error');
+    }
+}
+
+function renderVideoBrowserPath(folder, subpath) {
+    const pathDisplay = document.getElementById('videoBrowserPathText');
+    if (!pathDisplay) return;
+    
+    // Build path display similar to image browser
+    const folderName = folder === 'input' ? 'Input' : 'Output';
+    
+    if (!subpath) {
+        // At root of selected folder
+        pathDisplay.textContent = folderName;
+    } else {
+        // In a subfolder
+        // For output folder, remove 'videos' prefix from display if present
+        let displayPath = subpath;
+        if (folder === 'output' && displayPath.startsWith('videos/')) {
+            displayPath = displayPath.substring(7); // Remove 'videos/'
+        } else if (folder === 'output' && displayPath === 'videos') {
+            displayPath = '';
+        }
+        
+        if (displayPath) {
+            pathDisplay.textContent = `${folderName} / ${displayPath.replace(/\//g, ' / ')}`;
+        } else {
+            pathDisplay.textContent = folderName;
+        }
+    }
+}
+
+function renderVideoBrowserGrid(folders, videos) {
+    const grid = document.getElementById('videoBrowserGrid');
+    if (!grid) return;
+    
+    let html = '';
+    
+    // Show parent folder navigation if in subfolder
+    // For output folder, don't show back button if we're at 'videos' folder (our root)
+    const isAtRoot = currentVideoBrowserFolder === 'output' 
+        ? (currentVideoBrowserSubpath === 'videos' || !currentVideoBrowserSubpath) 
+        : !currentVideoBrowserSubpath;
+    
+    if (currentVideoBrowserSubpath && !isAtRoot) {
+        const parentPath = currentVideoBrowserSubpath.split(/[/\\]/).slice(0, -1).join('/');
+        // For output folder, if parent would be empty, go to 'videos' instead
+        const effectiveParent = (currentVideoBrowserFolder === 'output' && !parentPath) ? 'videos' : parentPath;
+        
+        // Escape for JavaScript string (single quotes and backslashes)
+        const jsEscapedPath = effectiveParent.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        
+        html += `
+            <div class="gallery-item folder-item" onclick="loadVideoBrowserFolder('${currentVideoBrowserFolder}', '${jsEscapedPath}')" style="cursor: pointer;">
+                <div class="folder-icon" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; background: var(--bg-tertiary); border-radius: 4px;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"></path>
+                    </svg>
+                    <span style="margin-top: 0.5rem; font-size: 0.875rem;">..</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Show folders
+    folders.forEach(folderItem => {
+        // Handle both string (folder name) and object (with name and path) formats
+        const folderName = typeof folderItem === 'string' ? folderItem : (folderItem.name || folderItem);
+        const folderPath = typeof folderItem === 'object' && folderItem.path 
+            ? folderItem.path 
+            : (currentVideoBrowserSubpath ? `${currentVideoBrowserSubpath}/${folderName}` : folderName);
+        
+        // Escape for JavaScript string (single quotes and backslashes)
+        const jsEscapedPath = folderPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        
+        html += `
+            <div class="gallery-item folder-item" onclick="loadVideoBrowserFolder('${currentVideoBrowserFolder}', '${jsEscapedPath}')" style="cursor: pointer;">
+                <div class="folder-icon" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; background: var(--bg-tertiary); border-radius: 4px;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span style="margin-top: 0.5rem; font-size: 0.875rem; text-align: center; word-break: break-word;">${escapeHtml(folderName)}</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    // Show videos
+    videos.forEach(video => {
+        // Handle multiple formats:
+        // - String (simple filename)
+        // - Object from browse_images: {filename, path, mtime}
+        // - Object from browse: {filename, path, relative_path, ...metadata}
+        let filename, relativePath;
+        
+        if (typeof video === 'string') {
+            filename = video;
+            relativePath = currentVideoBrowserSubpath ? `${currentVideoBrowserSubpath}/${filename}` : filename;
+        } else {
+            filename = video.filename || video.path || '';
+            // For output folder, use relative_path (relative to OUTPUT_DIR, doesn't include "outputs")
+            // For input folder, use path field which has relative path from input root
+            if (currentVideoBrowserFolder === 'output') {
+                relativePath = video.relative_path || video.path || filename;
+            } else {
+                relativePath = video.path || filename;
+            }
+        }
+        
+        // Escape for JavaScript string (single quotes and backslashes)
+        const jsEscapedPath = relativePath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        
+        // Construct video URL for thumbnail
+        const videoUrl = currentVideoBrowserFolder === 'output' 
+            ? `/outputs/${relativePath}` 
+            : `/api/video/${encodeURIComponent(relativePath)}`;
+        
+        html += `
+            <div class="gallery-item" onclick="previewVideoBrowserVideo('${jsEscapedPath}', '${currentVideoBrowserFolder}')" style="cursor: pointer; position: relative;">
+                <div style="position: relative; width: 100%; padding-top: 75%; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden;">
+                    <video 
+                        src="${videoUrl}" 
+                        preload="metadata"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;"
+                        muted
+                    ></video>
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); transition: background 0.2s;">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" style="opacity: 0.9;">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                    </div>
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.875rem; text-align: center; word-break: break-word;">${escapeHtml(filename)}</div>
+            </div>
+        `;
+    });
+    
+    if (folders.length === 0 && videos.length === 0) {
+        html = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2rem;">No videos found in this folder</div>';
+    }
+    
+    grid.innerHTML = html;
+}
+
+function previewVideoBrowserVideo(filepath, folder) {
+    const videoPreviewContainer = document.getElementById('videoPreviewContainer');
+    const gridView = document.getElementById('videoBrowserGridView');
+    const videoPlayer = document.getElementById('videoPreviewPlayer');
+    const videoName = document.getElementById('videoPreviewName');
+    
+    if (!videoPlayer || !videoPreviewContainer) return;
+    
+    // Hide grid, show preview
+    if (gridView) gridView.style.display = 'none';
+    if (videoPreviewContainer) videoPreviewContainer.style.display = 'flex';
+    
+    // Construct the URL for the video
+    const videoUrl = folder === 'output' ? `/outputs/${filepath}` : `/api/video/${encodeURIComponent(filepath)}`;
+    
+    videoPlayer.src = videoUrl;
+    const filename = filepath.split('/').pop();
+    videoName.textContent = filename;
+    
+    // Wire up select button
+    const selectBtn = document.getElementById('selectVideoBrowserBtn');
+    if (selectBtn) {
+        selectBtn.onclick = () => selectVideoBrowserFile(filepath, folder);
+    }
 }
 
 // Audio Browser Functions
@@ -2794,6 +3896,18 @@ function renderImageBrowserPath(folder, subpath) {
         if (imageBrowserMode === 'image-batch' && folder === 'input') {
             // Image batch: only from input folder
             useBtn.style.display = 'inline-flex';
+        } else if (imageBrowserMode === 'frame-edit' && folder === 'input' && subpath && subpath.startsWith('frame_edit')) {
+            // Frame Edit: only show for subfolders within frame_edit
+            useBtn.style.display = 'inline-flex';
+        } else if (imageBrowserMode === 'stitch') {
+            // Stitch: show for subfolders in input/frame_edit or output/images/frame_edit
+            const validInput = folder === 'input' && subpath && subpath.startsWith('frame_edit');
+            const validOutput = folder === 'output' && subpath && subpath.startsWith('images/frame_edit');
+            if (validInput || validOutput) {
+                useBtn.style.display = 'inline-flex';
+            } else {
+                useBtn.style.display = 'none';
+            }
         } else if (imageBrowserMode === 'video-batch') {
             // Video batch: from both input and output folders
             useBtn.style.display = 'inline-flex';
@@ -7569,8 +8683,8 @@ function initializeThemeSelector() {
         return;
     }
     
-    // Load saved theme from localStorage (default: violet)
-    const savedTheme = localStorage.getItem('selectedTheme') || 'violet';
+    // Load saved theme from localStorage (default: velvet)
+    const savedTheme = localStorage.getItem('selectedTheme') || 'velvet';
     applyTheme(savedTheme);
     themeSelector.value = savedTheme;
     
@@ -7582,7 +8696,7 @@ function initializeThemeSelector() {
         
         // Show notification with theme name
         const themeNames = {
-            'violet': 'Violet',
+            'velvet': 'Velvet',
             'dark': 'Dark',
             'light': 'Light',
             'ocean': 'Ocean',
@@ -7601,7 +8715,13 @@ function applyTheme(themeName) {
     // Apply theme to document root
     document.documentElement.setAttribute('data-theme', themeName);
     
-    // Update any theme-dependent elements if needed
+    // Update theme icon (light theme uses dark icon for visibility)
+    const themeIcon = document.getElementById('themeIcon');
+    if (themeIcon) {
+        const iconName = themeName === 'light' ? 'dark' : themeName;
+        themeIcon.src = `/static/assets/${iconName}_icon.png`;
+    }
+    
     console.log(`Applied theme: ${themeName}`);
 }
 

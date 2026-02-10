@@ -500,6 +500,17 @@ function createAutoMessageElement(msg, index) {
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                             </svg>
                         </button>
+                        <button class="chat-action-btn" onclick="sendAutochatToTTS(${index})" title="Send to TTS tab">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                            </svg>
+                        </button>
+                        <button class="chat-action-btn" onclick="autochatTTSNow(${index})" title="Generate TTS now">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                        </button>
                         <button class="chat-action-btn" onclick="editAutochatMessage(this.closest('.chat-message'), ${index})" title="Edit">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -767,6 +778,17 @@ function startMessageStreaming(responseId) {
                                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                                         </svg>
                                     </button>
+                                    <button class="chat-action-btn" onclick="sendAutochatToTTS(${messageIndex})" title="Send to TTS tab">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                        </svg>
+                                    </button>
+                                    <button class="chat-action-btn" onclick="autochatTTSNow(${messageIndex})" title="Generate TTS now">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                        </svg>
+                                    </button>
                                     <button class="chat-action-btn" onclick="editAutochatMessage(document.querySelector('[data-response-id=\"' + '${responseId}' + '\"]'), ${messageIndex})" title="Edit">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -847,6 +869,21 @@ function copyAutochatMessage(index, buttonElement) {
     
     const message = currentAutoSession.messages[index];
     copyChatMessage(message.content, buttonElement);
+}
+
+// TTS wrapper functions for autochat messages
+function sendAutochatToTTS(index) {
+    if (!currentAutoSession || !currentAutoSession.messages[index]) return;
+    
+    const message = currentAutoSession.messages[index];
+    sendToTTS(message.content);
+}
+
+function autochatTTSNow(index) {
+    if (!currentAutoSession || !currentAutoSession.messages[index]) return;
+    
+    const message = currentAutoSession.messages[index];
+    ttsNow(message.content);
 }
 
 // Edit message

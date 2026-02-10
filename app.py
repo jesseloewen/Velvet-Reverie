@@ -4083,24 +4083,25 @@ def create_folder():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_image():
-    """Upload an image for use in image-to-image generation"""
-    if 'image' not in request.files:
-        return jsonify({'success': False, 'error': 'No image file provided'}), 400
+    """Upload an image or video for generation"""
+    # Accept both 'image' and 'video' form fields
+    if 'image' not in request.files and 'video' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
     
-    file = request.files['image']
+    file = request.files.get('image') or request.files.get('video')
     
     if not file or file.filename == '' or file.filename is None:
         return jsonify({'success': False, 'error': 'No selected file'}), 400
     
-    # Check file extension
-    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+    # Check file extension (support both images and videos)
+    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.mp4', '.webm', '.mov', '.avi', '.mkv'}
     file_ext = Path(file.filename).suffix.lower()
     
     if file_ext not in allowed_extensions:
         return jsonify({'success': False, 'error': 'Invalid file type. Allowed: ' + ', '.join(allowed_extensions)}), 400
     
     try:
-        # Save to ComfyUI input directory
+        # Save to ComfyUI input directory (C:\pinokio\api\comfy.git\app\input)
         comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
         
         # Verify directory exists
@@ -4118,12 +4119,452 @@ def upload_image():
         # Save file
         file.save(str(filepath))
         
+        file_type = 'video' if file_ext in {'.mp4', '.webm', '.mov', '.avi', '.mkv'} else 'image'
+        
         return jsonify({
             'success': True,
             'filename': filename,
-            'message': 'Image uploaded successfully'
+            'file_type': file_type,
+            'message': f'{file_type.capitalize()} uploaded successfully'
         })
     except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/frame-edit/extract', methods=['POST'])
+@require_auth
+def extract_frames_from_video():
+    """Extract frames from video for frame-by-frame editing"""
+    import subprocess
+    import re
+    
+    data = request.json
+    video_filename = data.get('video_filename')
+    start_time = float(data.get('start_time', 0))
+    end_time = float(data.get('end_time', 0))
+    frame_skip = int(data.get('frame_skip', 1))
+    output_folder = data.get('output_folder', '').strip()
+    
+    if not video_filename:
+        return jsonify({'success': False, 'error': 'No video filename provided'}), 400
+    
+    try:
+        # Locate video file in ComfyUI input directory
+        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+        video_path = comfyui_input_dir / video_filename
+        
+        if not video_path.exists():
+            return jsonify({'success': False, 'error': f'Video file not found: {video_filename}'}), 404
+        
+        # Get actual video FPS using ffprobe
+        try:
+            ffprobe_cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=r_frame_rate',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(video_path)
+            ]
+            result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, timeout=10)
+            fps_str = result.stdout.strip()
+            
+            # Parse FPS (e.g., "30/1" or "30000/1001")
+            if '/' in fps_str:
+                num, den = fps_str.split('/')
+                fps = float(num) / float(den)
+            else:
+                fps = float(fps_str)
+        except Exception as e:
+            print(f"[FRAME_EXTRACT] Warning: Could not get FPS, using default 30: {e}")
+            fps = 30.0
+        
+        # Calculate playback FPS for folder name
+        playback_fps = fps / frame_skip
+        playback_fps_str = f"{playback_fps:.2f}" if playback_fps % 1 != 0 else f"{int(playback_fps)}"
+        
+        # Generate output folder name if not provided
+        if not output_folder:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            video_basename = Path(video_filename).stem
+            output_folder = f"{video_basename}_{playback_fps_str}fps_{timestamp}"
+        else:
+            # Append FPS to user-provided folder name
+            output_folder = f"{output_folder}_{playback_fps_str}fps"
+        
+        # Create output directory: input/frame_edit/[folder_name]/
+        frame_edit_base = comfyui_input_dir / 'frame_edit'
+        frame_edit_base.mkdir(exist_ok=True)
+        
+        output_dir = frame_edit_base / output_folder
+        if output_dir.exists():
+            # Add timestamp to make unique
+            timestamp = datetime.now().strftime('%H%M%S')
+            output_folder = f"{output_folder}_{timestamp}"
+            output_dir = frame_edit_base / output_folder
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Calculate frame selection filter
+        # FFmpeg select filter: select='not(mod(n,N))' extracts every Nth frame
+        duration = end_time - start_time
+        
+        # Build ffmpeg command
+        # -ss: start time, -t: duration, -vf: video filter (select frames)
+        # Output: frame_%04d.png (frame_0001.png, frame_0002.png, etc.)
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-ss', str(start_time),
+            '-i', str(video_path),
+            '-t', str(duration),
+            '-vf', f'select=not(mod(n\\,{frame_skip}))',
+            '-vsync', 'vfr',  # Variable frame rate to respect select filter
+            '-q:v', '2',  # High quality
+            str(output_dir / 'frame_%04d.png')
+        ]
+        
+        print(f"[FRAME_EXTRACT] Extracting frames from {video_filename}")
+        print(f"[FRAME_EXTRACT] Time range: {start_time}s to {end_time}s")
+        print(f"[FRAME_EXTRACT] Frame skip: {frame_skip}")
+        print(f"[FRAME_EXTRACT] Output: {output_dir}")
+        
+        # Run ffmpeg
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            print(f"[FRAME_EXTRACT] FFmpeg error: {result.stderr}")
+            return jsonify({
+                'success': False,
+                'error': f'FFmpeg failed: {result.stderr[:200]}'
+            }), 500
+        
+        # Count extracted frames
+        frame_files = list(output_dir.glob('frame_*.png'))
+        frame_count = len(frame_files)
+        
+        print(f"[FRAME_EXTRACT] Extracted {frame_count} frames")
+        
+        # Return relative path from input directory
+        relative_path = f"frame_edit/{output_folder}"
+        
+        return jsonify({
+            'success': True,
+            'frame_count': frame_count,
+            'folder_name': output_folder,
+            'folder_path': relative_path,
+            'fps': fps,
+            'message': f'Successfully extracted {frame_count} frames'
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Frame extraction timed out'}), 500
+    except Exception as e:
+        print(f"[FRAME_EXTRACT] Error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/frame-edit/count', methods=['GET'])
+@require_auth
+def get_frame_edit_count():
+    """Get count of frames in a frame_edit folder"""
+    folder = request.args.get('folder', '').strip()
+    
+    if not folder:
+        return jsonify({'success': False, 'error': 'No folder specified'}), 400
+    
+    # Extract folder name from path (remove 'frame_edit/' prefix if present)
+    folder_name = folder.replace('frame_edit/', '').replace('frame_edit\\', '')
+    
+    if not folder_name:
+        return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
+    
+    # Locate frames in ComfyUI input/frame_edit/[folder]/
+    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+    frame_folder = comfyui_input_dir / 'frame_edit' / folder_name
+    
+    if not frame_folder.exists():
+        return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
+    
+    # Get all image files in folder
+    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+    frame_files = [f for f in frame_folder.iterdir() if f.is_file() and f.suffix.lower() in allowed_extensions]
+    
+    return jsonify({
+        'success': True,
+        'frame_count': len(frame_files),
+        'folder': folder_name
+    })
+
+
+@app.route('/api/frame-edit/process', methods=['POST'])
+@require_auth
+def process_frame_edit_batch():
+    """Process all frames in a frame_edit folder through ComfyUI"""
+    data = request.json
+    folder = data.get('folder', '').strip()
+    
+    if not folder:
+        return jsonify({'success': False, 'error': 'No folder specified'}), 400
+    
+    # Extract folder name from path (remove 'frame_edit/' prefix if present)
+    folder_name = folder.replace('frame_edit/', '').replace('frame_edit\\', '')
+    
+    if not folder_name:
+        return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
+    
+    # Locate frames in ComfyUI input/frame_edit/[folder]/
+    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+    frame_folder = comfyui_input_dir / 'frame_edit' / folder_name
+    
+    if not frame_folder.exists():
+        return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
+    
+    # Get all image files in folder
+    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+    frame_files = [f for f in frame_folder.iterdir() if f.is_file() and f.suffix.lower() in allowed_extensions]
+    
+    if not frame_files:
+        return jsonify({'success': False, 'error': 'No image files found in folder'}), 404
+    
+    # Sort by filename to maintain order
+    frame_files.sort()
+    
+    # Get generation parameters
+    prompt = data.get('prompt', '').strip()
+    steps = int(data.get('steps', 4))
+    cfg = float(data.get('cfg', 1.0))
+    shift = float(data.get('shift', 3.0))
+    seed_str = data.get('seed', '').strip()
+    file_prefix = data.get('file_prefix', 'frame_edit').strip()
+    
+    # LoRA settings
+    mcnl_lora = data.get('mcnl_lora', False)
+    snofs_lora = data.get('snofs_lora', False)
+    male_lora = data.get('male_lora', False)
+    
+    # Output folder: use custom name or default to input folder name
+    output_folder = data.get('output_folder', '').strip()
+    if not output_folder or output_folder.lower() == 'auto':
+        output_folder = folder_name  # Use input folder name as default
+    output_subfolder = f"frame_edit/{output_folder}"
+    
+    # Queue individual jobs for each frame
+    queued_jobs = []
+    
+    with queue_lock:
+        for frame_file in frame_files:
+            # Use relative path from input directory
+            relative_frame_path = f"frame_edit/{folder_name}/{frame_file.name}"
+            
+            job_id = str(uuid.uuid4())
+            job = {
+                'id': job_id,
+                'job_type': 'image',
+                'timestamp': datetime.now().isoformat(),
+                'status': 'queued',
+                'prompt': prompt,
+                'width': 1024,  # Default width
+                'height': 1024,  # Default height
+                'steps': steps,
+                'cfg': cfg,
+                'shift': shift,
+                'seed': seed_str or str(random.randint(0, 2**32 - 1)),
+                'use_image': True,  # i2i mode
+                'use_image_size': True,  # Use source image size
+                'image_filename': relative_frame_path,
+                'file_prefix': file_prefix,
+                'subfolder': output_subfolder,
+                'mcnl_lora': mcnl_lora,
+                'snofs_lora': snofs_lora,
+                'male_lora': male_lora,
+                'frame_edit_batch': True  # Flag for tracking
+            }
+            
+            generation_queue.insert(0, job)
+            queued_jobs.append(job_id)
+    
+    save_queue_state()
+    
+    return jsonify({
+        'success': True,
+        'job_count': len(queued_jobs),
+        'folder': folder_name,
+        'output_path': output_subfolder,
+        'message': f'Queued {len(queued_jobs)} frames for processing'
+    })
+
+
+@app.route('/api/frame-edit/count-output', methods=['GET'])
+@require_auth
+def get_frame_edit_output_count():
+    """Get count of frames in a frame_edit output folder"""
+    folder = request.args.get('folder', '').strip()
+    
+    if not folder:
+        return jsonify({'success': False, 'error': 'No folder specified'}), 400
+    
+    # Extract folder name from path (remove 'images/frame_edit/' prefix if present)
+    folder_name = folder.replace('images/frame_edit/', '').replace('images\\frame_edit\\', '')
+    
+    if not folder_name:
+        return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
+    
+    # Locate frames in outputs/images/frame_edit/[folder]/
+    frame_folder = OUTPUT_DIR / 'images' / 'frame_edit' / folder_name
+    
+    if not frame_folder.exists():
+        return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
+    
+    # Get all image files in folder
+    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+    frame_files = [f for f in frame_folder.iterdir() if f.is_file() and f.suffix.lower() in allowed_extensions]
+    
+    return jsonify({
+        'success': True,
+        'frame_count': len(frame_files),
+        'folder': folder_name
+    })
+
+
+@app.route('/api/frame-edit/stitch', methods=['POST'])
+@require_auth
+def stitch_frames_to_video():
+    """Stitch frames from input or output folder into a video"""
+    import subprocess
+    
+    data = request.json
+    folder = data.get('folder', '').strip()
+    fps = float(data.get('fps', 30))
+    output_name = data.get('output_name', '').strip()
+    source = data.get('source', 'output').strip()  # 'input' or 'output'
+    
+    if not folder:
+        return jsonify({'success': False, 'error': 'No folder specified'}), 400
+    
+    # Determine folder location based on source
+    if source == 'input':
+        # Extract folder name from path (remove 'frame_edit/' prefix if present)
+        folder_name = folder.replace('frame_edit/', '').replace('frame_edit\\', '')
+        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+        frame_folder = comfyui_input_dir / 'frame_edit' / folder_name
+    else:
+        # Extract folder name from path (remove 'images/frame_edit/' prefix if present)
+        folder_name = folder.replace('images/frame_edit/', '').replace('images\\frame_edit\\', '')
+        frame_folder = OUTPUT_DIR / 'images' / 'frame_edit' / folder_name
+    
+    if not folder_name:
+        return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
+    
+    if not frame_folder.exists():
+        return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
+    
+    # Get all image files in folder (sorted)
+    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+    frame_files = sorted([f for f in frame_folder.iterdir() if f.is_file() and f.suffix.lower() in allowed_extensions])
+    
+    if not frame_files:
+        return jsonify({'success': False, 'error': 'No image files found in folder'}), 404
+    
+    # Generate output video name
+    if not output_name:
+        output_name = f"{folder_name}.mp4"
+    elif not output_name.endswith('.mp4'):
+        output_name = f"{output_name}.mp4"
+    
+    # Create output directory: outputs/videos/frame_edit/
+    video_output_dir = OUTPUT_DIR / 'videos' / 'frame_edit'
+    video_output_dir.mkdir(parents=True, exist_ok=True)
+    
+    output_path = video_output_dir / output_name
+    
+    # If file exists, add timestamp to make unique
+    if output_path.exists():
+        timestamp = datetime.now().strftime('%H%M%S')
+        output_name = f"{Path(output_name).stem}_{timestamp}.mp4"
+        output_path = video_output_dir / output_name
+    
+    try:
+        # Use ffmpeg to stitch frames
+        # Pattern matches frame_0001.png, frame_0002.png, etc.
+        # -framerate: input framerate
+        # -pattern_type glob: use glob pattern matching
+        # -i: input pattern
+        # -c:v libx264: use H.264 codec
+        # -pix_fmt yuv420p: pixel format for compatibility
+        # -crf 18: high quality (lower = better quality, 18 is visually lossless)
+        
+        # Create a file list for ffmpeg (more reliable than glob patterns)
+        file_list_path = frame_folder / 'ffmpeg_file_list.txt'
+        with open(file_list_path, 'w', encoding='utf-8') as f:
+            for frame_file in frame_files:
+                # FFmpeg format: file 'absolute_path' (use absolute paths to avoid issues)
+                absolute_path = str(frame_file.absolute()).replace('\\', '/')
+                f.write(f"file '{absolute_path}'\n")
+        
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-f', 'concat',
+            '-safe', '0',
+            '-r', str(fps),
+            '-i', str(file_list_path.absolute()),  # Use absolute path for file list
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '18',
+            '-y',  # Overwrite output file
+            str(output_path.absolute())  # Use absolute path for output
+        ]
+        
+        print(f"[FRAME_STITCH] Stitching {len(frame_files)} frames to video")
+        print(f"[FRAME_STITCH] FPS: {fps}")
+        print(f"[FRAME_STITCH] Output: {output_path}")
+        print(f"[FRAME_STITCH] File list: {file_list_path}")
+        
+        # Run ffmpeg (no cwd needed since we're using absolute paths)
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=600)
+        
+        # Clean up file list
+        try:
+            file_list_path.unlink()
+        except:
+            pass
+        
+        if result.returncode != 0:
+            print(f"[FRAME_STITCH] FFmpeg error: {result.stderr}")
+            return jsonify({
+                'success': False,
+                'error': f'FFmpeg failed: {result.stderr[:200]}'
+            }), 500
+        
+        print(f"[FRAME_STITCH] Video created: {output_path}")
+        
+        # Add metadata entry (using positional args matching function signature)
+        relative_video_path = f"videos/frame_edit/{output_name}"
+        metadata_entry = add_metadata_entry(
+            str(output_path),     # path
+            f"Stitched from frames in {folder_name}",  # prompt
+            0, 0,                 # width, height (not applicable)
+            0,                    # steps (not applicable)
+            0,                    # seed (not applicable)
+            "",                   # file_prefix (empty)
+            "frame_edit",         # subfolder
+            job_type='video',
+            source_image=folder_name,  # Store source folder in source_image field
+            frames=len(frame_files),
+            fps=fps
+        )
+        
+        return jsonify({
+            'success': True,
+            'video_path': relative_video_path,
+            'frame_count': len(frame_files),
+            'fps': fps,
+            'message': f'Successfully stitched {len(frame_files)} frames to video'
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Video stitching timed out'}), 500
+    except Exception as e:
+        print(f"[FRAME_STITCH] Error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -4158,8 +4599,8 @@ def browse_images():
                         'type': 'folder'
                     })
             
-            # Get all image files
-            allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+            # Get all image and video files
+            allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.mp4', '.webm', '.mov', '.avi', '.mkv'}
             images = []
             
             for file in current_dir.iterdir():
@@ -5108,22 +5549,10 @@ def ensure_dummy_image():
 
 
 if __name__ == '__main__':
-    import argparse
-    
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Velvet Reverie - ComfyUI Web UI')
-    parser.add_argument('--host', type=str, default=None, help='Host address (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=None, help='Port number (default: 4879)')
-    args = parser.parse_args()
-    
-    # Priority: CLI args > Environment variables > Defaults
-    host = args.host or os.environ.get('VELVET_HOST', '0.0.0.0')
-    port = args.port or int(os.environ.get('VELVET_PORT', '4879'))
-    
     print("=" * 60)
     print("ComfyUI Web UI Starting...")
     print("=" * 60)
-    print(f"Server: http://{host}:{port}")
+    print(f"Server: http://0.0.0.0:4879")
     print(f"Output Directory: {OUTPUT_DIR.absolute()}")
     print(f"ComfyUI Server: http://127.0.0.1:8188")
     print("=" * 60)
@@ -5132,4 +5561,4 @@ if __name__ == '__main__':
     ensure_dummy_image()
     
     print("=" * 60)
-    app.run(host=host, port=port, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=4879, debug=False, threaded=True)

@@ -1,0 +1,10 @@
+{
+  "run": [
+    {
+      "method": "browser.open",
+      "params": {
+        "uri": "http://localhost:4879"
+      }
+    }
+  ]
+}

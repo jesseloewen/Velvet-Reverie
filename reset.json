@@ -1,0 +1,28 @@
+{
+  "run": [
+    {
+      "method": "fs.rm",
+      "params": {
+        "path": "venv"
+      }
+    },
+    {
+      "method": "fs.rm",
+      "params": {
+        "path": "__pycache__"
+      }
+    },
+    {
+      "method": "fs.rm",
+      "params": {
+        "path": "outputs"
+      }
+    },
+    {
+      "method": "notify",
+      "params": {
+        "html": "Reset complete! All generated images and virtual environment have been removed."
+      }
+    }
+  ]
+}

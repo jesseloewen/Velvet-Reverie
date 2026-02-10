@@ -1,8 +1,8 @@
 /* Velvet Reverie - Multi-Theme System */
 
-/* Theme: Violet (Default) */
+/* Theme: Velvet (Default) */
 :root,
-[data-theme="violet"] {
+[data-theme="velvet"] {
     --bg-primary: #1d0632;
     --bg-secondary: #412355;
     --bg-tertiary: #472061;
@@ -113,13 +113,176 @@ body {
     display: flex;
     height: 100vh;
     overflow: hidden;
+    position: relative;
 }
 
-/* Queue Sidebar */
+/* Mobile Sidebar Backdrop */
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 400;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-backdrop.active {
+    display: block;
+    opacity: 1;
+}
+
+/* Tabs Sidebar (Left) */
+.tabs-sidebar {
+    width: 260px;
+    background-color: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease;
+    z-index: 100;
+    overflow: hidden;
+    order: -1; /* Place on the left */
+}
+
+.tabs-sidebar.collapsed {
+    width: 40px;
+}
+
+.tabs-sidebar-header {
+    padding: 1.5rem;
+    padding-top: calc(env(safe-area-inset-top, 0) + 1.5rem);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-width: 260px;
+}
+
+.tabs-sidebar.collapsed .tabs-sidebar-header {
+    min-width: auto;
+    padding: 0.5rem;
+    justify-content: center;
+}
+
+.tabs-sidebar-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    transition: opacity 0.3s ease;
+}
+
+.tabs-sidebar.collapsed .tabs-sidebar-header h2 {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+}
+
+.toggle-tabs {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent; /* Remove iOS tap highlight */
+}
+
+.toggle-tabs:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+}
+
+.toggle-tabs:active {
+    transform: scale(0.95);
+    background: var(--accent-primary);
+}
+
+.tabs-sidebar.collapsed .toggle-tabs svg {
+    transform: rotate(180deg);
+}
+
+.tabs-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    transition: opacity 0.3s ease;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+.tabs-sidebar.collapsed .tabs-sidebar-content {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Tab Navigation in Sidebar */
+.tab-navigation-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.tab-navigation-sidebar .tab-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.tab-navigation-sidebar .tab-group-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.25rem;
+}
+
+.tab-navigation-sidebar .tab-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    text-align: left;
+    display: block;
+    width: 100%;
+    -webkit-tap-highlight-color: transparent; /* Remove iOS tap highlight */
+}
+
+.tab-navigation-sidebar .tab-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+}
+
+.tab-navigation-sidebar .tab-btn:active {
+    transform: scale(0.98);
+}
+
+.tab-navigation-sidebar .tab-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+/* Queue Sidebar (Right) */
 .queue-sidebar {
     width: 320px;
     background-color: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
+    border-left: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     transition: width 0.3s ease;
@@ -230,11 +393,17 @@ body {
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent; /* Remove iOS tap highlight */
 }
 
 .toggle-queue:hover {
     background: var(--bg-hover);
     border-color: var(--accent-primary);
+}
+
+.toggle-queue:active {
+    transform: scale(0.95);
+    background: var(--accent-primary);
 }
 
 .queue-sidebar.collapsed .toggle-queue svg {
@@ -246,6 +415,7 @@ body {
     overflow-y: auto;
     padding: 1rem;
     transition: opacity 0.3s ease;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
 }
 
 .queue-sidebar.collapsed .queue-content {
@@ -260,6 +430,11 @@ body {
     padding: 1rem;
     margin-bottom: 0.75rem;
     transition: all 0.2s;
+}
+
+.queue-item.has-image {
+    background: transparent;
+    border: none;
 }
 
 .queue-item[draggable="true"] {
@@ -280,6 +455,11 @@ body {
     background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(99, 102, 241, 0.1) 100%);
 }
 
+.queue-item.active.has-image {
+    background: transparent;
+    border: none;
+}
+
 .queue-item.has-image {
     padding: 0;
     display: flex;
@@ -290,8 +470,10 @@ body {
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
-    border-radius: 8px 8px 0 0;
+    border-radius: 8px;
     cursor: pointer;
+    background: transparent;
+    position: relative;
 }
 
 .queue-item-image img {
@@ -308,6 +490,14 @@ body {
 
 .queue-item-content {
     padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 8px 8px;
+}
+
+.queue-item.active .queue-item-content {
+    border-color: var(--accent-primary);
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(99, 102, 241, 0.1) 100%);
 }
 
 .queue-item-header {
@@ -477,7 +667,6 @@ body {
     color: var(--text-primary);
     width: 60px;
     height: 32px;
-    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -491,12 +680,49 @@ body {
     border-color: var(--accent-primary);
 }
 
-.header-toggle-btn svg {
+.header-toggle-chevron {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s;
+}
+
+.header-toggle-chevron svg {
     transition: transform 0.3s ease;
 }
 
-.collapsible-header-container.collapsed + .header-toggle-btn svg {
+.collapsible-header-container.collapsed + .header-toggle-btn .header-toggle-chevron svg {
     transform: rotate(180deg);
+}
+
+.header-toggle-tab-btn,
+.header-toggle-queue-btn {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s;
+}
+
+.header-toggle-tab-btn:hover,
+.header-toggle-queue-btn:hover {
+    color: var(--accent-primary);
+}
+
+.header-toggle-tab-btn:active,
+.header-toggle-queue-btn:active {
+    transform: scale(0.95);
+    background: var(--bg-hover);
+    border-radius: 8px;
 }
 
 .app-header {
@@ -508,6 +734,7 @@ body {
     justify-content: space-between;
     align-items: center;
     flex-shrink: 0;
+    gap: 0.75rem;
 }
 
 .app-header h1 {
@@ -557,7 +784,7 @@ body {
 }
 
 /* Dynamic arrow color based on theme */
-[data-theme="violet"] .theme-dropdown,
+[data-theme="velvet"] .theme-dropdown,
 [data-theme="dark"] .theme-dropdown,
 [data-theme="ocean"] .theme-dropdown,
 [data-theme="sunset"] .theme-dropdown {
@@ -660,64 +887,8 @@ body {
     text-align: right;
 }
 
-/* Tab Navigation */
-.tab-navigation {
-    display: flex;
-    gap: 0;
-    background-color: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    padding: 0;
-    width: 100%;
-    flex-shrink: 0;
-}
-
-.tab-group {
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--border-color);
-    flex: 1;
-}
-
-.tab-group:last-child {
-    border-right: none;
-}
-
-.tab-group-header {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    padding: 0.375rem 0.875rem 0.2rem;
-    background: var(--bg-tertiary);
-}
-
-.tab-group .tab-btn {
-    border-bottom: 2px solid transparent;
-    border-right: none;
-}
-
-.tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    padding: 0.625rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
-}
-
-.tab-btn:hover {
-    color: var(--text-primary);
-    background: var(--bg-tertiary);
-}
-
-.tab-btn.active {
-    color: var(--accent-primary);
-    border-bottom-color: var(--accent-primary);
-}
+/* Tab Navigation - MOVED TO SIDEBAR (see .tab-navigation-sidebar) */
+/* Old horizontal tab navigation removed - tabs now in left sidebar */
 
 .tab-content {
     display: none;
@@ -777,6 +948,13 @@ body {
 }
 
 .form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
     margin-bottom: 1.5rem;
 }
 
@@ -1988,7 +2166,8 @@ input[type="range"]:focus {
 }
 
 /* Mobile Menu Button */
-.mobile-menu-btn {
+.mobile-menu-btn,
+.mobile-queue-btn {
     display: none;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
@@ -2001,12 +2180,21 @@ input[type="range"]:focus {
     justify-content: center;
     transition: all 0.2s;
     padding: 0;
+    margin-right: 0.5rem;
+    -webkit-tap-highlight-color: transparent; /* Remove iOS tap highlight */
 }
 
-.mobile-menu-btn:hover {
+.mobile-menu-btn:hover,
+.mobile-queue-btn:hover {
     background: var(--accent-primary);
     border-color: var(--accent-primary);
     color: white;
+}
+
+.mobile-menu-btn:active,
+.mobile-queue-btn:active {
+    transform: scale(0.95);
+    background: var(--accent-primary);
 }
 
 /* Collapsible Headers */
@@ -2064,29 +2252,97 @@ input[type="range"]:focus {
     }
     
     /* Show mobile menu button */
-    .mobile-menu-btn {
+    .mobile-menu-btn,
+    .mobile-queue-btn {
         display: flex;
     }
     
+    /* Make header wrap on mobile with 3-row grid layout */
     .app-header {
-        padding: 0.75rem 1rem;
-        padding-top: calc(env(safe-area-inset-top, 0) + 0.75rem);
+        padding: 0.625rem 0.75rem;
+        padding-top: calc(env(safe-area-inset-top, 0) + 0.625rem);
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        grid-template-rows: auto auto auto;
+        gap: 0.5rem;
+        column-gap: 0.75rem;
+    }
+    
+    /* Title container - spans middle column, both rows */
+    .header-title {
+        gap: 0.5rem;
+        grid-column: 2 / 3;
+        grid-row: 1 / 3;
+        display: flex;
+        align-items: center;
+        min-width: 0;
     }
     
     .app-header h1 {
-        font-size: 1rem;
+        font-size: 1.125rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     
     .header-icon {
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
     }
     
-    .header-title {
-        gap: 0.5rem;
+    /* Theme selector - spans bottom row on mobile */
+    .theme-selector {
+        grid-column: 1 / 4;
+        grid-row: 3 / 4;
+        margin: 0 !important;
     }
     
-    /* Header Toggle Button - larger on mobile */
+    .theme-dropdown {
+        width: 100%;
+        padding: 0.5rem 1.5rem 0.5rem 0.5rem;
+        font-size: 0.8125rem;
+    }
+    
+    /* All icon buttons consistent sizing on mobile */
+    .app-header .btn-icon,
+    .mobile-menu-btn,
+    .mobile-queue-btn {
+        width: 38px;
+        height: 38px;
+        flex-shrink: 0;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+    }
+    
+    .app-header .btn-icon svg {
+        width: 18px;
+        height: 18px;
+    }
+    
+    /* Button order on mobile */
+    .mobile-menu-btn {
+        order: -1;
+        margin-right: 0;
+    }
+    
+    .app-header #unloadModelsBtn {
+        order: 11;
+    }
+    
+    .app-header #logoutBtn {
+        order: 12;
+    }
+    
+    .mobile-queue-btn {
+        order: 13;
+        margin-right: 0;
+    }
+    
+    /* Header Toggle Button - full width with buttons on mobile when collapsed */
     .header-toggle-btn {
         width: 80px;
         height: 40px;
@@ -2096,15 +2352,41 @@ input[type="range"]:focus {
     /* Keep header toggle accessible once the header is collapsed on mobile */
     .collapsible-header-container.collapsed + .header-toggle-btn {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0) + 0.75rem);
-        left: 50%;
-        transform: translateX(-50%);
+        top: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        transform: none;
         margin: 0;
         z-index: 250;
+        border-radius: 0;
+        border-top: none;
+        border-left: none;
+        border-right: none;
+        height: calc(48px + env(safe-area-inset-top, 0));
+        justify-content: space-between;
+        padding: env(safe-area-inset-top, 0) 0.75rem 0 0.75rem;
+    }
+    
+    .collapsible-header-container.collapsed + .header-toggle-btn .header-toggle-tab-btn,
+    .collapsible-header-container.collapsed + .header-toggle-btn .header-toggle-queue-btn {
+        display: flex;
+        width: 44px;
+        height: 44px;
+    }
+    
+    .collapsible-header-container.collapsed + .header-toggle-btn .header-toggle-tab-btn svg,
+    .collapsible-header-container.collapsed + .header-toggle-btn .header-toggle-queue-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .collapsible-header-container.collapsed + .header-toggle-btn .header-toggle-chevron {
+        flex: 0 0 auto;
     }
 
     .collapsible-header-container.collapsed + .header-toggle-btn + .content-wrapper {
-        padding-top: calc(env(safe-area-inset-top, 0) + 3.5rem);
+        padding-top: calc(48px + env(safe-area-inset-top, 0));
     }
     
     /* Hardware monitor on mobile - more compact */
@@ -2142,21 +2424,22 @@ input[type="range"]:focus {
     /* Queue sidebar as overlay */
     .queue-sidebar {
         position: fixed;
+        right: 0;
         height: 100%;
         width: 100%;
         max-width: 320px;
         z-index: 200;
-        transform: translateX(-100%);
+        transform: translateX(100%);
         transition: transform 0.3s ease;
     }
     
     .queue-sidebar.collapsed {
-        transform: translateX(-100%);
+        transform: translateX(100%);
     }
     
     .queue-sidebar:not(.collapsed) {
         transform: translateX(0);
-        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+        box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
     }
     
     /* Main content uses full width */
@@ -2190,44 +2473,83 @@ input[type="range"]:focus {
         padding: 0.625rem 1rem;
     }
     
-    .btn-icon, .toggle-queue {
+    .btn-icon, .toggle-queue, .toggle-tabs {
         min-width: 44px;
         min-height: 44px;
+    }
+    
+    /* Sidebars on mobile */
+    /* Mobile sidebar backdrop */
+    .sidebar-backdrop {
+        z-index: 450;
+    }
+    
+    /* Tabs sidebar (left) - overlay on mobile */
+    .tabs-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        height: 100vh;
+        width: 280px;
+        max-width: 85vw; /* Don't take full width */
+        z-index: 500;
+        transform: translateX(0);
+        transition: transform 0.3s ease;
+        box-shadow: 2px 0 8px var(--shadow);
+        padding-left: env(safe-area-inset-left, 0); /* Safe area for notched devices */
+    }
+    
+    .tabs-sidebar.collapsed {
+        transform: translateX(-100%);
+    }
+    
+    /* Queue sidebar (right) - overlay on mobile */
+    .queue-sidebar {
+        position: fixed;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        height: 100vh;
+        width: 320px;
+        max-width: 85vw; /* Don't take full width */
+        z-index: 500;
+        transform: translateX(0);
+        transition: transform 0.3s ease;
+        box-shadow: -2px 0 8px var(--shadow);
+        padding-right: env(safe-area-inset-right, 0); /* Safe area for notched devices */
+    }
+    
+    .queue-sidebar.collapsed {
+        transform: translateX(100%);
+    }
+    
+    /* Adjust content padding for safe areas */
+    .tabs-sidebar-content {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+    }
+    
+    .queue-content {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+    }
+    
+    /* Main content takes full width on mobile */
+    .main-content {
+        margin-left: 0;
+        width: 100%;
     }
     
     .checkbox-label {
         min-height: 44px;
     }
     
-    /* Tab navigation - more compact on mobile */
-    .tab-navigation {
-        padding: 0;
-        overflow-x: auto;
-        gap: 0;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
-    }
-    
-    .tab-group {
-        flex-shrink: 0;
-        min-width: fit-content;
-    }
-    
-    .tab-group-header {
-        padding: 0.375rem 0.625rem 0.25rem;
-        font-size: 0.65rem;
-    }
-    
-    .tab-btn {
-        padding: 0.75rem 0.875rem;
-        font-size: 0.8125rem;
-        white-space: nowrap;
-        min-height: 44px;
-    }
+    /* Tab navigation - removed from header, now in sidebar */
+    /* Tab navigation moved to left sidebar */
     
     /* Content wrapper */
     .content-wrapper {
         padding: 1rem;
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
     }
     
     /* Generation panel */
@@ -2465,17 +2787,67 @@ input[type="range"]:focus {
 /* Extra small devices */
 @media (max-width: 480px) {
     .app-header {
-        padding: 0.625rem 0.75rem;
+        padding: 0.5rem 0.625rem;
+        padding-top: calc(env(safe-area-inset-top, 0) + 0.5rem);
+        gap: 0.4rem;
+        row-gap: 0.5rem;
     }
     
     .app-header h1 {
-        font-size: 0.9rem;
+        font-size: 1rem;
+    }
+    
+    /* Smaller mobile buttons on tiny screens */
+    .app-header .btn-icon,
+    .mobile-menu-btn,
+    .mobile-queue-btn {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .mobile-menu-btn svg,
+    .mobile-queue-btn svg,
+    .app-header .btn-icon svg {
+        width: 18px;
+        height: 18px;
+    }
+    
+    /* Theme selector even more compact on tiny screens */
+    .theme-dropdown {
+        min-width: 90px;
+        padding: 0.4rem 1.25rem 0.4rem 0.4rem;
+        font-size: 0.75rem;
+    }
+    
+    .header-icon {
+        width: 28px;
+        height: 28px;
     }
     
     /* Header toggle button - even larger on small screens */
     .header-toggle-btn {
         width: 90px;
         height: 44px;
+    }
+    
+    /* Sidebars take up more screen on tiny devices */
+    .tabs-sidebar {
+        max-width: 90vw;
+    }
+    
+    .queue-sidebar {
+        max-width: 90vw;
+    }
+    
+    /* Sidebar headers more compact */
+    .tabs-sidebar-header,
+    .queue-header {
+        padding: 1rem;
+    }
+    
+    .tabs-sidebar-header h2,
+    .queue-header h2 {
+        font-size: 1.1rem;
     }
     
     .tab-btn {
@@ -2880,15 +3252,15 @@ input[type="range"]:focus {
     .gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
     .gallery-item-info { padding: 0.5rem; }
     .gallery-item-prompt { font-size: 0.8rem; }
-    .fullscreen-controls { padding: 0.375rem; gap: 0.5rem; flex-wrap: wrap; }
+    .fullscreen-controls { padding: 0.375rem; padding-bottom: calc(0.375rem + env(safe-area-inset-bottom, 0)); gap: 0.5rem; flex-wrap: wrap; }
     .fullscreen-counter { order: -1; width: 100%; text-align: center; margin: 0.25rem 0; }
     .fullscreen-zoom-controls { width: 100%; justify-content: center; }
     .fullscreen-autoplay-controls { width: 100%; justify-content: center; margin-top: 0.25rem; }
     .fullscreen-control-btn { width: 44px; height: 44px; }
-    .fullscreen-prev, .fullscreen-next { bottom: 1rem; top: auto; transform: none; }
+    .fullscreen-prev, .fullscreen-next { bottom: calc(1rem + env(safe-area-inset-bottom, 0)); top: auto; transform: none; }
     .fullscreen-prev { left: 0.75rem; }
     .fullscreen-next { right: 0.75rem; }
-    .fullscreen-image-container { top: 64px; bottom: 56px; }
+    .fullscreen-image-container { top: 64px; bottom: calc(56px + env(safe-area-inset-bottom, 0)); }
     #fullscreenAutoplayInterval { height: 44px; font-size: 1rem; min-width: 72px; }
 }
 
@@ -4595,6 +4967,7 @@ input[type="range"]:focus {
     .chat-input-container {
         flex-direction: column;
         gap: 0.75rem;
+        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0));
     }
     
     .chat-input-container .btn {
@@ -5480,6 +5853,7 @@ input[type="range"]:focus {
     
     .chat-input-container {
         padding: 0.75rem 1rem;
+        padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0));
         display: flex;
         flex-direction: row;
         align-items: flex-end;
@@ -5644,9 +6018,10 @@ input[type="range"]:focus {
     .custom-modal .modal-content {
         max-width: 95vw !important;
         width: 95vw !important;
-        max-height: 90vh !important;
-        height: 85vh !important;
+        max-height: calc(90vh - env(safe-area-inset-bottom, 0)) !important;
+        height: calc(85vh - env(safe-area-inset-bottom, 0)) !important;
         margin: 5vh auto;
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0)) !important;
     }
     
     /* Single column on mobile */

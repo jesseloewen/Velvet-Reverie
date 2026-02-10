@@ -56,6 +56,21 @@ function showStoryCopySuccess(buttonElement) {
     }, 2000);
 }
 
+// TTS wrapper functions for story messages
+function sendStoryToTTS(messageIndex) {
+    if (!currentStorySession || !currentStorySession.messages[messageIndex]) return;
+    
+    const message = currentStorySession.messages[messageIndex];
+    sendToTTS(message.content);
+}
+
+function storyTTSNow(messageIndex) {
+    if (!currentStorySession || !currentStorySession.messages[messageIndex]) return;
+    
+    const message = currentStorySession.messages[messageIndex];
+    ttsNow(message.content);
+}
+
 // Estimate token count for text (rough approximation)
 function estimateTokenCount(text) {
     if (!text) return 0;
@@ -635,6 +650,37 @@ function createStoryMessageElement(message) {
         copyBtn.onclick = () => copyStoryMessageText(content, copyBtn);
         btnContainer.appendChild(copyBtn);
         
+        // Send to TTS button - navigates to TTS tab with text
+        const messageIndex = currentStorySession?.messages.findIndex(m => 
+            (m.message_id && m.message_id === message.message_id) || 
+            (m.response_id && m.response_id === message.response_id) ||
+            (m.timestamp === message.timestamp && m.content === content)
+        );
+        
+        const sendTTSBtn = document.createElement('button');
+        sendTTSBtn.className = 'chat-action-btn';
+        sendTTSBtn.title = 'Send to TTS tab';
+        sendTTSBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+        `;
+        sendTTSBtn.onclick = () => sendStoryToTTS(messageIndex);
+        btnContainer.appendChild(sendTTSBtn);
+        
+        // TTS Now button - queues immediately with current settings
+        const ttsNowBtn = document.createElement('button');
+        ttsNowBtn.className = 'chat-action-btn';
+        ttsNowBtn.title = 'Generate TTS now';
+        ttsNowBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+        `;
+        ttsNowBtn.onclick = () => storyTTSNow(messageIndex);
+        btnContainer.appendChild(ttsNowBtn);
+        
         // Edit button
         const editBtn = document.createElement('button');
         editBtn.className = 'chat-action-btn';
@@ -645,11 +691,6 @@ function createStoryMessageElement(message) {
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
         `;
-        const messageIndex = currentStorySession?.messages.findIndex(m => 
-            (m.message_id && m.message_id === message.message_id) || 
-            (m.response_id && m.response_id === message.response_id) ||
-            (m.timestamp === message.timestamp && m.content === content)
-        );
         editBtn.onclick = () => editStoryMessage(div, messageIndex);
         btnContainer.appendChild(editBtn);
         

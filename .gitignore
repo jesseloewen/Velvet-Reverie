@@ -30,7 +30,7 @@ instance/
 
 # Output files - Generated images and metadata
 outputs/
-*.png
+# *.png
 *.jpg
 *.jpeg
 *.gif
