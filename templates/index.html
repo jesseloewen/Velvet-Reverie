@@ -2829,6 +2829,39 @@
                 <h2>Queue <span id="queueCounter" class="queue-counter">0</span></h2>
             </div>
             
+            <!-- Queue Filter Controls -->
+            <div class="queue-filters">
+                <div class="queue-filter-buttons">
+                    <button class="queue-filter-btn active" id="filterQueued" title="Show/Hide Queued Items">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 11 12 14 22 4"></polyline>
+                            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                        </svg>
+                        <span>Queued</span>
+                    </button>
+                    <button class="queue-filter-btn active" id="filterGenerating" title="Show/Hide Generating Items">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span>Active</span>
+                    </button>
+                    <button class="queue-filter-btn active" id="filterCompleted" title="Show/Hide Completed Items">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <span>Done</span>
+                    </button>
+                </div>
+                <button class="queue-direction-btn" id="queueDirectionBtn" title="Toggle Queue Direction">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <polyline points="19 12 12 19 5 12"></polyline>
+                    </svg>
+                </button>
+            </div>
+            
             <div class="queue-content">
                 <div class="queue-list" id="queueList">
                     <!-- Queued items will be displayed here -->

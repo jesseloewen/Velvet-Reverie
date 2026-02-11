@@ -33,6 +33,14 @@ let allItems = [];
 let selectionMode = false;
 let lastSeenCompletedIds = new Set();
 
+// Queue filter state
+let queueFilters = {
+    queued: true,
+    generating: true,
+    completed: true
+};
+let queueReversed = false; // Queue direction (false = newest first, true = oldest first)
+
 // Fullscreen zoom state
 let zoomLevel = 1;
 let zoomPanX = 0;
@@ -156,6 +164,11 @@ document.addEventListener('DOMContentLoaded', function() {
         browseFolder('');
         console.log('✓ Folder browsing initialized');
     } catch (e) { console.error('✗ Folder browsing failed:', e); }
+    
+    try {
+        loadQueuePreferences();
+        console.log('✓ Queue preferences loaded');
+    } catch (e) { console.error('✗ Queue preferences failed:', e); }
     
     try {
         startQueueUpdates();
@@ -653,6 +666,12 @@ function initializeEventListeners() {
     document.getElementById('clearQueueBtn').addEventListener('click', clearQueue);
     document.getElementById('unloadModelsBtn').addEventListener('click', unloadModels);
     
+    // Queue filter buttons
+    document.getElementById('filterQueued').addEventListener('click', () => toggleQueueFilter('queued'));
+    document.getElementById('filterGenerating').addEventListener('click', () => toggleQueueFilter('generating'));
+    document.getElementById('filterCompleted').addEventListener('click', () => toggleQueueFilter('completed'));
+    document.getElementById('queueDirectionBtn').addEventListener('click', toggleQueueDirection);
+    
     // Event delegation for cancel buttons and completed images (handles dynamically created content)
     document.addEventListener('click', function(e) {
         // Check if click is on or inside a reorder button
@@ -1039,10 +1058,9 @@ function initializeEventListeners() {
         console.log('✓ Clear video seed listener attached');
     }
     
-    if (generateVideoBtn) {
-        generateVideoBtn.addEventListener('click', generateVideo);
-        console.log('✓ Generate video listener attached');
-    }
+    // Note: generateVideoBtn uses inline onclick handler in HTML for reliability
+    // No addEventListener needed here to avoid duplicate calls
+    
     if (browseVideoImageBtn) {
         browseVideoImageBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1564,6 +1582,124 @@ function updatePauseButton(isPaused) {
     }
 }
 
+// Queue filter and direction functions
+function toggleQueueFilter(filterType) {
+    // Toggle the filter state
+    queueFilters[filterType] = !queueFilters[filterType];
+    
+    // Update button appearance
+    const btnId = `filter${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`;
+    const btn = document.getElementById(btnId);
+    if (btn) {
+        if (queueFilters[filterType]) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    }
+    
+    // Save filter preferences to localStorage
+    localStorage.setItem('queueFilters', JSON.stringify(queueFilters));
+    
+    // Re-render queue immediately
+    updateQueue();
+}
+
+function toggleQueueDirection() {
+    // Toggle the direction state
+    queueReversed = !queueReversed;
+    
+    // Update button appearance
+    const btn = document.getElementById('queueDirectionBtn');
+    if (btn) {
+        if (queueReversed) {
+            btn.classList.add('reversed');
+            btn.title = 'Show Newest First';
+        } else {
+            btn.classList.remove('reversed');
+            btn.title = 'Show Oldest First';
+        }
+    }
+    
+    // Update queue-content container to reverse section order
+    const queueContent = document.querySelector('.queue-content');
+    if (queueContent) {
+        if (queueReversed) {
+            queueContent.classList.add('reversed');
+        } else {
+            queueContent.classList.remove('reversed');
+        }
+    }
+    
+    // Save direction preference to localStorage
+    localStorage.setItem('queueReversed', queueReversed.toString());
+    
+    // Re-render queue immediately
+    updateQueue();
+}
+
+// Load queue filter and direction preferences from localStorage
+function loadQueuePreferences() {
+    // Load filters
+    const savedFilters = localStorage.getItem('queueFilters');
+    if (savedFilters) {
+        try {
+            const parsedFilters = JSON.parse(savedFilters);
+            queueFilters = { ...queueFilters, ...parsedFilters };
+        } catch (e) {
+            console.error('Error parsing saved queue filters:', e);
+        }
+    }
+    
+    // Load direction
+    const savedDirection = localStorage.getItem('queueReversed');
+    if (savedDirection !== null) {
+        queueReversed = savedDirection === 'true';
+    }
+    
+    // Update UI to match loaded preferences
+    updateQueueFilterButtons();
+    updateQueueDirectionButton();
+}
+
+function updateQueueFilterButtons() {
+    // Update filter button states
+    Object.keys(queueFilters).forEach(filterType => {
+        const btnId = `filter${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`;
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            if (queueFilters[filterType]) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
+    });
+}
+
+function updateQueueDirectionButton() {
+    const btn = document.getElementById('queueDirectionBtn');
+    if (btn) {
+        if (queueReversed) {
+            btn.classList.add('reversed');
+            btn.title = 'Show Newest First';
+        } else {
+            btn.classList.remove('reversed');
+            btn.title = 'Show Oldest First';
+        }
+    }
+    
+    // Also update queue-content container class
+    const queueContent = document.querySelector('.queue-content');
+    if (queueContent) {
+        if (queueReversed) {
+            queueContent.classList.add('reversed');
+        } else {
+            queueContent.classList.remove('reversed');
+        }
+    }
+}
+
 async function unloadModels() {
     const confirmed = await showConfirm(
         'Unload all models and clear memory (RAM/VRAM/cache)? This is useful to free up system resources when idle.',
@@ -1688,6 +1824,12 @@ function renderQueue(queue, active, completed) {
         queue = queue.filter(job => job.id !== active.id);
     }
     
+    // Apply queue direction (reverse if needed)
+    if (queueReversed) {
+        queue = [...queue].reverse();
+        completed = [...completed].reverse();
+    }
+    
     // Update queue counter (only if changed)
     const newCounterText = queue.length.toString();
     if (queueCounter.textContent !== newCounterText) {
@@ -1730,15 +1872,20 @@ function renderQueue(queue, active, completed) {
         }
     }
     
-    // Render queued jobs at the top
-    updateSection(queueList, queue);
-    queueList.style.display = queue.length > 0 ? 'block' : 'none';
+    // Render queued jobs at the top (respect filter)
+    if (queueFilters.queued) {
+        updateSection(queueList, queue);
+        queueList.style.display = queue.length > 0 ? 'block' : 'none';
+        
+        // Setup drag and drop handlers for queued items
+        setupQueueDragAndDrop();
+    } else {
+        queueList.style.display = 'none';
+        queueList.innerHTML = '';
+    }
     
-    // Setup drag and drop handlers for queued items
-    setupQueueDragAndDrop();
-    
-    // Render active/generating job in the middle
-    if (active && active.id) {
+    // Render active/generating job in the middle (respect filter)
+    if (queueFilters.generating && active && active.id) {
         updateSection(activeJob, [active], true);
         activeJob.style.display = 'block';
     } else {
@@ -1750,12 +1897,19 @@ function renderQueue(queue, active, completed) {
         activeJob.style.display = 'none';
     }
     
-    // Render completed jobs at the bottom
-    updateSection(completedList, completed);
-    completedList.style.display = completed.length > 0 ? 'block' : 'none';
+    // Render completed jobs at the bottom (respect filter)
+    if (queueFilters.completed) {
+        updateSection(completedList, completed);
+        completedList.style.display = completed.length > 0 ? 'block' : 'none';
+    } else {
+        completedList.style.display = 'none';
+        completedList.innerHTML = '';
+    }
     
     // Show empty message only if nothing to display
-    const hasItems = queue.length > 0 || active || (completed && completed.length > 0);
+    const hasItems = (queueFilters.queued && queue.length > 0) || 
+                     (queueFilters.generating && active) || 
+                     (queueFilters.completed && completed && completed.length > 0);
     const targetEmptyDisplay = hasItems ? 'none' : 'block';
     if (queueEmpty.style.display !== targetEmptyDisplay) {
         queueEmpty.style.display = targetEmptyDisplay;

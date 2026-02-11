@@ -350,6 +350,142 @@ body {
     position: absolute;
 }
 
+/* Queue Filter Controls */
+.queue-filters {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0 1rem 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.queue-filter-buttons {
+    display: flex;
+    gap: 0.25rem;
+    flex: 1;
+}
+
+.queue-filter-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.queue-filter-btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.queue-filter-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-hover);
+    color: var(--text-primary);
+}
+
+.queue-filter-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.queue-filter-btn.active svg {
+    stroke: white;
+}
+
+.queue-direction-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+}
+
+.queue-direction-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+}
+
+.queue-direction-btn.reversed svg {
+    transform: rotate(180deg);
+}
+
+/* Hide filters when sidebar is collapsed */
+.queue-sidebar.collapsed .queue-filters {
+    opacity: 0;
+    pointer-events: none;
+    max-height: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+}
+
+/* Mobile responsive adjustments for queue filters */
+@media (max-width: 768px) {
+    .queue-filters {
+        padding: 0 0.75rem 0.75rem 0.75rem;
+        gap: 0.25rem;
+    }
+    
+    .queue-filter-btn {
+        padding: 0.375rem 0.5rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+    }
+    
+    .queue-filter-btn span {
+        display: none;
+    }
+    
+    .queue-filter-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+    
+    .queue-direction-btn {
+        width: 28px;
+        height: 28px;
+        padding: 0.375rem;
+    }
+    
+    .queue-direction-btn svg {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+/* Even smaller screens - make buttons icon-only */
+@media (max-width: 480px) {
+    .queue-filter-buttons {
+        gap: 0.125rem;
+    }
+    
+    .queue-filter-btn {
+        padding: 0.25rem 0.375rem;
+    }
+}
+
 .btn-icon {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
@@ -416,11 +552,47 @@ body {
     padding: 1rem;
     transition: opacity 0.3s ease;
     -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    display: flex;
+    flex-direction: column;
 }
 
 .queue-sidebar.collapsed .queue-content {
     opacity: 0;
     pointer-events: none;
+}
+
+/* Default order: Queued → Active → Completed */
+.queue-list {
+    order: 1;
+}
+
+.active-job {
+    order: 2;
+}
+
+.completed-list {
+    order: 3;
+}
+
+.queue-empty {
+    order: 4;
+}
+
+/* Reversed order: Completed → Active → Queued */
+.queue-content.reversed .queue-list {
+    order: 3;
+}
+
+.queue-content.reversed .active-job {
+    order: 2;
+}
+
+.queue-content.reversed .completed-list {
+    order: 1;
+}
+
+.queue-content.reversed .queue-empty {
+    order: 4;
 }
 
 .queue-item {
@@ -2329,17 +2501,17 @@ input[type="range"]:focus {
         margin-right: 0;
     }
     
-    .app-header #unloadModelsBtn {
+    .mobile-queue-btn {
         order: 11;
+        margin-right: 0;
     }
     
     .app-header #logoutBtn {
         order: 12;
     }
     
-    .mobile-queue-btn {
+    .app-header #unloadModelsBtn {
         order: 13;
-        margin-right: 0;
     }
     
     /* Header Toggle Button - full width with buttons on mobile when collapsed */
@@ -5785,6 +5957,8 @@ input[type="range"]:focus {
         top: 0;
         width: 100%;
         max-width: 100%;
+        /* Add padding to account for collapsed header bar on mobile */
+        padding-top: calc(48px + env(safe-area-inset-top, 0));
     }
 
     .chat-sessions-sidebar {

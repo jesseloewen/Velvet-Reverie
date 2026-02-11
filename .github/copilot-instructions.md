@@ -4,6 +4,13 @@
 Flask-based web UI for image/video generation with **password protection**, AI chat, interactive storytelling, text-to-speech, batch processing, queue management, multi-theme system, and organized file storage. **Requires ComfyUI server at `http://127.0.0.1:8188`**, **Ollama server at `http://127.0.0.1:11434`**, and **Gradio ChatterBox TTS at `http://127.0.0.1:7860`**. Core dependencies: Flask, psutil, pydub, mutagen, gradio_client (optional except Flask). Supports multiple workflows: Qwen (image), Wan2.2 I2V (video), Gradio ChatterBox (audio with 3 engines), and Ollama LLMs (chat/story).
 
 **RECENT MAJOR CHANGES (2026-02-10):**
+- **Queue Filtering & Direction**: Complete queue management controls with section visibility toggles and reversible order
+  - **Three Filter Buttons**: Toggle visibility of queued, active, and completed sections independently
+  - **Direction Button**: Reverse queue order (newest/oldest first) and swap section positions via CSS flexbox
+  - **Persistent Preferences**: Filter and direction states saved to localStorage
+  - **Mobile Responsive**: Icon-only buttons on mobile (≤768px) with text labels hidden
+  - **Section Reordering**: CSS `order` property swaps Completed ↔ Queued sections when reversed (Active stays middle)
+  - **Filter UI**: Purple background for active filters, gray for inactive; arrow rotates 180° when reversed
 - **Frame Edit Tab**: Complete video-to-frames-to-AI-to-video workflow with 3-step collapsible UI
   - **Step 1 - Extract Frames**: Upload video → extract frames with time range/frame skip controls → saves to `input/frame_edit/[folder]_[fps]fps/`
   - **Step 2 - Process Frames**: Batch AI processing of all extracted frames with image-to-image generation → saves to `outputs/images/frame_edit/[folder]/`
@@ -122,6 +129,8 @@ Flask-based web UI for image/video generation with **password protection**, AI c
 - **Queue System** - Persistent across restarts, thread-safe LIFO/FIFO, unified for all job types
 - **Queue Pause** - Pause queue processing (finishes current job, then waits); orange button state when paused
 - **Queue Reordering** - Drag and drop queued items to change execution order (cannot move below active/completed)
+- **Queue Filtering** - Toggle visibility of queued, active, and completed sections independently
+- **Queue Direction** - Reverse queue order and swap section positions (Queued ↔ Completed)
 - **Persistent Chat Processing** - Chat/story responses save to session even if browser disconnects during generation
 - **Multi-Theme System** - 5 customizable color themes (Velvet, Dark, Light, Ocean, Sunset) with persistent selection
 
@@ -2686,6 +2695,86 @@ async function moveQueueItem(jobId, direction) {
 - Visual feedback: opacity 0.4 while dragging, border indicator on drop target
 - Reordering is immediate and updates across all connected clients
 - Queue state persists to disk after reordering
+
+**Queue Filtering & Direction (2026-02-10):**
+Users can selectively show/hide queue sections and reverse display order:
+
+```javascript
+// State variables for filters and direction
+let queueFilters = {
+    queued: true,      // Show queued items
+    generating: true,  // Show active/generating items
+    completed: true    // Show completed items
+};
+let queueReversed = false; // false = newest first, true = oldest first
+
+// Filter toggles
+function toggleQueueFilter(filterType) {
+    queueFilters[filterType] = !queueFilters[filterType];
+    
+    // Update button appearance
+    const btnId = `filter${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`;
+    const btn = document.getElementById(btnId);
+    if (btn) {
+        btn.classList.toggle('active', queueFilters[filterType]);
+    }
+    
+    // Save to localStorage and re-render
+    localStorage.setItem('queueFilters', JSON.stringify(queueFilters));
+    updateQueue();
+}
+
+// Direction toggle (also swaps section positions)
+function toggleQueueDirection() {
+    queueReversed = !queueReversed;
+    
+    // Update button and queue-content container
+    const btn = document.getElementById('queueDirectionBtn');
+    const queueContent = document.querySelector('.queue-content');
+    
+    if (queueReversed) {
+        btn.classList.add('reversed');
+        queueContent.classList.add('reversed');  // Triggers CSS flexbox reordering
+    } else {
+        btn.classList.remove('reversed');
+        queueContent.classList.remove('reversed');
+    }
+    
+    localStorage.setItem('queueReversed', queueReversed.toString());
+    updateQueue();
+}
+```
+
+**CSS Flexbox Reordering** - Sections swap positions when reversed:
+```css
+.queue-content {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Default order: Queued → Active → Completed */
+.queue-list { order: 1; }
+.active-job { order: 2; }
+.completed-list { order: 3; }
+
+/* Reversed order: Completed → Active → Queued */
+.queue-content.reversed .queue-list { order: 3; }
+.queue-content.reversed .active-job { order: 2; }
+.queue-content.reversed .completed-list { order: 1; }
+```
+
+**Filter UI** (3 toggle buttons + direction button):
+- **Queued** (checkmark icon) - Show/hide queued items
+- **Active** (clock icon) - Show/hide generating items
+- **Done** (checkmark circle icon) - Show/hide completed items
+- **Direction** (arrow icon) - Toggle newest/oldest first + swap sections
+
+**Behavior:**
+- Active filters have purple background, inactive are gray
+- Filters persist to `localStorage.queueFilters`
+- Direction reverses item order AND swaps section positions (Completed ↔ Queued)
+- Active job always stays in middle (order: 2)
+- Mobile: Show icons only (≤768px), text labels hidden
 
 **Persistent State**: `outputs/queue_state.json` survives restarts, shared across all browsers/users
 **Queue Management**: X button works on queued/completed/failed (NOT active), clear removes only queued items
