@@ -152,6 +152,16 @@ function setupPersonaListeners(persona) {
         });
         slider?.addEventListener('change', () => updatePersona(persona));
     });
+    
+    // Seed parameter
+    const seedInput = document.getElementById(`${prefix}Seed`);
+    const seedValue = document.getElementById(`${prefix}SeedValue`);
+    if (seedInput && seedValue) {
+        seedInput.addEventListener('input', () => {
+            seedValue.textContent = seedInput.value || 'Random';
+        });
+        seedInput.addEventListener('change', () => updatePersona(persona));
+    }
 }
 
 // Toggle sidebar
@@ -385,6 +395,11 @@ function populatePersona(persona, data) {
     document.getElementById(`${prefix}RepeatPenalty`).value = data.repeat_penalty;
     document.getElementById(`${prefix}RepeatPenaltyValue`).textContent = data.repeat_penalty;
     document.getElementById(`${prefix}RepeatPenalty`).disabled = false;
+    
+    document.getElementById(`${prefix}Seed`).value = data.seed || '';
+    document.getElementById(`${prefix}SeedValue`).textContent = data.seed ? data.seed : 'Random';
+    document.getElementById(`${prefix}Seed`).disabled = false;
+    document.getElementById(`clear${prefix}SeedBtn`).disabled = false;
 }
 
 // Update UI based on flip display
@@ -1228,13 +1243,15 @@ async function updatePersona(persona) {
     const prefix = `persona${persona}`;
     const personaKey = `persona_${persona.toLowerCase()}`;
     
+    const seedValue = document.getElementById(`${prefix}Seed`).value;
     const updatedPersona = {
         name: document.getElementById(`${prefix}Name`).value.trim(),
         system_prompt: document.getElementById(`${prefix}System`).value.trim(),
         temperature: parseFloat(document.getElementById(`${prefix}Temperature`).value),
         top_p: parseFloat(document.getElementById(`${prefix}TopP`).value),
         top_k: parseInt(document.getElementById(`${prefix}TopK`).value),
-        repeat_penalty: parseFloat(document.getElementById(`${prefix}RepeatPenalty`).value)
+        repeat_penalty: parseFloat(document.getElementById(`${prefix}RepeatPenalty`).value),
+        seed: seedValue ? parseInt(seedValue) : null
     };
     
     try {
@@ -1278,6 +1295,28 @@ async function updateSharedSettings() {
         }
     } catch (error) {
         console.error('[AUTOCHAT] Error updating shared settings:', error);
+    }
+}
+
+// Clear persona A seed (set to random)
+function clearPersonaASeed() {
+    const seedInput = document.getElementById('personaASeed');
+    const seedValue = document.getElementById('personaASeedValue');
+    if (seedInput && seedValue) {
+        seedInput.value = '';
+        seedValue.textContent = 'Random';
+        updatePersona('A');
+    }
+}
+
+// Clear persona B seed (set to random)
+function clearPersonaBSeed() {
+    const seedInput = document.getElementById('personaBSeed');
+    const seedValue = document.getElementById('personaBSeedValue');
+    if (seedInput && seedValue) {
+        seedInput.value = '';
+        seedValue.textContent = 'Random';
+        updatePersona('B');
     }
 }
 

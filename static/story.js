@@ -351,7 +351,8 @@ async function createNewStorySession() {
                 model: storyModels[0]?.name || 'llama3.2',
                 system_prompt: '',
                 temperature: 0.8,
-                num_ctx: 4096
+                num_ctx: 4096,
+                seed: null
             })
         });
         
@@ -365,6 +366,17 @@ async function createNewStorySession() {
     } catch (error) {
         console.error('[STORY] Error creating session:', error);
         showNotification('Failed to create story session', 'error');
+    }
+}
+
+// Clear story seed (set to random)
+function clearStorySeed() {
+    const seedInput = document.getElementById('storySeed');
+    const seedValue = document.getElementById('storySeedValue');
+    if (seedInput && seedValue) {
+        seedInput.value = '';
+        seedValue.textContent = 'Random';
+        autoSaveStoryParameters();
     }
 }
 
@@ -482,6 +494,11 @@ function loadStoryUI() {
     document.getElementById('storyNumCtx').value = currentStorySession.num_ctx || 4096;
     document.getElementById('storyNumCtx').disabled = false;
     document.getElementById('storyNumCtxValue').textContent = currentStorySession.num_ctx || 4096;
+    
+    document.getElementById('storySeed').value = currentStorySession.seed || '';
+    document.getElementById('storySeed').disabled = false;
+    document.getElementById('storySeedValue').textContent = currentStorySession.seed ? currentStorySession.seed : 'Random';
+    document.getElementById('clearStorySeedBtn').disabled = false;
 }
 
 async function renderStoryMessages() {
@@ -1194,6 +1211,20 @@ function setupStoryParameterHandlers() {
             });
         }
     });
+    
+    // Seed parameter
+    const seedInput = document.getElementById('storySeed');
+    const seedValue = document.getElementById('storySeedValue');
+    if (seedInput && seedValue) {
+        seedInput.addEventListener('input', () => {
+            seedValue.textContent = seedInput.value || 'Random';
+        });
+        
+        seedInput.addEventListener('change', () => {
+            const value = seedInput.value ? parseInt(seedInput.value) : null;
+            updateStorySessionSettings({ seed: value });
+        });
+    }
 }
 
 // ============================================================================

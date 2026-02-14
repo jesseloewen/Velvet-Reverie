@@ -994,6 +994,7 @@ Session name:"""
                     top_k = session_data.get('top_k', 40)
                     repeat_penalty = session_data.get('repeat_penalty', 1.1)
                     num_ctx = session_data.get('num_ctx', 2048)
+                    seed = session_data.get('seed', None)
                     
                     print(f"\n{'='*80}")
                     print(f"[CHAT DEBUG] Full context being sent to Ollama for response_id: {response_id}")
@@ -1003,6 +1004,7 @@ Session name:"""
                     print(f"[CHAT DEBUG] Top K: {top_k}")
                     print(f"[CHAT DEBUG] Repeat Penalty: {repeat_penalty}")
                     print(f"[CHAT DEBUG] Context Window: {num_ctx}")
+                    print(f"[CHAT DEBUG] Seed: {seed if seed is not None else 'random'}")
                     print(f"[CHAT DEBUG] Number of messages in context: {len(messages)}")
                     print(f"-" * 80)
                     for idx, msg in enumerate(messages):
@@ -1230,6 +1232,7 @@ Session name:"""
                     top_p = persona.get('top_p', 0.9)
                     top_k = persona.get('top_k', 40)
                     repeat_penalty = persona.get('repeat_penalty', 1.1)
+                    seed = persona.get('seed', None)
                     # Use shared num_ctx (prefer top-level, fallback to persona for backward compatibility)
                     num_ctx = session_data.get('num_ctx') or persona.get('num_ctx', 2048)
                     
@@ -1247,6 +1250,7 @@ Session name:"""
                             top_k=top_k,
                             repeat_penalty=repeat_penalty,
                             num_ctx=num_ctx,
+                            seed=seed,
                             stream=True
                         ):
                             # Check if cancellation was requested
@@ -1705,8 +1709,9 @@ Session name:"""
                     top_k = session_data.get('top_k', 40)
                     repeat_penalty = session_data.get('repeat_penalty', 1.1)
                     num_ctx = session_data.get('num_ctx', 4096)
+                    seed = session_data.get('seed', None)
                     
-                    print(f"[STORY] Temperature: {temperature}, Top P: {top_p}, Context: {num_ctx}")
+                    print(f"[STORY] Temperature: {temperature}, Top P: {top_p}, Context: {num_ctx}, Seed: {seed if seed is not None else 'random'}")
                     
                     # ========== DEBUG: Print complete Ollama request ==========
                     print("\n" + "="*80)
@@ -1720,6 +1725,7 @@ Session name:"""
                     print(f"  - top_k: {top_k}")
                     print(f"  - repeat_penalty: {repeat_penalty}")
                     print(f"  - num_ctx: {num_ctx}")
+                    print(f"  - seed: {seed if seed is not None else 'random'}")
                     print(f"\nMessages array ({len(messages)} total):")
                     print("-"*80)
                     for idx, msg in enumerate(messages, 1):
@@ -1751,6 +1757,7 @@ Session name:"""
                             top_k=top_k,
                             repeat_penalty=repeat_penalty,
                             num_ctx=num_ctx,
+                            seed=seed,
                             stream=True
                         ):
                             # Check if cancellation was requested
@@ -2171,6 +2178,7 @@ def create_chat_session():
         'top_k': data.get('top_k', 40),
         'repeat_penalty': data.get('repeat_penalty', 1.1),
         'num_ctx': data.get('num_ctx', 2048),
+        'seed': data.get('seed', None),
         'messages': [],
         'created_at': datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat()
@@ -2217,6 +2225,8 @@ def update_chat_session(session_id):
                 session_data['repeat_penalty'] = data['repeat_penalty']
             if 'num_ctx' in data:
                 session_data['num_ctx'] = data['num_ctx']
+            if 'seed' in data:
+                session_data['seed'] = data['seed']
             if 'messages' in data:
                 session_data['messages'] = data['messages']
             
@@ -2570,7 +2580,8 @@ def create_autochat_session():
             'temperature': data.get('persona_a_temperature', 0.7),
             'top_p': data.get('persona_a_top_p', 0.9),
             'top_k': data.get('persona_a_top_k', 40),
-            'repeat_penalty': data.get('persona_a_repeat_penalty', 1.1)
+            'repeat_penalty': data.get('persona_a_repeat_penalty', 1.1),
+            'seed': data.get('persona_a_seed', None)
         },
         'persona_b': {
             'name': data.get('persona_b_name', 'Bob'),
@@ -2578,7 +2589,8 @@ def create_autochat_session():
             'temperature': data.get('persona_b_temperature', 0.7),
             'top_p': data.get('persona_b_top_p', 0.9),
             'top_k': data.get('persona_b_top_k', 40),
-            'repeat_penalty': data.get('persona_b_repeat_penalty', 1.1)
+            'repeat_penalty': data.get('persona_b_repeat_penalty', 1.1),
+            'seed': data.get('persona_b_seed', None)
         },
         'max_turns': data.get('max_turns', 10),
         'current_turn': 0,
@@ -2999,6 +3011,7 @@ def create_story_session():
         'top_k': data.get('top_k', 40),
         'repeat_penalty': data.get('repeat_penalty', 1.1),
         'num_ctx': data.get('num_ctx', 4096),
+        'seed': data.get('seed', None),
         'messages': [],
         'created_at': datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat()
@@ -3067,6 +3080,8 @@ def update_story_session(session_id):
                 session_data['repeat_penalty'] = data['repeat_penalty']
             if 'num_ctx' in data:
                 session_data['num_ctx'] = data['num_ctx']
+            if 'seed' in data:
+                session_data['seed'] = data['seed']
             if 'messages' in data:
                 session_data['messages'] = data['messages']
             
@@ -3699,11 +3714,47 @@ def add_tts_to_queue():
         
         # Custom sentence splitting that:
         # - Does NOT split on ellipsis (...)
+        # - Does NOT split on titles (Mr., Mrs., Ms., Miss., Dr., Prof., etc.)
         # - DOES split on period, question mark, exclamation mark (even inside quotes)
         # - Handles quoted dialog properly
         
         # Replace ellipsis temporarily to protect them from splitting
         text_protected = text.replace('...', '<!ELLIPSIS!>')
+        
+        # Protect common titles from being split (case-insensitive)
+        # Map of regex patterns to placeholders and their original text
+        titles_map = [
+            (r'\bMr\.', '<!MR!>', 'Mr.'),
+            (r'\bMrs\.', '<!MRS!>', 'Mrs.'),
+            (r'\bMs\.', '<!MS!>', 'Ms.'),
+            (r'\bMiss\.', '<!MISS!>', 'Miss.'),
+            (r'\bDr\.', '<!DR!>', 'Dr.'),
+            (r'\bProf\.', '<!PROF!>', 'Prof.'),
+            (r'\bSr\.', '<!SR!>', 'Sr.'),
+            (r'\bJr\.', '<!JR!>', 'Jr.'),
+            (r'\bSt\.', '<!ST!>', 'St.'),
+            (r'\bRev\.', '<!REV!>', 'Rev.'),
+            (r'\bGen\.', '<!GEN!>', 'Gen.'),
+            (r'\bCol\.', '<!COL!>', 'Col.'),
+            (r'\bLt\.', '<!LT!>', 'Lt.'),
+            (r'\bSgt\.', '<!SGT!>', 'Sgt.'),
+            (r'\bCpt\.', '<!CPT!>', 'Cpt.'),
+            (r'\bCmdr\.', '<!CMDR!>', 'Cmdr.'),
+            (r'\bAve\.', '<!AVE!>', 'Ave.'),
+            (r'\bBlvd\.', '<!BLVD!>', 'Blvd.'),
+            (r'\bNo\.', '<!NO!>', 'No.'),
+            (r'\bVol\.', '<!VOL!>', 'Vol.'),
+            (r'\bVs\.', '<!VS!>', 'Vs.'),
+            (r'\bEtc\.', '<!ETC!>', 'Etc.'),
+            (r'\bInc\.', '<!INC!>', 'Inc.'),
+            (r'\bLtd\.', '<!LTD!>', 'Ltd.'),
+            (r'\bCo\.', '<!CO!>', 'Co.'),
+            (r'\bCorp\.', '<!CORP!>', 'Corp.')
+        ]
+        
+        # Apply title protection (case-insensitive)
+        for pattern, placeholder, _ in titles_map:
+            text_protected = re.sub(pattern, placeholder, text_protected, flags=re.IGNORECASE)
         
         # Split on sentence endings: . ! ? followed by space/quote/end
         # This pattern catches punctuation followed by optional closing quotes, then space or end
@@ -3717,11 +3768,17 @@ def add_tts_to_queue():
                 combined = (sentences[i] + sentences[i+1]).strip()
                 # Restore ellipsis
                 combined = combined.replace('<!ELLIPSIS!>', '...')
+                # Restore titles
+                for pattern, placeholder, original_text in titles_map:
+                    combined = combined.replace(placeholder, original_text)
                 clean_sentences.append(combined)
                 i += 2
             else:
                 if sentences[i].strip() and not re.match(r'^[.!?]', sentences[i]):
                     restored = sentences[i].strip().replace('<!ELLIPSIS!>', '...')
+                    # Restore titles
+                    for pattern, placeholder, original_text in titles_map:
+                        restored = restored.replace(placeholder, original_text)
                     clean_sentences.append(restored)
                 i += 1
         

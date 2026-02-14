@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Velvet Reverie</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/velvet_icon.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -1846,6 +1847,23 @@
                                             <option value="32768">32768</option>
                                         </select>
                                     </div>
+                                    
+                                    <div class="form-group">
+                                        <label>
+                                            Seed
+                                            <span class="param-value" id="storySeedValue">Random</span>
+                                        </label>
+                                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                            <input type="number" id="storySeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                            <button type="button" class="btn btn-sm" id="clearStorySeedBtn" title="Clear seed (random)" onclick="clearStorySeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <small>Random seed for reproducibility (empty = random)</small>
+                                    </div>
                                 </div>
                             </div>
                         </aside>
@@ -2267,22 +2285,19 @@
 
                                         <div class="form-group">
                                             <label for="personaATemperature">Temperature <span class="param-value" id="personaATemperatureValue">0.7</span></label>
-                                            <input type="range" id="personaATemperature" class="slider" min="0" max="2" step="0.1" value="0.7" disabled>
-                                        </div>
-
+                                        
                                         <div class="form-group">
-                                            <label for="personaATopP">Top P <span class="param-value" id="personaATopPValue">0.9</span></label>
-                                            <input type="range" id="personaATopP" class="slider" min="0" max="1" step="0.05" value="0.9" disabled>
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="personaATopK">Top K <span class="param-value" id="personaATopKValue">40</span></label>
-                                            <input type="range" id="personaATopK" class="slider" min="1" max="100" value="40" disabled>
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="personaARepeatPenalty">Repeat Penalty <span class="param-value" id="personaARepeatPenaltyValue">1.1</span></label>
-                                            <input type="range" id="personaARepeatPenalty" class="slider" min="1" max="2" step="0.1" value="1.1" disabled>
+                                            <label for="personaASeed">Seed <span class="param-value" id="personaASeedValue">Random</span></label>
+                                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                <input type="number" id="personaASeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                                <button type="button" class="btn btn-sm" id="clearPersonaASeedBtn" title="Clear seed (random)" onclick="clearPersonaASeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <small style="color: var(--text-muted); font-size: 0.85rem;">Random seed for reproducibility</small>
                                         </div>
                                     </div>
                                 </div>
@@ -2308,6 +2323,37 @@
                                         </div>
 
                                         <div class="form-group">
+                                            <label for="personaBTemperature">Temperature <span class="param-value" id="personaBTemperatureValue">0.7</span></label>
+                                            <input type="range" id="personaBTemperature" class="slider" min="0" max="2" step="0.1" value="0.7" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBTopP">Top P <span class="param-value" id="personaBTopPValue">0.9</span></label>
+                                            <input type="range" id="personaBTopP" class="slider" min="0" max="1" step="0.05" value="0.9" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBTopK">Top K <span class="param-value" id="personaBTopKValue">40</span></label>
+                                            <input type="range" id="personaBTopK" class="slider" min="1" max="100" value="40" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBRepeatPenalty">Repeat Penalty <span class="param-value" id="personaBRepeatPenaltyValue">1.1</span></label>
+                                            <input type="range" id="personaBRepeatPenalty" class="slider" min="1" max="2" step="0.1" value="1.1" disabled>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="personaBSeed">Seed <span class="param-value" id="personaBSeedValue">Random</span></label>
+                                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                <input type="number" id="personaBSeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                                <button type="button" class="btn btn-sm" id="clearPersonaBSeedBtn" title="Clear seed (random)" onclick="clearPersonaBSeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <small style="color: var(--text-muted); font-size: 0.85rem;">Random seed for reproducibility</small
                                             <label for="personaBTemperature">Temperature <span class="param-value" id="personaBTemperatureValue">0.7</span></label>
                                             <input type="range" id="personaBTemperature" class="slider" min="0" max="2" step="0.1" value="0.7" disabled>
                                         </div>
@@ -2794,6 +2840,24 @@
                                         <option value="32768">32768 tokens</option>
                                     </select>
                                     <small class="form-hint">Maximum context length</small>
+                                </div>
+
+                                <!-- Seed -->
+                                <div class="form-group">
+                                    <label for="chatSeed">
+                                        Seed
+                                        <span class="param-value" id="chatSeedValue">Random</span>
+                                    </label>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <input type="number" id="chatSeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                        <button type="button" class="btn btn-sm" id="clearChatSeedBtn" title="Clear seed (random)" onclick="clearChatSeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <small class="form-hint">Random seed for reproducibility (empty = random)</small>
                                 </div>
 
 

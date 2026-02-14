@@ -61,6 +61,7 @@ class OllamaClient:
              top_k: int = 40,
              repeat_penalty: float = 1.1,
              num_ctx: int = 2048,
+             seed: Optional[int] = None,
              stream: bool = False,
              keep_alive: int = -1) -> Generator[str, None, None]:
         """
@@ -75,6 +76,7 @@ class OllamaClient:
             top_k: Top-k sampling
             repeat_penalty: Repeat penalty (1.0 = no penalty)
             num_ctx: Context window size
+            seed: Random seed for reproducibility (None = random)
             stream: Whether to stream response
             keep_alive: Duration to keep model loaded (-1 = indefinitely, 0 = unload immediately)
             
@@ -94,6 +96,10 @@ class OllamaClient:
                 "num_ctx": num_ctx
             }
         }
+        
+        # Add seed if provided
+        if seed is not None:
+            payload["options"]["seed"] = seed
         
         # Note: System prompt should be first message in messages array with role='system'
         # The 'system' parameter is deprecated in newer Ollama versions

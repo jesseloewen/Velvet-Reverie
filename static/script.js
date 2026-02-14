@@ -465,12 +465,17 @@ function initializeMobileOverlay() {
             
             if (queueOpen || tabsOpen) {
                 backdrop.classList.add('active');
-                // Prevent body scroll when sidebar is open on mobile
-                document.body.style.overflow = 'hidden';
+                // Only prevent body scroll if keyboard is not open
+                if (!document.body.classList.contains('keyboard-open')) {
+                    document.body.style.overflow = 'hidden';
+                }
             } else {
                 backdrop.classList.remove('active');
-                // Restore body scroll when sidebars are closed
-                document.body.style.overflow = '';
+                // Restore body scroll when sidebars are closed (unless keyboard is open)
+                // Use 'auto' instead of '' to override CSS default of 'hidden'
+                if (!document.body.classList.contains('keyboard-open')) {
+                    document.body.style.overflow = 'auto';
+                }
             }
         } else if (backdrop) {
             backdrop.classList.remove('active');
@@ -534,72 +539,92 @@ function initializeMobileOverlay() {
     window.updateMobileSidebarBackdrop = updateBackdrop;
 }
 
-// Mobile Keyboard Fix - Prevent header cutoff after keyboard dismissal
+// Mobile Keyboard Fix - Prevent header cutoff and enable scrolling when keyboard opens
 function initializeMobileKeyboardFix() {
     // Only apply on mobile devices
     if (window.innerWidth > 768) return;
     
-    const contentWrapper = document.querySelector('.content-wrapper');
-    let initialViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    let lastWindowHeight = window.innerHeight;
+    let lastVisualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    let keyboardOpen = false;
     
-    // Listen for viewport changes (keyboard show/hide)
-    function handleViewportChange() {
-        if (!window.visualViewport) return;
+    function handleKeyboardStateChange() {
+        // Get current viewport heights
+        const currentWindowHeight = window.innerHeight;
+        const currentVisualHeight = window.visualViewport ? window.visualViewport.height : currentWindowHeight;
         
-        const currentHeight = window.visualViewport.height;
+        // Calculate height differences
+        const windowHeightDiff = lastWindowHeight - currentWindowHeight;
+        const visualHeightDiff = lastVisualHeight - currentVisualHeight;
         
-        // If viewport height increased significantly (keyboard dismissed)
-        if (currentHeight > initialViewportHeight - 50) {
-            // Scroll to top to ensure header is visible
+        // Keyboard likely opened (significant height decrease)
+        if ((visualHeightDiff > 150 || windowHeightDiff > 150) && !keyboardOpen) {
+            keyboardOpen = true;
+            document.body.classList.add('keyboard-open');
+            
+            // Allow scrolling when keyboard is open
+            const backdrop = document.getElementById('sidebarBackdrop');
+            const sidebarOpen = backdrop && backdrop.classList.contains('active');
+            
+            // Only change overflow if no sidebar is open
+            if (!sidebarOpen) {
+                document.body.style.overflow = 'auto';
+            }
+            
+            console.log('Keyboard opened - enabling scroll');
+        }
+        // Keyboard likely closed (height increased back significantly)
+        else if (keyboardOpen && (visualHeightDiff < -100 || windowHeightDiff < -100)) {
+            keyboardOpen = false;
+            document.body.classList.remove('keyboard-open');
+            
+            // Restore overflow state based on sidebar status
+            const backdrop = document.getElementById('sidebarBackdrop');
+            if (!backdrop || !backdrop.classList.contains('active')) {
+                document.body.style.overflow = '';
+            }
+            
+            // Scroll to top of content wrapper to ensure header is visible
+            const contentWrapper = document.querySelector('.content-wrapper');
             if (contentWrapper && contentWrapper.scrollTop > 0) {
-                // Smooth scroll to top
-                contentWrapper.scrollTo({
-                    top: 0,
-                    behavior: 'smooth'
-                });
+                setTimeout(() => {
+                    contentWrapper.scrollTo({ top: 0, behavior: 'smooth' });
+                }, 100);
             }
+            
+            console.log('Keyboard closed - restoring scroll state');
         }
         
-        initialViewportHeight = currentHeight;
+        // Update stored heights
+        lastWindowHeight = currentWindowHeight;
+        lastVisualHeight = currentVisualHeight;
     }
     
-    // Use visualViewport API if available (better for keyboard detection)
+    // Use Visual Viewport API (best for keyboard detection on iOS)
     if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', handleViewportChange);
-        window.visualViewport.addEventListener('scroll', handleViewportChange);
+        window.visualViewport.addEventListener('resize', handleKeyboardStateChange);
+        window.visualViewport.addEventListener('scroll', handleKeyboardStateChange);
     }
     
-    // Fallback: Listen for input blur events
-    document.addEventListener('blur', function(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-            // Small delay to let keyboard fully dismiss
-            setTimeout(() => {
-                if (contentWrapper && contentWrapper.scrollTop > 0) {
-                    contentWrapper.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                    });
-                }
-            }, 300);
-        }
-    }, true); // Use capture phase to catch all inputs
+    // Fallback: Monitor window resize
+    window.addEventListener('resize', handleKeyboardStateChange);
     
-    // Also handle window resize as backup
-    let resizeTimeout;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-            // If we're back to full height (keyboard dismissed)
-            if (window.innerHeight > initialViewportHeight - 50) {
-                if (contentWrapper) {
-                    contentWrapper.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                    });
-                }
-            }
-        }, 300);
+    // Additional detection via focus events
+    document.addEventListener('focusin', function(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            // Give keyboard time to animate in
+            setTimeout(handleKeyboardStateChange, 300);
+        }
     });
+    
+    document.addEventListener('focusout', function(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            // Give keyboard time to animate out
+            setTimeout(handleKeyboardStateChange, 300);
+        }
+    });
+    
+    console.log('Mobile keyboard fix initialized');
 }
 
 // Event Listeners
@@ -4587,6 +4612,11 @@ function showImageAtIndex(index) {
         document.getElementById('detailImage').src = `/api/image/input/${inputPath.split('/').map(s => encodeURIComponent(s)).join('/')}`;
         applyMatchedSizing();
     } else if (isVideo) {
+        // Hide comparison container for videos
+        const comparisonContainer = document.getElementById('imageComparisonContainer');
+        comparisonContainer.style.display = 'none';
+        detailImage.style.display = 'block';
+        
         // Replace img with video element
         if (detailImage.tagName.toLowerCase() !== 'video') {
             const video = document.createElement('video');
@@ -4631,6 +4661,11 @@ function showImageAtIndex(index) {
             }, { once: true });
         }
     } else {
+        // Hide comparison container for regular images when hover compare is off
+        const comparisonContainer = document.getElementById('imageComparisonContainer');
+        comparisonContainer.style.display = 'none';
+        detailImage.style.display = 'block';
+        
         // Replace video with img element
         if (detailImage.tagName.toLowerCase() !== 'img') {
             const img = document.createElement('img');
@@ -5231,6 +5266,11 @@ function showFullscreenImage(index) {
         };
         imgElement.src = `/api/image/input/${inputPath.split('/').map(s => encodeURIComponent(s)).join('/')}`;
     } else if (isVideo) {
+        // Hide comparison container for videos
+        const comparisonContainer = document.getElementById('fullscreenComparisonContainer');
+        comparisonContainer.style.display = 'none';
+        fsImage.style.display = 'block';
+        
         const videoSrc = `/outputs/${imagePath}`;
         
         // Replace img with video element if needed
@@ -5272,6 +5312,11 @@ function showFullscreenImage(index) {
             });
         }, { once: true });
     } else {
+        // Hide comparison container for regular images when hover compare is off
+        const comparisonContainer = document.getElementById('fullscreenComparisonContainer');
+        comparisonContainer.style.display = 'none';
+        fsImage.style.display = 'block';
+        
         // Replace video with img element if needed
         if (fsImage.tagName.toLowerCase() !== 'img') {
             const img = document.createElement('img');
@@ -5595,6 +5640,11 @@ function initTouchSupport() {
 }
 
 function handleSwipe() {
+    // Disable swipes when hover compare is active to prevent navigation conflicts
+    if (hoverCompareEnabled) {
+        return;
+    }
+    
     const swipeThreshold = 50;
     const diffX = touchStartX - touchEndX;
     const diffY = touchStartY - touchEndY;
@@ -5769,8 +5819,9 @@ function handleKeyboard(e) {
             smartToggleInputView();
             return;
         } else if (e.key === 'Escape') {
-            // Only close if actually in fullscreen
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
+            // Close fullscreen if viewer is active
+            const viewer = document.getElementById('fullscreenViewer');
+            if (viewer && viewer.classList.contains('active')) {
                 closeFullscreen();
             }
             return;
@@ -9012,6 +9063,17 @@ function initializeChat() {
         }
     });
     
+    // Seed input - update display and auto-save
+    const seedInput = document.getElementById('chatSeed');
+    const seedValue = document.getElementById('chatSeedValue');
+    const clearSeedBtn = document.getElementById('clearChatSeedBtn');
+    if (seedInput && seedValue) {
+        seedInput.addEventListener('input', () => {
+            seedValue.textContent = seedInput.value || 'Random';
+            autoSaveChatParameters();
+        });
+    }
+    
     // Context size selector - auto-save on change
     const chatNumCtx = document.getElementById('chatNumCtx');
     if (chatNumCtx) {
@@ -9206,7 +9268,8 @@ async function createNewChatSession() {
                 top_p: 0.9,
                 top_k: 40,
                 repeat_penalty: 1.1,
-                num_ctx: 2048
+                num_ctx: 2048,
+                seed: null
             })
         });
         
@@ -9226,6 +9289,16 @@ async function createNewChatSession() {
     }
 }
 
+// Clear chat seed (set to random)
+function clearChatSeed() {
+    const seedInput = document.getElementById('chatSeed');
+    const seedValue = document.getElementById('chatSeedValue');
+    if (seedInput && seedValue) {
+        seedInput.value = '';
+        seedValue.textContent = 'Random';
+        autoSaveChatParameters();
+    }
+}
 async function selectChatSession(sessionId, skipPollingResume = false) {
     console.log('[CHAT] selectChatSession called with sessionId:', sessionId);
     if (isLoadingChatSession) {
@@ -9335,6 +9408,7 @@ function loadChatUI() {
     document.getElementById('chatTopK').value = currentChatSession.top_k || 40;
     document.getElementById('chatRepeatPenalty').value = currentChatSession.repeat_penalty || 1.1;
     document.getElementById('chatNumCtx').value = currentChatSession.num_ctx || 2048;
+    document.getElementById('chatSeed').value = currentChatSession.seed || '';
     
     // Update value displays
     document.getElementById('chatTemperatureValue').textContent = currentChatSession.temperature || 0.7;
@@ -9342,6 +9416,7 @@ function loadChatUI() {
     document.getElementById('chatTopKValue').textContent = currentChatSession.top_k || 40;
     document.getElementById('chatRepeatPenaltyValue').textContent = currentChatSession.repeat_penalty || 1.1;
     document.getElementById('chatNumCtxValue').textContent = currentChatSession.num_ctx || 2048;
+    document.getElementById('chatSeedValue').textContent = currentChatSession.seed ? currentChatSession.seed : 'Random';
     
     // Enable all controls
     document.getElementById('chatSessionName').disabled = false;
@@ -9351,6 +9426,8 @@ function loadChatUI() {
     document.getElementById('chatTopK').disabled = false;
     document.getElementById('chatRepeatPenalty').disabled = false;
     document.getElementById('chatNumCtx').disabled = false;
+    document.getElementById('chatSeed').disabled = false;
+    document.getElementById('clearChatSeedBtn').disabled = false;
     
     const generateNameBtn = document.getElementById('generateSessionNameBtn');
     if (generateNameBtn) generateNameBtn.disabled = false;
@@ -10329,6 +10406,7 @@ async function autoSaveChatParameters() {
     if (!sessionId) return;
     
     try {
+        const seedValue = document.getElementById('chatSeed').value;
         const updates = {
             chat_name: document.getElementById('chatSessionName').value,
             system_prompt: document.getElementById('chatSystemPrompt').value,
@@ -10336,7 +10414,8 @@ async function autoSaveChatParameters() {
             top_p: parseFloat(document.getElementById('chatTopP').value),
             top_k: parseInt(document.getElementById('chatTopK').value),
             repeat_penalty: parseFloat(document.getElementById('chatRepeatPenalty').value),
-            num_ctx: parseInt(document.getElementById('chatNumCtx').value)
+            num_ctx: parseInt(document.getElementById('chatNumCtx').value),
+            seed: seedValue ? parseInt(seedValue) : null
         };
         
         const response = await fetch(`/api/chat/sessions/${sessionId}`, {
