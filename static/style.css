@@ -672,6 +672,29 @@ body {
     border-color: var(--accent-primary);
 }
 
+/* Make completed queue items appear clickable */
+.queue-item.completed-item:not(.active) {
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.queue-item.completed-item:not(.active):hover {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+    transform: translateY(-1px);
+}
+
+.queue-item.completed-item.has-image .queue-item-content {
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+.queue-item.completed-item.has-image:hover .queue-item-content {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+    transform: translateY(-1px);
+}
+
 .queue-item.active {
     border-color: var(--accent-primary);
     background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(99, 102, 241, 0.1) 100%);

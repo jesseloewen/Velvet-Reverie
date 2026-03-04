@@ -741,6 +741,26 @@ function initializeEventListeners() {
                 openCompletedImage(relativePath);
             }
         }
+        
+        // Handle completed queue item clicks (navigate to media in appropriate browser)
+        const queueItem = e.target.closest('.queue-item');
+        if (queueItem) {
+            // Don't trigger if clicking on action buttons or images (already handled above)
+            if (e.target.closest('.queue-item-actions') || e.target.closest('.completed-image-thumb')) {
+                return;
+            }
+            
+            // Only handle completed items
+            const statusEl = queueItem.querySelector('.queue-item-status');
+            if (statusEl && statusEl.textContent === 'completed') {
+                const jobId = queueItem.getAttribute('data-job-id');
+                if (jobId) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigateToCompletedItem(jobId);
+                }
+            }
+        }
     }, true);
     
     // Generate button
@@ -808,12 +828,38 @@ function initializeEventListeners() {
     if (useFolderBtn) {
         useFolderBtn.addEventListener('click', async () => {
             try {
-                if (imageBrowserMode === 'image-batch' && currentBrowserFolder === 'input') {
-                    // Image batch: use from input folder directly
-                    selectedImageBatchFolder = currentBrowserSubpath || '';
-                    const display = document.getElementById('imageBatchFolderDisplay');
-                    display.textContent = selectedImageBatchFolder ? selectedImageBatchFolder : 'Root';
-                    closeImageBrowser();
+                if (imageBrowserMode === 'image-batch') {
+                    // Image batch: handle both input and output folders
+                    if (currentBrowserFolder === 'output') {
+                        // Copy folder from output to input
+                        showNotification('Copying folder from output to input...', 'Copying', 'info');
+                        
+                        const response = await fetch('/api/copy_folder_to_input', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                folder_path: currentBrowserSubpath || ''
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        if (result.success) {
+                            // Use the copied folder name
+                            selectedImageBatchFolder = result.folder_name;
+                            const display = document.getElementById('imageBatchFolderDisplay');
+                            display.textContent = result.folder_name;
+                            showNotification(`Folder copied and selected: ${result.folder_name}`, 'Success', 'success', 3000);
+                            closeImageBrowser();
+                        } else {
+                            showNotification('Error: ' + (result.error || 'Failed to copy folder'), 'Error', 'error');
+                        }
+                    } else {
+                        // Use from input folder directly
+                        selectedImageBatchFolder = currentBrowserSubpath || '';
+                        const display = document.getElementById('imageBatchFolderDisplay');
+                        display.textContent = selectedImageBatchFolder ? selectedImageBatchFolder : 'Root';
+                        closeImageBrowser();
+                    }
                 } else if (imageBrowserMode === 'frame-edit' && currentBrowserFolder === 'input') {
                     // Frame Edit: select folder from input/frame_edit/
                     selectedFrameEditFolder = currentBrowserSubpath || '';
@@ -1259,7 +1305,7 @@ function switchTab(tabName) {
     if (window.innerWidth <= 768) {
         const tabsSidebar = document.getElementById('tabsSidebar');
         if (tabsSidebar) {
-            tabsSidebar.classList.add('collapsed');
+            tabsSidebar.classList.remove('active');
             // Update backdrop
             if (window.updateMobileSidebarBackdrop) {
                 window.updateMobileSidebarBackdrop();
@@ -2043,7 +2089,7 @@ function renderQueueItem(job, isActive) {
     }
     
     return `
-        <div class="queue-item ${isActive ? 'active' : ''} ${showMedia ? 'has-image' : ''}" data-job-id="${escapeHtml(job.id)}" ${job.status === 'queued' ? 'draggable="true"' : ''}>
+        <div class="queue-item ${isActive ? 'active' : ''} ${showMedia ? 'has-image' : ''} ${job.status === 'completed' ? 'completed-item' : ''}" data-job-id="${escapeHtml(job.id)}" ${job.status === 'queued' ? 'draggable="true"' : ''}>
             ${showMedia ? `
                 <div class="queue-item-image">
                     ${hasMedia ? (isVideo ? `
@@ -2180,10 +2226,18 @@ function setupQueueDragAndDrop() {
                 const allItems = Array.from(queueList.querySelectorAll('.queue-item[draggable="true"]'));
                 const draggedId = draggedElement.dataset.jobId;
                 const targetId = this.dataset.jobId;
-                const targetIndex = allItems.indexOf(this);
+                const visualTargetIndex = allItems.indexOf(this);
+                
+                // Convert visual index to backend index when queue is reversed
+                let backendTargetIndex;
+                if (queueReversed) {
+                    backendTargetIndex = (allItems.length - 1) - visualTargetIndex;
+                } else {
+                    backendTargetIndex = visualTargetIndex;
+                }
                 
                 // Call backend to reorder
-                reorderQueue(draggedId, targetIndex);
+                reorderQueue(draggedId, backendTargetIndex);
             }
             
             return false;
@@ -2207,30 +2261,40 @@ async function moveQueueItem(jobId, direction) {
     const queueList = document.getElementById('queueList');
     const queueItems = Array.from(queueList.querySelectorAll('.queue-item[draggable="true"]'));
     
-    // Find current item index
+    // Find current item index (visual position in DOM)
     const currentIndex = queueItems.findIndex(item => item.dataset.jobId === jobId);
     if (currentIndex === -1) return;
     
-    // Calculate new index
-    let newIndex;
+    // Calculate new index (visual position)
+    let newVisualIndex;
     if (direction === 'up') {
         if (currentIndex === 0) return; // Already at top
-        newIndex = currentIndex - 1;
+        newVisualIndex = currentIndex - 1;
     } else if (direction === 'down') {
         if (currentIndex === queueItems.length - 1) return; // Already at bottom
-        newIndex = currentIndex + 1;
+        newVisualIndex = currentIndex + 1;
     } else if (direction === 'top') {
         if (currentIndex === 0) return; // Already at top
-        newIndex = 0;
+        newVisualIndex = 0;
     } else if (direction === 'bottom') {
         if (currentIndex === queueItems.length - 1) return; // Already at bottom
-        newIndex = queueItems.length - 1;
+        newVisualIndex = queueItems.length - 1;
     } else {
         return;
     }
     
+    // Convert visual index to backend index
+    // When reversed: visual index 0 = backend index (length-1), visual index (length-1) = backend index 0
+    // When normal: visual index = backend index (no conversion needed)
+    let backendIndex;
+    if (queueReversed) {
+        backendIndex = (queueItems.length - 1) - newVisualIndex;
+    } else {
+        backendIndex = newVisualIndex;
+    }
+    
     // Call backend to reorder
-    await reorderQueue(jobId, newIndex);
+    await reorderQueue(jobId, backendIndex);
 }
 
 async function reorderQueue(jobId, newIndex) {
@@ -2334,6 +2398,224 @@ function openCompletedImage(relativePath) {
     
     // Browse to the folder containing the image
     browseFolder(folderPath);
+}
+
+// Navigate to completed queue item in appropriate browser/tab
+async function navigateToCompletedItem(jobId) {
+    try {
+        // Find the job in the queue data
+        const response = await fetch('/api/queue');
+        const data = await response.json();
+        
+        // Search in completed jobs
+        let job = null;
+        if (data.completed && Array.isArray(data.completed)) {
+            job = data.completed.find(j => j.id === jobId);
+        }
+        
+        if (!job) {
+            console.error('Completed job not found:', jobId);
+            showNotification('Could not find completed item', 'Error', 'error');
+            return;
+        }
+        
+        const jobType = job.job_type;
+        
+        // Handle different job types
+        if (jobType === 'image') {
+            // Navigate to image browser and open the specific image
+            await navigateToImage(job);
+        } else if (jobType === 'video') {
+            // Navigate to video browser and open the specific video
+            await navigateToVideo(job);
+        } else if (jobType === 'tts') {
+            // Navigate to audio tab and expand the batch
+            await navigateToAudio(job);
+        } else if (jobType === 'chat') {
+            // Navigate to chat tab and select the session
+            await navigateToChat(job);
+        } else if (jobType === 'story') {
+            // Navigate to story tab and select the session
+            await navigateToStory(job);
+        } else if (jobType === 'autochat') {
+            // Navigate to autochat tab and select the session
+            await navigateToAutochat(job);
+        } else {
+            console.log('Unknown job type for navigation:', jobType);
+        }
+    } catch (error) {
+        console.error('Error navigating to completed item:', error);
+        showNotification('Error opening item', 'Error', 'error');
+    }
+}
+
+// Navigate to specific image in browser
+async function navigateToImage(job) {
+    // Switch to browser tab
+    switchTab('browser');
+    
+    if (!job.relative_path) {
+        console.error('Job missing relative_path:', job);
+        return;
+    }
+    
+    // Extract folder path and browse to it
+    const parts = job.relative_path.split(/[/\\]/);
+    const folderPath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+    
+    // Browse to folder - this will load the images array
+    await browseFolder(folderPath || 'images');
+    
+    // Wait a bit for images to load
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Find the image by ID in the loaded images array
+    const imageIndex = images.findIndex(img => img.id === job.id);
+    
+    if (imageIndex !== -1) {
+        // Open the modal at this image
+        openImageModal(job.id);
+    } else {
+        console.log('Image not found in current view, staying in folder');
+    }
+}
+
+// Navigate to specific video in browser
+async function navigateToVideo(job) {
+    // Switch to videos tab
+    switchTab('videos');
+    
+    if (!job.relative_path) {
+        console.error('Job missing relative_path:', job);
+        return;
+    }
+    
+    // Extract folder path - videos are under 'videos/' root
+    const parts = job.relative_path.split(/[/\\]/);
+    let folderPath = 'videos';
+    
+    // If there's a subfolder, include it
+    if (parts.length > 1) {
+        // Skip the first part if it's 'videos', then rejoin the rest except filename
+        const pathParts = parts[0] === 'videos' ? parts.slice(1) : parts;
+        const subfolderParts = pathParts.slice(0, -1);
+        if (subfolderParts.length > 0) {
+            folderPath = 'videos/' + subfolderParts.join('/');
+        }
+    }
+    
+    // Load videos in that folder
+    await loadVideos(folderPath);
+    
+    // Wait for videos to load
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Find the video in the loaded videosItems array
+    const videoIndex = videosItems.findIndex(v => v.id === job.id || v.relative_path === job.relative_path);
+    
+    if (videoIndex !== -1) {
+        // Open the video modal
+        openVideoModal(videoIndex);
+    } else {
+        console.log('Video not found in current view, staying in folder');
+    }
+}
+
+// Navigate to specific audio batch in audio tab
+async function navigateToAudio(job) {
+    // Switch to audio tab
+    switchTab('audio');
+    
+    // Wait for audio batches to load
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Find and expand the batch
+    if (job.batch_id) {
+        const batchCard = document.getElementById(`batch_${job.batch_id}`);
+        if (batchCard) {
+            // Expand the batch if collapsed
+            if (batchCard.classList.contains('collapsed')) {
+                toggleAudioBatch(job.batch_id);
+            }
+            
+            // Scroll to the batch
+            batchCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            
+            // Highlight briefly
+            batchCard.style.outline = '2px solid var(--accent-primary)';
+            setTimeout(() => {
+                batchCard.style.outline = '';
+            }, 2000);
+        } else {
+            console.log('Audio batch not found:', job.batch_id);
+        }
+    }
+}
+
+// Navigate to specific chat session
+async function navigateToChat(job) {
+    // Switch to chat tab
+    switchTab('chat');
+    
+    // Wait for chat to initialize
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Select the session if we have a session_id
+    if (job.session_id) {
+        const sessionExists = chatSessions.some(s => s.session_id === job.session_id);
+        if (sessionExists) {
+            await selectChatSession(job.session_id);
+            showNotification('Opened chat session', 'Success', 'success', 2000);
+        } else {
+            console.log('Chat session not found:', job.session_id);
+            showNotification('Chat session no longer exists', 'Info', 'info', 3000);
+        }
+    }
+}
+
+// Navigate to specific story session
+async function navigateToStory(job) {
+    // Switch to story tab
+    switchTab('story');
+    
+    // Wait for story to initialize
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // The story.js file should handle this, but we'll try to select the session
+    if (job.session_id && window.selectStorySession) {
+        const sessionExists = storySessions.some(s => s.session_id === job.session_id);
+        if (sessionExists) {
+            await window.selectStorySession(job.session_id);
+            showNotification('Opened story session', 'Success', 'success', 2000);
+        } else {
+            console.log('Story session not found:', job.session_id);
+            showNotification('Story session no longer exists', 'Info', 'info', 3000);
+        }
+    }
+}
+
+// Navigate to specific autochat session
+async function navigateToAutochat(job) {
+    // Switch to autochat tab
+    switchTab('autochat');
+    
+    // Wait for autochat to initialize
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // The autochat.js file should handle session selection
+    if (job.session_id && window.selectAutochatSession) {
+        // Try to select the session
+        if (window.autochatSessions) {
+            const sessionExists = window.autochatSessions.some(s => s.session_id === job.session_id);
+            if (sessionExists) {
+                await window.selectAutochatSession(job.session_id);
+                showNotification('Opened autochat session', 'Success', 'success', 2000);
+            } else {
+                console.log('Autochat session not found:', job.session_id);
+                showNotification('Autochat session no longer exists', 'Info', 'info', 3000);
+            }
+        }
+    }
 }
 
 // Global state for uploaded images
@@ -3913,15 +4195,20 @@ async function loadImageBrowserFolder(folder, subpath) {
         }
     });
     
-    // Update path display with breadcrumb
-    renderImageBrowserPath(folder, subpath);
-    
     try {
         // For output folder, default to 'images' subfolder if at root
         let effectiveSubpath = subpath;
         if (folder === 'output' && !subpath) {
             effectiveSubpath = 'images';
+            // For stitch mode, go directly to frame_edit folder
+            if (imageBrowserMode === 'stitch') {
+                effectiveSubpath = 'images/frame_edit';
+                currentBrowserSubpath = effectiveSubpath;
+            }
         }
+        
+        // Update path display with breadcrumb (after adjusting effectiveSubpath)
+        renderImageBrowserPath(folder, effectiveSubpath || subpath);
         
         // Fetch images from appropriate folder
         const endpoint = folder === 'input' 
@@ -4072,8 +4359,8 @@ function renderImageBrowserPath(folder, subpath) {
     // Toggle "Use This Folder" button visibility based on mode/folder
     const useBtn = document.getElementById('useThisFolderBtn');
     if (useBtn) {
-        if (imageBrowserMode === 'image-batch' && folder === 'input') {
-            // Image batch: only from input folder
+        if (imageBrowserMode === 'image-batch') {
+            // Image batch: from both input and output folders
             useBtn.style.display = 'inline-flex';
         } else if (imageBrowserMode === 'frame-edit' && folder === 'input' && subpath && subpath.startsWith('frame_edit')) {
             // Frame Edit: only show for subfolders within frame_edit
@@ -4982,7 +5269,6 @@ function importImageData() {
             const imagePreview = document.getElementById('imagePreview');
             const clearImageBtn = document.getElementById('clearImageBtn');
             const useImageSizeGroup = document.getElementById('useImageSizeGroup');
-            const useImageCheckbox = document.getElementById('useImage');
             const useImageSizeCheckbox = document.getElementById('useImageSize');
             
             // Set preview to show the input image from input folder
@@ -4992,9 +5278,11 @@ function importImageData() {
             clearImageBtn.style.display = 'inline-flex';
             useImageSizeGroup.style.display = 'block';
             
-            // Set the use image and use image size checkboxes
-            useImageCheckbox.checked = currentImageData.use_image || false;
+            // Set the use image size checkbox (use_image is determined by uploadedImageFilename)
             useImageSizeCheckbox.checked = currentImageData.use_image_size || false;
+            
+            // Update dimension fields visibility based on checkbox state
+            toggleDimensionFields();
         }
         
         // Close the modal
@@ -9333,10 +9621,10 @@ async function selectChatSession(sessionId, skipPollingResume = false) {
                 
                 // Also check queue for this session's jobs
                 try {
-                    const queueResponse = await fetch('/api/queue/status');
+                    const queueResponse = await fetch('/api/queue');
                     const queueData = await queueResponse.json();
                     
-                    if (queueData.success) {
+                    if (queueData) {
                         const allJobs = [...(queueData.queue || []), queueData.active].filter(Boolean);
                         const sessionChatJobs = allJobs.filter(job => 
                             job.job_type === 'chat' && job.session_id === sessionId
@@ -10341,22 +10629,23 @@ function startChatStreamingPolling(responseId) {
                     }
                 }
                 
-                // Update message element with final state
+                // CRITICAL FIX: Re-create message element to show action buttons
+                // The buttons only appear when !isLoading in createChatMessageElement
                 const messagesContainer = document.getElementById('chatMessages');
-                if (messagesContainer) {
+                if (messagesContainer && currentChatSession) {
                     const messageEl = messagesContainer.querySelector(`[data-message-id="${responseId}"]`);
                     if (messageEl) {
-                        messageEl.classList.remove('loading');
+                        // Find the message in the session by response_id or message_id
+                        const msg = currentChatSession.messages.find(m => 
+                            m.response_id === responseId || m.message_id === responseId
+                        );
                         
-                        // Check if this was an error
-                        const isError = message.error === true;
-                        
-                        // If error, style the content
-                        if (isError) {
-                            const contentEl = messageEl.querySelector('.chat-message-content');
-                            if (contentEl) {
-                                contentEl.style.color = 'var(--error-color)';
-                            }
+                        if (msg) {
+                            // Re-create the message element with buttons (isLoading = false)
+                            const newMessageEl = createChatMessageElement(msg, false);
+                            messageEl.replaceWith(newMessageEl);
+                            
+                            console.log('[CHAT] Message element re-created with action buttons for:', responseId);
                         }
                     }
                 }

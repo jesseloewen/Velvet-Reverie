@@ -4,7 +4,11 @@
 
 // Self-contained copy function for story messages
 function copyStoryMessageText(text, buttonElement) {
-    if (!text) return;
+    console.log('[STORY] copyStoryMessageText called with text:', text?.substring(0, 50), 'buttonElement:', buttonElement);
+    if (!text) {
+        console.warn('[STORY] copyStoryMessageText: No text provided');
+        return;
+    }
     
     // Try modern clipboard API first
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -58,14 +62,22 @@ function showStoryCopySuccess(buttonElement) {
 
 // TTS wrapper functions for story messages
 function sendStoryToTTS(messageIndex) {
-    if (!currentStorySession || !currentStorySession.messages[messageIndex]) return;
+    console.log('[STORY] sendStoryToTTS called with messageIndex:', messageIndex, 'currentStorySession:', currentStorySession);
+    if (!currentStorySession || !currentStorySession.messages[messageIndex]) {
+        console.warn('[STORY] sendStoryToTTS: Invalid session or message index');
+        return;
+    }
     
     const message = currentStorySession.messages[messageIndex];
     sendToTTS(message.content);
 }
 
 function storyTTSNow(messageIndex) {
-    if (!currentStorySession || !currentStorySession.messages[messageIndex]) return;
+    console.log('[STORY] storyTTSNow called with messageIndex:', messageIndex, 'currentStorySession:', currentStorySession);
+    if (!currentStorySession || !currentStorySession.messages[messageIndex]) {
+        console.warn('[STORY] storyTTSNow: Invalid session or message index');
+        return;
+    }
     
     const message = currentStorySession.messages[messageIndex];
     ttsNow(message.content);
@@ -558,9 +570,12 @@ async function renderStoryMessages() {
         contextLabel.textContent = `${contextUsage.toFixed(1)}% of ${maxContext.toLocaleString()} context`;
     }
     
-    container.innerHTML = messages.map(msg => 
-        createStoryMessageElement(msg).outerHTML
-    ).join('');
+    // Clear container and append DOM elements directly (preserves event listeners)
+    container.innerHTML = '';
+    messages.forEach(msg => {
+        const messageEl = createStoryMessageElement(msg);
+        container.appendChild(messageEl);
+    });
     
     // Start polling for incomplete messages
     messages.forEach(msg => {
@@ -573,6 +588,14 @@ async function renderStoryMessages() {
 function createStoryMessageElement(message) {
     const div = document.createElement('div');
     div.className = `chat-message ${message.role}`;
+    
+    // Set data attribute for response_id to enable reliable lookup
+    if (message.response_id) {
+        div.dataset.responseId = message.response_id;
+    }
+    if (message.message_id) {
+        div.dataset.messageId = message.message_id;
+    }
     
     const content = message.content || '';
     const isLoading = !message.completed && message.role === 'assistant';
@@ -664,7 +687,10 @@ function createStoryMessageElement(message) {
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
         `;
-        copyBtn.onclick = () => copyStoryMessageText(content, copyBtn);
+        copyBtn.onclick = () => {
+            console.log('[STORY] Copy button clicked, content:', content);
+            copyStoryMessageText(content, copyBtn);
+        };
         btnContainer.appendChild(copyBtn);
         
         // Send to TTS button - navigates to TTS tab with text
@@ -673,6 +699,8 @@ function createStoryMessageElement(message) {
             (m.response_id && m.response_id === message.response_id) ||
             (m.timestamp === message.timestamp && m.content === content)
         );
+        
+        console.log('[STORY] Button creation - messageIndex:', messageIndex, 'message:', message);
         
         const sendTTSBtn = document.createElement('button');
         sendTTSBtn.className = 'chat-action-btn';
@@ -683,7 +711,10 @@ function createStoryMessageElement(message) {
                 <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
             </svg>
         `;
-        sendTTSBtn.onclick = () => sendStoryToTTS(messageIndex);
+        sendTTSBtn.onclick = () => {
+            console.log('[STORY] Send to TTS button clicked, messageIndex:', messageIndex);
+            sendStoryToTTS(messageIndex);
+        };
         btnContainer.appendChild(sendTTSBtn);
         
         // TTS Now button - queues immediately with current settings
@@ -695,7 +726,10 @@ function createStoryMessageElement(message) {
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
         `;
-        ttsNowBtn.onclick = () => storyTTSNow(messageIndex);
+        ttsNowBtn.onclick = () => {
+            console.log('[STORY] TTS Now button clicked, messageIndex:', messageIndex);
+            storyTTSNow(messageIndex);
+        };
         btnContainer.appendChild(ttsNowBtn);
         
         // Edit button
@@ -708,7 +742,10 @@ function createStoryMessageElement(message) {
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
         `;
-        editBtn.onclick = () => editStoryMessage(div, messageIndex);
+        editBtn.onclick = () => {
+            console.log('[STORY] Edit button clicked, messageIndex:', messageIndex, 'div:', div);
+            editStoryMessage(div, messageIndex);
+        };
         btnContainer.appendChild(editBtn);
         
         // Delete button
@@ -723,7 +760,10 @@ function createStoryMessageElement(message) {
                 <line x1="14" y1="11" x2="14" y2="17"></line>
             </svg>
         `;
-        deleteBtn.onclick = () => deleteStoryMessage(messageIndex);
+        deleteBtn.onclick = () => {
+            console.log('[STORY] Delete button clicked, messageIndex:', messageIndex);
+            deleteStoryMessage(messageIndex);
+        };
         btnContainer.appendChild(deleteBtn);
         
         wrapper.appendChild(btnContainer);
@@ -733,7 +773,11 @@ function createStoryMessageElement(message) {
 }
 
 async function deleteStoryMessage(messageIndex) {
-    if (!currentStorySession || messageIndex === -1) return;
+    console.log('[STORY] deleteStoryMessage called with messageIndex:', messageIndex, 'currentStorySession:', currentStorySession);
+    if (!currentStorySession || messageIndex === -1) {
+        console.warn('[STORY] deleteStoryMessage: Invalid session or messageIndex === -1');
+        return;
+    }
     
     const message = currentStorySession.messages[messageIndex];
     if (!message) return;
@@ -774,7 +818,11 @@ async function deleteStoryMessage(messageIndex) {
 }
 
 function editStoryMessage(messageDiv, messageIndex) {
-    if (!currentStorySession || messageIndex === -1) return;
+    console.log('[STORY] editStoryMessage called with messageDiv:', messageDiv, 'messageIndex:', messageIndex, 'currentStorySession:', currentStorySession);
+    if (!currentStorySession || messageIndex === -1) {
+        console.warn('[STORY] editStoryMessage: Invalid session or messageIndex === -1');
+        return;
+    }
     
     const message = currentStorySession.messages[messageIndex];
     if (!message) return;
@@ -945,25 +993,7 @@ function startStoryStreamingPolling(responseId) {
                 eventSource.close();
                 delete storyPollingIntervals[responseId];
                 
-                // CRITICAL FIX: Re-render the specific message to show action buttons
-                // The buttons only appear when !isLoading in createStoryMessageElement
-                const container = document.getElementById('storyMessages');
-                if (container && currentStorySession) {
-                    const messageElements = container.querySelectorAll('.chat-message.assistant');
-                    for (const messageEl of messageElements) {
-                        const index = Array.from(container.children).indexOf(messageEl);
-                        const msg = currentStorySession.messages[index];
-                        
-                        if (msg && msg.response_id === responseId) {
-                            // Re-create the message element with buttons
-                            const newMessageEl = createStoryMessageElement(msg);
-                            messageEl.replaceWith(newMessageEl);
-                            break;
-                        }
-                    }
-                }
-                
-                // Reload session to get final state
+                // Reload session to get final state (this will re-render with buttons)
                 selectStorySession(sessionId, true);
             }
         } catch (error) {
@@ -1288,3 +1318,6 @@ function formatMessageTime(timestamp) {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+// Expose functions globally for queue navigation
+window.selectStorySession = selectStorySession;

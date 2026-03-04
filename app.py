@@ -1,4 +1,4 @@
-"""
+﻿"""
 Velvet Reverie - Flask Web UI
 """
 
@@ -17,6 +17,10 @@ import mimetypes
 import hashlib
 from functools import wraps
 import wave
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Try to import mutagen for accurate MP3 duration
 try:
@@ -35,26 +39,52 @@ except ImportError:
     print("[AUDIO] Warning: pydub not installed. Audio merging will not be available.")
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'velvet-reverie-secret-key'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Remember me duration
+
+# Flask Configuration from environment
+FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
+FLASK_PORT = int(os.getenv('FLASK_PORT', '4879'))
+FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'velvet-reverie-secret-key')
+SESSION_LIFETIME_DAYS = int(os.getenv('SESSION_LIFETIME_DAYS', '30'))
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=SESSION_LIFETIME_DAYS)
 
 # Authentication configuration
-PASSWORD_HASH = "f9031e664507bef426d72ed433ed4a07d47aefa362285b757186c6f8a7a1bf76"  # "password" - change this!
+PASSWORD_HASH = os.getenv('PASSWORD_HASH', 'f9031e664507bef426d72ed433ed4a07d47aefa362285b757186c6f8a7a1bf76')
 # To generate a new password hash: hashlib.sha256("your_password".encode()).hexdigest()
 
 # ComfyUI Configuration
-COMFYUI_TOKEN = "$2b$12$al.7CbPKkbLq.mZWNRNAneheK6WTRUiPmhlyJ3MSDMP19zjRqOrC."  # Set this if ComfyUI has password protection enabled
-# Example: COMFYUI_TOKEN = "$2b$12$qUfJfV942nrMiX77QRVgIuDk1.oyXBP7FYrXVEBqouTk.uP/hiqAK"
+COMFYUI_HOST = os.getenv('COMFYUI_HOST', '127.0.0.1')
+COMFYUI_PORT = os.getenv('COMFYUI_PORT', '8188')
+COMFYUI_TOKEN = os.getenv('COMFYUI_TOKEN', '')
 # Token is stored in ComfyUI's ./PASSWORD file or shown in console at startup
 
-# Configuration
-OUTPUT_DIR = Path("outputs")
+# Ollama Configuration
+OLLAMA_HOST = os.getenv('OLLAMA_HOST', '127.0.0.1')
+OLLAMA_PORT = os.getenv('OLLAMA_PORT', '11434')
+
+# Gradio TTS Configuration
+GRADIO_HOST = os.getenv('GRADIO_HOST', '127.0.0.1')
+GRADIO_PORT = os.getenv('GRADIO_PORT', '7860')
+GRADIO_OUTPUT_DIR = Path(os.getenv('GRADIO_OUTPUT_DIR', '../Ultimate-TTS-Studio.git/app/outputs'))
+
+# Paths Configuration
+OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', 'outputs'))
 OUTPUT_DIR.mkdir(exist_ok=True)
 METADATA_FILE = OUTPUT_DIR / "metadata.json"
 QUEUE_FILE = OUTPUT_DIR / "queue_state.json"
 CHATS_FILE = OUTPUT_DIR / "chats" / "chats.json"
 STORIES_FILE = OUTPUT_DIR / "chats" / "stories.json"
 AUTOCHAT_FILE = OUTPUT_DIR / "chats" / "autochat.json"
+
+# Workflows directory
+WORKFLOWS_DIR = Path(os.getenv('WORKFLOWS_DIR', 'workflows'))
+
+# ComfyUI paths (for input files and output)
+COMFYUI_INPUT_DIR = Path(os.getenv('COMFYUI_INPUT_DIR', '../comfy.git/app/input'))
+COMFYUI_OUTPUT_DIR = Path(os.getenv('COMFYUI_OUTPUT_DIR', '../comfy.git/app/output'))
+
+# Documentation directory
+DOCS_DIR = Path(os.getenv('DOCS_DIR', 'docs'))
 
 # Create media type folders
 (OUTPUT_DIR / "images").mkdir(exist_ok=True)
@@ -64,21 +94,29 @@ AUTOCHAT_FILE = OUTPUT_DIR / "chats" / "autochat.json"
 
 # Global queue and status
 generation_queue = []
-completed_jobs = []  # Keep last 50 completed jobs
-MAX_COMPLETED_HISTORY = 50
+completed_jobs = []  # Keep last N completed jobs
+MAX_COMPLETED_HISTORY = int(os.getenv('MAX_COMPLETED_HISTORY', '50'))
 queue_lock = threading.Lock()
 chat_lock = threading.Lock()
 active_generation = None
-queue_paused = True  # Start paused - prevents processing loaded items until manually unpaused
+queue_paused = True  # Start paused by default (controlled via web UI)
 
 # Initialize ComfyUI client with optional token
-comfyui_client = ComfyUIClient(server_address="127.0.0.1:8188", token=COMFYUI_TOKEN)
+comfyui_server = f"{COMFYUI_HOST}:{COMFYUI_PORT}"
+comfyui_client = ComfyUIClient(
+    server_address=comfyui_server, 
+    token=COMFYUI_TOKEN if COMFYUI_TOKEN else None, 
+    workflows_dir=str(WORKFLOWS_DIR),
+    output_dir=str(COMFYUI_OUTPUT_DIR)
+)
 
 # Initialize Ollama client
-ollama_client = OllamaClient(server_address="127.0.0.1:11434")
+ollama_server = f"{OLLAMA_HOST}:{OLLAMA_PORT}"
+ollama_client = OllamaClient(server_address=ollama_server)
 
 # Initialize Gradio TTS client
-gradio_tts_client = GradioTTSClient(server_address="127.0.0.1:7860")
+gradio_server = f"{GRADIO_HOST}:{GRADIO_PORT}"
+gradio_tts_client = GradioTTSClient(server_address=gradio_server, output_dir=str(GRADIO_OUTPUT_DIR))
 
 # Track last workflow type for model unloading
 last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 'tts'
@@ -86,8 +124,8 @@ last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 't
 # Track if cancellation was requested
 cancellation_requested = False
 
-# Global setting for auto-unload models (default: True for backward compatibility)
-auto_unload_models = True
+# Global setting for auto-unload models (controlled via web UI)
+auto_unload_models = False
 
 # Authentication decorator
 def require_auth(f):
@@ -628,137 +666,144 @@ def process_queue():
                         print(f"[TTS] Regenerating sentence {original_sentence_index} (version {version_number})")
                     
                     # Resolve reference audio file path from ComfyUI input directory
-                    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-                    ref_audio_path = comfyui_input_dir / ref_audio_name
+                    ref_audio_path = COMFYUI_INPUT_DIR / ref_audio_name
                     
+                    # Check if reference audio exists
                     if not ref_audio_path.exists():
                         print(f"[TTS] ERROR: Reference audio not found: {ref_audio_path}")
                         job['status'] = 'failed'
                         job['error'] = f'Reference audio file not found: {ref_audio_name}'
-                        continue
+                        job['failed_at'] = datetime.now().isoformat()
+                        # Don't use continue - let the job flow to completion section
                     
-                    # Load TTS engine if not already loaded
-                    engine_map = {
-                        'ChatterboxTTS': 'standard',
-                        'Chatterbox Multilingual': 'multilingual',
-                        'Chatterbox Turbo': 'turbo'
-                    }
-                    engine_type = engine_map.get(tts_engine, 'standard')
-                    
-                    # Only load if different from current engine
-                    if gradio_tts_client.current_engine != engine_type:
-                        print(f"[TTS] Loading engine: {tts_engine} ({engine_type})")
-                        if not gradio_tts_client.load_engine(engine_type):
-                            print("[TTS] ERROR: Failed to load TTS engine")
-                            job['status'] = 'failed'
-                            job['error'] = 'Failed to load TTS engine'
-                            continue
+                    # Load TTS engine if not already loaded (only if job hasn't failed)
+                    if job.get('status') != 'failed':
+                        engine_map = {
+                            'ChatterboxTTS': 'standard',
+                            'Chatterbox Multilingual': 'multilingual',
+                            'Chatterbox Turbo': 'turbo'
+                        }
+                        engine_type = engine_map.get(tts_engine, 'standard')
+                        
+                        # Only load if different from current engine
+                        if gradio_tts_client.current_engine != engine_type:
+                            print(f"[TTS] Loading engine: {tts_engine} ({engine_type})")
+                            if not gradio_tts_client.load_engine(engine_type):
+                                print("[TTS] ERROR: Failed to load TTS engine")
+                                job['status'] = 'failed'
+                                job['error'] = 'Failed to load TTS engine'
+                                job['failed_at'] = datetime.now().isoformat()
+                                # Don't use continue - let the job flow to completion section
                     
                     output_paths = []
                     
-                    # Process each sentence
-                    for idx, sentence in enumerate(sentences):
-                        # Check if cancellation was requested
-                        if cancellation_requested:
-                            print(f"[TTS] Cancellation detected, stopping at sentence {idx + 1}/{total_sentences}")
-                            job['status'] = 'cancelled'
-                            break
+                    # Process each sentence (only if job hasn't already failed)
+                    if job.get('status') != 'failed':
+                        for idx, sentence in enumerate(sentences):
+                            # Check if cancellation was requested
+                            if cancellation_requested:
+                                print(f"[TTS] Cancellation detected, stopping at sentence {idx + 1}/{total_sentences}")
+                                job['status'] = 'cancelled'
+                                break
+                            
+                            print(f"[TTS] Processing sentence {idx + 1}/{total_sentences}: {sentence[:50]}...")
+                            
+                            # Determine output file extension based on audio_format
+                            file_ext = audio_format if audio_format in ['wav', 'mp3'] else 'wav'
+                            
+                            # For regenerations, use version suffix in filename
+                            if is_regeneration:
+                                # Build filename like: tts_s1_v2.wav for sentence 1, version 2
+                                version_suffix = f"_s{original_sentence_index}_v{version_number}"
+                                versioned_prefix = f"{file_prefix}{version_suffix}"
+                                relative_path, output_path = get_next_filename(versioned_prefix, subfolder, file_ext, 'audio')
+                                actual_sentence_index = original_sentence_index
+                            else:
+                                # Normal generation - sequential naming
+                                relative_path, output_path = get_next_filename(file_prefix, subfolder, file_ext, 'audio')
+                                actual_sentence_index = idx
+                            
+                            print(f"[TTS] Output path: {output_path}")
+                            
+                            # Generate TTS using Gradio API
+                            result = gradio_tts_client.generate_tts(
+                                text=sentence,
+                                ref_audio_path=str(ref_audio_path),
+                                engine=tts_engine,
+                                audio_format=audio_format,
+                                exaggeration=job.get('exaggeration', 0.5),
+                                temperature=job.get('temperature', 0.8),
+                                cfg_weight=job.get('cfg_weight', 0.5),
+                                chunk_size=job.get('chunk_size', 300),
+                                seed=seed if seed else 0,
+                                language=job.get('language', 'en'),
+                                repetition_penalty=job.get('repetition_penalty', 2.0),
+                                emotion_description=job.get('emotion_description', ''),
+                                output_path=str(output_path)
+                            )
+                            
+                            if not result:
+                                print(f"[TTS] ERROR: Failed to generate audio for sentence {idx + 1}")
+                                job['status'] = 'failed'
+                                job['error'] = f'Failed to generate sentence {idx + 1}'
+                                job['failed_at'] = datetime.now().isoformat()
+                                break
+                            
+                            # Calculate audio duration
+                            audio_duration = get_audio_duration(output_path)
+                            
+                            # Add metadata for this sentence
+                            entry = add_metadata_entry(
+                                str(output_path),
+                                sentence,
+                                0, 0,
+                                0,
+                                seed if seed else 0,
+                                file_prefix,
+                                subfolder,
+                                job_type='tts',
+                                batch_id=batch_id,
+                                sentence_index=actual_sentence_index,
+                                total_sentences=total_sentences,
+                                narrator_audio=ref_audio_name,
+                                tts_engine=tts_engine,
+                                audio_format=audio_format,
+                                temperature=job.get('temperature', 0.8),
+                                exaggeration=job.get('exaggeration', 0.5),
+                                cfg_weight=job.get('cfg_weight', 0.5),
+                                chunk_size=job.get('chunk_size', 300),
+                                language=job.get('language', 'en'),
+                                repetition_penalty=job.get('repetition_penalty', 2.0),
+                                emotion_description=job.get('emotion_description', ''),
+                                duration=audio_duration
+                            )
+                            
+                            # Update version number in metadata if regeneration
+                            if is_regeneration:
+                                metadata = load_metadata()
+                                for meta_entry in metadata:
+                                    if meta_entry.get('id') == entry['id']:
+                                        meta_entry['version_number'] = version_number
+                                        break
+                                save_metadata(metadata)
+                            
+                            output_paths.append(str(relative_path))
+                            
+                            # Update job progress - update both job and active_generation
+                            with queue_lock:
+                                if active_generation and active_generation.get('id') == job['id']:
+                                    active_generation['completed_sentences'] = idx + 1
+                                    # Also update the job object directly
+                                    job['completed_sentences'] = idx + 1
+                            
+                            # Save immediately after each sentence for real-time updates
+                            save_queue_state()
+                            
+                            print(f"[TTS] Completed sentence {idx + 1}/{total_sentences}")
                         
-                        print(f"[TTS] Processing sentence {idx + 1}/{total_sentences}: {sentence[:50]}...")
-                        
-                        # Determine output file extension based on audio_format
-                        file_ext = audio_format if audio_format in ['wav', 'mp3'] else 'wav'
-                        
-                        # For regenerations, use version suffix in filename
-                        if is_regeneration:
-                            # Build filename like: tts_s1_v2.wav for sentence 1, version 2
-                            version_suffix = f"_s{original_sentence_index}_v{version_number}"
-                            versioned_prefix = f"{file_prefix}{version_suffix}"
-                            relative_path, output_path = get_next_filename(versioned_prefix, subfolder, file_ext, 'audio')
-                            actual_sentence_index = original_sentence_index
-                        else:
-                            # Normal generation - sequential naming
-                            relative_path, output_path = get_next_filename(file_prefix, subfolder, file_ext, 'audio')
-                            actual_sentence_index = idx
-                        
-                        print(f"[TTS] Output path: {output_path}")
-                        
-                        # Generate TTS using Gradio API
-                        result = gradio_tts_client.generate_tts(
-                            text=sentence,
-                            ref_audio_path=str(ref_audio_path),
-                            engine=tts_engine,
-                            audio_format=audio_format,
-                            exaggeration=job.get('exaggeration', 0.5),
-                            temperature=job.get('temperature', 0.8),
-                            cfg_weight=job.get('cfg_weight', 0.5),
-                            chunk_size=job.get('chunk_size', 300),
-                            seed=seed if seed else 0,
-                            language=job.get('language', 'en'),
-                            repetition_penalty=job.get('repetition_penalty', 2.0),
-                            emotion_description=job.get('emotion_description', ''),
-                            output_path=str(output_path)
-                        )
-                        
-                        if not result:
-                            print(f"[TTS] ERROR: Failed to generate audio for sentence {idx + 1}")
-                            job['status'] = 'failed'
-                            job['error'] = f'Failed to generate sentence {idx + 1}'
-                            break
-                        
-                        # Calculate audio duration
-                        audio_duration = get_audio_duration(output_path)
-                        
-                        # Add metadata for this sentence
-                        entry = add_metadata_entry(
-                            str(output_path),
-                            sentence,
-                            0, 0,
-                            0,
-                            seed if seed else 0,
-                            file_prefix,
-                            subfolder,
-                            job_type='tts',
-                            batch_id=batch_id,
-                            sentence_index=actual_sentence_index,
-                            total_sentences=total_sentences,
-                            narrator_audio=ref_audio_name,
-                            tts_engine=tts_engine,
-                            audio_format=audio_format,
-                            temperature=job.get('temperature', 0.8),
-                            exaggeration=job.get('exaggeration', 0.5),
-                            cfg_weight=job.get('cfg_weight', 0.5),
-                            chunk_size=job.get('chunk_size', 300),
-                            language=job.get('language', 'en'),
-                            repetition_penalty=job.get('repetition_penalty', 2.0),
-                            emotion_description=job.get('emotion_description', ''),
-                            duration=audio_duration
-                        )
-                        
-                        # Update version number in metadata if regeneration
-                        if is_regeneration:
-                            metadata = load_metadata()
-                            for meta_entry in metadata:
-                                if meta_entry.get('id') == entry['id']:
-                                    meta_entry['version_number'] = version_number
-                                    break
-                            save_metadata(metadata)
-                        
-                        output_paths.append(str(relative_path))
-                        
-                        # Update job progress - update both job and active_generation
-                        with queue_lock:
-                            if active_generation and active_generation.get('id') == job['id']:
-                                active_generation['completed_sentences'] = idx + 1
-                                # Also update the job object directly
-                                job['completed_sentences'] = idx + 1
-                        
-                        # Save immediately after each sentence for real-time updates
-                        save_queue_state()
-                        
-                        print(f"[TTS] Completed sentence {idx + 1}/{total_sentences}")
-                    
-                    print(f"[TTS] All sentences completed")
+                        print(f"[TTS] All sentences completed")
+                    else:
+                        print(f"[TTS] Skipping sentence processing due to earlier failure")
                     
                     # Calculate total generation duration
                     generation_duration = round(time.time() - start_time, 1)
@@ -1092,7 +1137,8 @@ Session name:"""
                                 if active_generation and active_generation.get('id') == job['id']:
                                     active_generation['status'] = 'failed'
                                 job['status'] = 'failed'
-                            continue  # Skip to next job
+                                job['failed_at'] = datetime.now().isoformat()
+                            # Don't use continue - let job flow to completion section to clear active_generation
                         
                         # Final save with completed status
                         with chat_lock:
@@ -1300,7 +1346,8 @@ Session name:"""
                                 if active_generation and active_generation.get('id') == job['id']:
                                     active_generation['status'] = 'failed'
                                 job['status'] = 'failed'
-                            continue
+                                job['failed_at'] = datetime.now().isoformat()
+                            # Don't use continue - let job flow to completion section to clear active_generation
                         
                         # Final save with completed status
                         with chat_lock:
@@ -1810,7 +1857,8 @@ Session name:"""
                                 if active_generation and active_generation.get('id') == job['id']:
                                     active_generation['status'] = 'failed'
                                 job['status'] = 'failed'
-                            continue
+                                job['failed_at'] = datetime.now().isoformat()
+                            # Don't use continue - let job flow to completion section to clear active_generation
                         
                         # Final save with completed status
                         with story_lock:
@@ -1928,8 +1976,8 @@ Session name:"""
                         generation_duration=generation_duration
                     )
                 
-                # Only mark as completed if not cancelled
-                if job.get('status') != 'cancelled':
+                # Only mark as completed if not cancelled or failed
+                if job.get('status') not in ('cancelled', 'failed'):
                     job['status'] = 'completed'
                 
                 # Handle TTS, chat, and story jobs differently (they don't have single output_path)
@@ -2037,7 +2085,7 @@ def index():
 def get_batch_instructions():
     """Serve the text batch instructions from text_batch.md"""
     try:
-        instructions_path = Path('docs') / 'ai_instructions' / 'text_batch.md'
+        instructions_path = DOCS_DIR / 'ai_instructions' / 'text_batch.md'
         if instructions_path.exists():
             with open(instructions_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -2076,7 +2124,7 @@ Include these headers to control engine settings per row:
 def get_story_instructions():
     """Serve the story mode instructions from story.md"""
     try:
-        instructions_path = Path('docs') / 'ai_instructions' / 'story.md'
+        instructions_path = DOCS_DIR / 'ai_instructions' / 'story.md'
         if instructions_path.exists():
             with open(instructions_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -3461,12 +3509,11 @@ def add_image_batch_to_queue():
 
     try:
         # Resolve ComfyUI input directory
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-        if not comfyui_input_dir.exists():
+        if not COMFYUI_INPUT_DIR.exists():
             return jsonify({'success': False, 'error': 'ComfyUI input directory not found'}), 500
 
         # Navigate to selected subfolder (or root if empty)
-        current_dir = comfyui_input_dir / folder if folder else comfyui_input_dir
+        current_dir = COMFYUI_INPUT_DIR / folder if folder else COMFYUI_INPUT_DIR
         if not current_dir.exists() or not current_dir.is_dir():
             return jsonify({'success': False, 'error': 'Invalid input folder'}), 400
 
@@ -3486,7 +3533,7 @@ def add_image_batch_to_queue():
         with queue_lock:
             for file in image_files:
                 # Build relative path from input root for image_filename
-                rel_path = str(file.relative_to(comfyui_input_dir))
+                rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
                 job = {
                     'id': str(uuid.uuid4()),
                     'prompt': prompt,
@@ -3536,12 +3583,11 @@ def queue_video_batch():
             return jsonify({'success': False, 'error': 'Prompt is required'}), 400
 
         # Define ComfyUI input directory
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-        if not comfyui_input_dir.exists():
+        if not COMFYUI_INPUT_DIR.exists():
             return jsonify({'success': False, 'error': 'ComfyUI input directory not found'}), 400
 
         # Navigate to selected subfolder (or root if empty)
-        current_dir = comfyui_input_dir / folder if folder else comfyui_input_dir
+        current_dir = COMFYUI_INPUT_DIR / folder if folder else COMFYUI_INPUT_DIR
         if not current_dir.exists() or not current_dir.is_dir():
             return jsonify({'success': False, 'error': 'Invalid input folder'}), 400
 
@@ -3561,7 +3607,7 @@ def queue_video_batch():
         with queue_lock:
             for file in image_files:
                 # Build relative path from input root for image_filename
-                rel_path = str(file.relative_to(comfyui_input_dir))
+                rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
                 job = {
                     'id': str(uuid.uuid4()),
                     'job_type': 'video',
@@ -3758,7 +3804,7 @@ def add_tts_to_queue():
         
         # Split on sentence endings: . ! ? followed by space/quote/end
         # This pattern catches punctuation followed by optional closing quotes, then space or end
-        sentences = re.split(r'([.!?]["\'»]?\s+|[.!?]["\'»]?$)', text_protected)
+        sentences = re.split(r'([.!?]["\'Â»]?\s+|[.!?]["\'Â»]?$)', text_protected)
         
         # Recombine sentences with their punctuation
         clean_sentences = []
@@ -4158,20 +4204,19 @@ def upload_image():
         return jsonify({'success': False, 'error': 'Invalid file type. Allowed: ' + ', '.join(allowed_extensions)}), 400
     
     try:
-        # Save to ComfyUI input directory (C:\pinokio\api\comfy.git\app\input)
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+        # Save to ComfyUI input directory
         
         # Verify directory exists
-        if not comfyui_input_dir.exists():
+        if not COMFYUI_INPUT_DIR.exists():
             return jsonify({
                 'success': False, 
-                'error': f'ComfyUI input directory not found at {comfyui_input_dir.absolute()}'
+                'error': f'ComfyUI input directory not found at {COMFYUI_INPUT_DIR.absolute()}'
             }), 500
         
         # Generate unique filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"upload_{timestamp}{file_ext}"
-        filepath = comfyui_input_dir / filename
+        filepath = COMFYUI_INPUT_DIR / filename
         
         # Save file
         file.save(str(filepath))
@@ -4207,8 +4252,8 @@ def extract_frames_from_video():
     
     try:
         # Locate video file in ComfyUI input directory
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-        video_path = comfyui_input_dir / video_filename
+        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+        video_path = COMFYUI_INPUT_DIR / video_filename
         
         if not video_path.exists():
             return jsonify({'success': False, 'error': f'Video file not found: {video_filename}'}), 404
@@ -4250,7 +4295,7 @@ def extract_frames_from_video():
             output_folder = f"{output_folder}_{playback_fps_str}fps"
         
         # Create output directory: input/frame_edit/[folder_name]/
-        frame_edit_base = comfyui_input_dir / 'frame_edit'
+        frame_edit_base = COMFYUI_INPUT_DIR / 'frame_edit'
         frame_edit_base.mkdir(exist_ok=True)
         
         output_dir = frame_edit_base / output_folder
@@ -4336,8 +4381,8 @@ def get_frame_edit_count():
         return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
     
     # Locate frames in ComfyUI input/frame_edit/[folder]/
-    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-    frame_folder = comfyui_input_dir / 'frame_edit' / folder_name
+    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+    frame_folder = COMFYUI_INPUT_DIR / 'frame_edit' / folder_name
     
     if not frame_folder.exists():
         return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
@@ -4370,8 +4415,8 @@ def process_frame_edit_batch():
         return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
     
     # Locate frames in ComfyUI input/frame_edit/[folder]/
-    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-    frame_folder = comfyui_input_dir / 'frame_edit' / folder_name
+    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+    frame_folder = COMFYUI_INPUT_DIR / 'frame_edit' / folder_name
     
     if not frame_folder.exists():
         return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
@@ -4500,14 +4545,19 @@ def stitch_frames_to_video():
     
     # Determine folder location based on source
     if source == 'input':
-        # Extract folder name from path (remove 'frame_edit/' prefix if present)
-        folder_name = folder.replace('frame_edit/', '').replace('frame_edit\\', '')
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-        frame_folder = comfyui_input_dir / 'frame_edit' / folder_name
+        # Use folder path as-is from input directory
+        folder_name = folder.strip()
+        # Use absolute path construction to avoid path resolution issues
+        COMFYUI_INPUT_DIR = Path.cwd().parent / 'comfy.git' / 'app' / 'input'
+        frame_folder = COMFYUI_INPUT_DIR / folder_name
     else:
-        # Extract folder name from path (remove 'images/frame_edit/' prefix if present)
-        folder_name = folder.replace('images/frame_edit/', '').replace('images\\frame_edit\\', '')
-        frame_folder = OUTPUT_DIR / 'images' / 'frame_edit' / folder_name
+        # Use folder path as-is from output (already includes 'images/' if needed)
+        folder_name = folder.strip()
+        # If path doesn't start with 'images/', add it
+        if not folder_name.startswith('images'):
+            frame_folder = OUTPUT_DIR / 'images' / folder_name
+        else:
+            frame_folder = OUTPUT_DIR / folder_name
     
     if not folder_name:
         return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
@@ -4522,9 +4572,11 @@ def stitch_frames_to_video():
     if not frame_files:
         return jsonify({'success': False, 'error': 'No image files found in folder'}), 404
     
-    # Generate output video name
+    # Generate output video name (use just the folder name, not full path)
+    # Extract last part of path for filename
+    folder_basename = Path(folder_name).name if folder_name else 'output'
     if not output_name:
-        output_name = f"{folder_name}.mp4"
+        output_name = f"{folder_basename}.mp4"
     elif not output_name.endswith('.mp4'):
         output_name = f"{output_name}.mp4"
     
@@ -4634,13 +4686,13 @@ def browse_images():
     try:
         if folder == 'input':
             # List images and folders from ComfyUI input directory
-            comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+            COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
             
-            if not comfyui_input_dir.exists():
+            if not COMFYUI_INPUT_DIR.exists():
                 return jsonify({'success': False, 'error': 'Input directory not found'}), 404
             
             # Navigate to subfolder if specified
-            current_dir = comfyui_input_dir / subpath if subpath else comfyui_input_dir
+            current_dir = COMFYUI_INPUT_DIR / subpath if subpath else COMFYUI_INPUT_DIR
             
             if not current_dir.exists() or not current_dir.is_dir():
                 return jsonify({'success': False, 'error': 'Invalid directory'}), 404
@@ -4649,7 +4701,7 @@ def browse_images():
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(comfyui_input_dir))
+                    rel_path = str(item.relative_to(COMFYUI_INPUT_DIR))
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
@@ -4663,7 +4715,7 @@ def browse_images():
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in allowed_extensions:
                     # Store relative path from input root
-                    rel_path = str(file.relative_to(comfyui_input_dir))
+                    rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
                     images.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -4699,13 +4751,13 @@ def browse_audio_files():
         
         if folder == 'input':
             # List audio files from ComfyUI input directory
-            comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+            COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
             
-            if not comfyui_input_dir.exists():
+            if not COMFYUI_INPUT_DIR.exists():
                 return jsonify({'success': False, 'error': 'Input directory not found'}), 404
             
             # Navigate to subfolder if specified
-            current_dir = comfyui_input_dir / subpath if subpath else comfyui_input_dir
+            current_dir = COMFYUI_INPUT_DIR / subpath if subpath else COMFYUI_INPUT_DIR
             
             if not current_dir.exists() or not current_dir.is_dir():
                 return jsonify({'success': False, 'error': 'Invalid directory'}), 404
@@ -4714,7 +4766,7 @@ def browse_audio_files():
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(comfyui_input_dir))
+                    rel_path = str(item.relative_to(COMFYUI_INPUT_DIR))
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
@@ -4725,7 +4777,7 @@ def browse_audio_files():
             audio_files = []
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in audio_extensions:
-                    rel_path = str(file.relative_to(comfyui_input_dir))
+                    rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
                     audio_files.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -4873,13 +4925,13 @@ def browse_audio():
             })
         else:
             # List audio files from ComfyUI input directory
-            comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+            COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
             
-            if not comfyui_input_dir.exists():
+            if not COMFYUI_INPUT_DIR.exists():
                 return jsonify({'success': False, 'error': 'Input directory not found'}), 404
             
             # Navigate to subfolder if specified
-            current_dir = comfyui_input_dir / subpath if subpath else comfyui_input_dir
+            current_dir = COMFYUI_INPUT_DIR / subpath if subpath else COMFYUI_INPUT_DIR
             
             if not current_dir.exists() or not current_dir.is_dir():
                 return jsonify({'success': False, 'error': 'Invalid directory'}), 404
@@ -4888,7 +4940,7 @@ def browse_audio():
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(comfyui_input_dir))
+                    rel_path = str(item.relative_to(COMFYUI_INPUT_DIR))
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
@@ -4902,7 +4954,7 @@ def browse_audio():
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in allowed_extensions:
                     # Store relative path from input root
-                    rel_path = str(file.relative_to(comfyui_input_dir))
+                    rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
                     audio_files.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -4928,9 +4980,9 @@ def browse_audio():
 def serve_input_image(filepath):
     """Serve images from ComfyUI input directory (supports subfolders)"""
     try:
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
         # Resolve to absolute path
-        absolute_dir = comfyui_input_dir.resolve()
+        absolute_dir = COMFYUI_INPUT_DIR.resolve()
         file_path = absolute_dir / filepath
         
         # Security check: ensure the file is within the input directory
@@ -4978,21 +5030,21 @@ def copy_to_input():
             return jsonify({'success': False, 'error': f'Source file not found: {filename}'}), 404
         
         # Destination: ComfyUI input directory (root level)
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
         
-        if not comfyui_input_dir.exists():
+        if not COMFYUI_INPUT_DIR.exists():
             return jsonify({'success': False, 'error': 'Input directory not found'}), 500
         
         # Generate unique filename if file already exists (copy to root of input folder)
         dest_filename = source.name
-        dest_path = comfyui_input_dir / dest_filename
+        dest_path = COMFYUI_INPUT_DIR / dest_filename
         
         counter = 1
         while dest_path.exists():
             stem = source.stem
             suffix = source.suffix
             dest_filename = f"{stem}_{counter}{suffix}"
-            dest_path = comfyui_input_dir / dest_filename
+            dest_path = COMFYUI_INPUT_DIR / dest_filename
             counter += 1
         
         # Copy file
@@ -5033,19 +5085,19 @@ def copy_folder_to_input():
             return jsonify({'success': False, 'error': f'Path is not a directory: {folder_path}'}), 400
         
         # Destination: ComfyUI input directory
-        comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
+        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
         
-        if not comfyui_input_dir.exists():
+        if not COMFYUI_INPUT_DIR.exists():
             return jsonify({'success': False, 'error': 'Input directory not found'}), 500
         
         # Get folder name and create destination path
         folder_name = source_folder.name
-        dest_folder = comfyui_input_dir / folder_name
+        dest_folder = COMFYUI_INPUT_DIR / folder_name
         
         # Handle duplicate folder names by appending counter
         counter = 1
         while dest_folder.exists():
-            dest_folder = comfyui_input_dir / f"{folder_name}_{counter}"
+            dest_folder = COMFYUI_INPUT_DIR / f"{folder_name}_{counter}"
             counter += 1
         
         # Copy entire folder
@@ -5255,8 +5307,8 @@ def serve_image(filepath):
 def serve_video_from_input(filepath):
     """Serve videos from ComfyUI input directory or outputs directory"""
     # Try ComfyUI input directory first
-    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-    comfyui_input = comfyui_input_dir / filepath
+    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+    comfyui_input = COMFYUI_INPUT_DIR / filepath
     if comfyui_input.exists() and comfyui_input.is_file():
         return send_video_with_range_support(comfyui_input)
     
@@ -5271,8 +5323,8 @@ def serve_video_from_input(filepath):
 @app.route('/api/audio/input/<path:filepath>')
 def serve_audio_from_input(filepath):
     """Serve audio files from ComfyUI input directory"""
-    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-    audio_path = comfyui_input_dir / filepath
+    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+    audio_path = COMFYUI_INPUT_DIR / filepath
     
     if not audio_path.exists() or not audio_path.is_file():
         return "Audio file not found", 404
@@ -5555,7 +5607,7 @@ def get_hardware_stats():
             },
             'gpu_temp': {
                 'celsius': round(gpu_temp, 1),
-                'label': f'{round(gpu_temp, 1)}°C'
+                'label': f'{round(gpu_temp, 1)}Â°C'
             }
         })
     except ImportError:
@@ -5572,8 +5624,8 @@ def get_hardware_stats():
 
 def ensure_dummy_image():
     """Create a dummy image if permanent\violet.webp doesn't exist"""
-    comfyui_input_dir = Path('..') / 'comfy.git' / 'app' / 'input'
-    permanent_dir = comfyui_input_dir / 'permanent'
+    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+    permanent_dir = COMFYUI_INPUT_DIR / 'permanent'
     dummy_image_path = permanent_dir / 'violet.webp'
     
     if not dummy_image_path.exists():
@@ -5607,15 +5659,19 @@ def ensure_dummy_image():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("ComfyUI Web UI Starting...")
+    print("VELVET REVERIE - Starting Server")
     print("=" * 60)
-    print(f"Server: http://0.0.0.0:4879")
+    print(f"Server: http://{FLASK_HOST}:{FLASK_PORT}")
     print(f"Output Directory: {OUTPUT_DIR.absolute()}")
-    print(f"ComfyUI Server: http://127.0.0.1:8188")
+    print(f"Workflows Directory: {WORKFLOWS_DIR.absolute()}")
+    print(f"ComfyUI Server: http://{COMFYUI_HOST}:{COMFYUI_PORT}")
+    print(f"Ollama Server: http://{OLLAMA_HOST}:{OLLAMA_PORT}")
+    print(f"Gradio TTS Server: http://{GRADIO_HOST}:{GRADIO_PORT}")
     print("=" * 60)
     
     # Ensure dummy image exists
     ensure_dummy_image()
     
     print("=" * 60)
-    app.run(host='0.0.0.0', port=4879, debug=False, threaded=True)
+    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
+

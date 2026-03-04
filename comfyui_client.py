@@ -1,4 +1,4 @@
-"""
+﻿"""
 Velvet Reverie - Workflow Client
 Interact with ComfyUI API backend to execute workflows
 """
@@ -11,25 +11,52 @@ import uuid
 import random
 import time
 import shutil
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 
 class ComfyUIClient:
-    def __init__(self, server_address: str = "127.0.0.1:8188", token: str = None):
+    def __init__(self, server_address: str = "127.0.0.1:8188", token: str = None, workflows_dir: str = "workflows", output_dir: str = None):
         """
         Initialize ComfyUI client
         
         Args:
             server_address: ComfyUI server address (default: 127.0.0.1:8188)
             token: ComfyUI API token (optional, required if password protection enabled)
+            workflows_dir: Directory containing workflow JSON files (default: workflows)
+            output_dir: ComfyUI output directory path (default: ../comfy.git/app/output)
         """
         self.server_address = server_address
         self.client_id = str(uuid.uuid4())
         self.token = token
+        self.workflows_dir = Path(workflows_dir)
+        self.output_dir = Path(output_dir) if output_dir else Path('..') / 'comfy.git' / 'app' / 'output'
         
-    def load_workflow(self, workflow_path: str = "workflows/Qwen_Full (API).json") -> Dict[str, Any]:
-        """Load workflow from JSON file"""
+        # Load workflow filenames from environment or use defaults
+        self.workflow_qwen = os.getenv('WORKFLOW_QWEN', 'Qwen_Full (API).json')
+        self.workflow_video = os.getenv('WORKFLOW_VIDEO', 'Wan2.2 I2V (API).json')
+        self.workflow_video_nsfw = os.getenv('WORKFLOW_VIDEO_NSFW', 'Wan2.2 I2V NSFW (API).json')
+        
+    def load_workflow(self, workflow_filename: str = None) -> Dict[str, Any]:
+        """
+        Load workflow from JSON file
+        
+        Args:
+            workflow_filename: Filename of workflow (will be combined with workflows_dir)
+                             If None, uses default qwen workflow
+        
+        Returns:
+            Workflow dictionary
+        """
+        if workflow_filename is None:
+            workflow_filename = self.workflow_qwen
+        
+        # If workflow_filename is an absolute path, use it directly
+        workflow_path = Path(workflow_filename)
+        if not workflow_path.is_absolute():
+            workflow_path = self.workflows_dir / workflow_filename
+        
         with open(workflow_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     
@@ -419,9 +446,9 @@ class ComfyUIClient:
             Path to saved video if output_path provided and wait=True, else None
         """
         # Load appropriate workflow based on NSFW flag
-        workflow_path = "workflows/Wan2.2 I2V NSFW (API).json" if nsfw else "workflows/Wan2.2 I2V (API).json"
-        workflow = self.load_workflow(workflow_path)
-        print(f"[WORKFLOW] Using {'NSFW' if nsfw else 'standard'} video workflow: {workflow_path}")
+        workflow_filename = self.workflow_video_nsfw if nsfw else self.workflow_video
+        workflow = self.load_workflow(workflow_filename)
+        print(f"[WORKFLOW] Using {'NSFW' if nsfw else 'standard'} video workflow: {workflow_filename}")
         
         # Generate random seed if not provided
         if seed is None:
@@ -629,8 +656,9 @@ class ComfyUIClient:
         Returns:
             Path to saved audio if output_path provided and wait=True, else None
         """
-        # Load TTS workflow
-        workflow = self.load_workflow("workflows/TTSVibe (API).json")
+        # Load TTS workflow (if exists in environment, otherwise skip TTS support)
+        tts_workflow = os.getenv('WORKFLOW_TTS', 'TTSVibe (API).json')
+        workflow = self.load_workflow(tts_workflow)
         
         # Generate random seed if not provided
         if seed is None:
@@ -728,3 +756,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

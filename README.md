@@ -62,17 +62,24 @@ See [PASSWORD_README.md](PASSWORD_README.md) for detailed instructions.
 
 ## File Organization
 
-The application automatically organizes generated content into media-type folders:
-
 ```
 outputs/
 ├── metadata.json          # Shared metadata for all generations
 ├── queue_state.json       # Persistent queue state
-├─**ComfyUI server** running on `http://127.0.0.1:8188` with models:
-  - **For Images**: Qwen Image model (diffusion, CLIP, VAE, LoRA)
-  - **For Videos**: Wan2.2 I2V model (standard and NSFW variants)
-- **Gradio ChatterBox TTS** running on `http://127.0.0.1:7860` (for text-to-speech)
-- **Ollama server** running on `http://127.0.0.1:11434` (for AI chat features)
+├── images/                # Generated images
+├── videos/                # Generated videos
+├── audio/                 # TTS audio files
+└── chats/                 # Chat session data
+```
+
+## Requirements
+
+**Must be running before starting the app:**
+- **ComfyUI server** on `http://127.0.0.1:8188` with models:
+  - Qwen Image model (diffusion, CLIP, VAE, LoRA)
+  - Wan2.2 I2V model (standard and NSFW variants)
+- **Gradio ChatterBox TTS** on `http://127.0.0.1:7860` (for text-to-speech)
+- **Ollama server** on `http://127.0.0.1:11434` (for AI chat features)
 - Optional: NVIDIA GPU with nvidia-smi for GPU/VRAM monitoring
 
 ## Quick Start
@@ -138,39 +145,7 @@ The interface has **14 tabs**:
 - `←` / `→` - Previous/next image
 - `Esc` - Close modal
 
-## Requirements
-
-- Python 3.7+
-- Flask (`pip install flask`)
-- ComfyUI server running on `http://127.0.0.1:8188` with models installed:
-  - **For Images**: Qwen Image model (diffusion, CLIP, VAE, LoRA)
-  - **For Videos**: Wan2.2 I2V model (standard and NSFW variants)
-  - **For TTS**: TTSVibe model (text-to-speech)
-- **Ollama server** running on `http://127.0.0.1:11434` (for AI chat features)
-- **Optional dependencies** (graceful fallbacks if not installed):
-  - `psutil` - For hardware monitoring (CPU/RAM/GPU/VRAM)
-  - `pydub` - For audio merging in TTS Download All feature
-  - `mutagen` - For accurate MP3 duration calculation (estimates if unavailable)
-- Optional: NVIDIA GPU with nvidia-smi for GPU/VRAM monitoring
-
-## Quick Start
-
-```powershell
-pip install -r requirements.txt
-python app.py  # Starts on http://localhost:4879
-```
-
-ComfyUI must be running on `http://127.0.0.1:8188`
-
 ## Usage
-
-### Tab Navigation
-
-The interface has eight tabs:
-- **Image**: Generate individual images with full parameter control
-- **Text Batch**: Create multiple variations using CSV templates with parameter placeholders  
-- **Image Browser**: Browse, organize, and manage your generated images
-- **Image Batch**: Batch processing with image uploads
 - **Reveal Browser**: View input images paired with generated outputs
 - **Video**: Convert static images into animated videos with NSFW mode option
 - **Video Batch**: Batch convert folders of images to videos
@@ -472,15 +447,19 @@ The interface has eight tabs:
 ## Project Structure
 
 ```
-├── app.py                      # Flask backend (3341 lines: auth, queue, hardware)
+├── app.py                      # Flask backend (5640 lines: auth, queue, hardware)
 ├── comfyui_client.py           # Python stdlib ComfyUI API wrapper (urllib, json)
 ├── ollama_client.py            # Python stdlib Ollama API wrapper (urllib, json)
+├── gradio_tts_client.py        # Gradio ChatterBox TTS client
 ├── templates/
-│   ├── index.html              # 13-tab SPA main interface
+│   ├── index.html              # 14-tab SPA main interface
 │   └── login.html              # Password login page
 ├── static/
-│   ├── style.css               # Dark theme, mobile responsive
-│   └── script.js               # Vanilla JS (queue, hardware, chat streaming)
+│   ├── style.css               # Multi-theme system, mobile responsive
+│   ├── script.js               # Core UI logic, queue, hardware monitoring
+│   ├── story.js                # Story mode with lorebook
+│   ├── story_modals.js         # Story UI modals
+│   └── autochat.js             # Dual AI persona chat
 ├── outputs/                    # Generated content (gitignored)
 │   ├── images/                 # All image generations
 │   │   └── myFolder/           # User subfolders
@@ -495,21 +474,16 @@ The interface has eight tabs:
 ├── workflows/
 │   ├── Qwen_Full (API).json         # Image generation workflow
 │   ├── Wan2.2 I2V (API).json        # Video generation workflow (standard)
-│   ├── Wan2.2 I2V NSFW (API).json   # Video generation workflow (NSFW)
-│   └── TTSVibe (API).json           # Text-to-speech workflow
-├── cache/                      # Empty cache directories for ML frameworks
-├── requirements.txt            # Python dependencies (flask, psutil, pydub, mutagen)
-├── PASSWORD_README.md          # Password change instructions
-├── install.json                # Pinokio install script
-├── start.json                  # Pinokio start script
-├── update.json                 # Pinokio update script
-└── reset.json                  # Pinokio reset script
+│   └── Wan2.2 I2V NSFW (API).json   # Video generation workflow (NSFW)
+├── cache/                      # Cache directories for ML frameworks
+├── requirements.txt            # Python dependencies (flask, psutil, pydub, mutagen, gradio_client)
+└── PASSWORD_README.md          # Password change instructions
 ```
 
 ## API Endpoints
 
 ### Core Endpoints
-- `GET /` - Main web interface with 8 tabs
+- `GET /` - Main web interface with 14 tabs
 - `POST /api/queue` - Add image or video generation job to queue
 - `GET /api/queue` - Get queue status (queued, active, completed)
 - `DELETE /api/queue/<job_id>` - Remove queued or completed job

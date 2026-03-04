@@ -3,3 +3,4 @@ psutil
 mutagen
 pydub
 gradio_client
+python-dotenv

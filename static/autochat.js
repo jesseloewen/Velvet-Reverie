@@ -209,6 +209,8 @@ async function loadAutoSessions() {
         const data = await response.json();
         
         if (data.success) {
+            // Store sessions globally for queue navigation
+            window.autochatSessions = data.sessions;
             renderAutoSessionsList(data.sessions);
         }
     } catch (error) {
@@ -1358,3 +1360,6 @@ function calculateTotalTokens(messages) {
         return total + estimateTokenCount(msg.content || '');
     }, 0);
 }
+
+// Expose functions globally for queue navigation
+window.selectAutochatSession = selectAutoSession;

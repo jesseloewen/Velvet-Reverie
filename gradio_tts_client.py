@@ -11,17 +11,19 @@ import random
 class GradioTTSClient:
     """Client for interfacing with ChatterBox TTS Gradio API"""
     
-    def __init__(self, server_address: str = "127.0.0.1:7860"):
+    def __init__(self, server_address: str = "127.0.0.1:7860", output_dir: Optional[str] = None):
         """
         Initialize Gradio TTS client
         
         Args:
             server_address: Address of Gradio server (default: 127.0.0.1:7860)
+            output_dir: Gradio TTS output directory path (default: ../Ultimate-TTS-Studio.git/app/outputs)
         """
         self.server_address = server_address
         self.base_url = f"http://{server_address}/"
         self.client = None
         self.current_engine = None  # Track loaded engine
+        self.output_dir = Path(output_dir) if output_dir else Path('..') / 'Ultimate-TTS-Studio.git' / 'app' / 'outputs'
         
     def connect(self):
         """Connect to Gradio server"""
@@ -254,13 +256,41 @@ class GradioTTSClient:
                 generated_file = result[0]
                 print(f"[GRADIO TTS] Generated audio: {generated_file}")
                 
-                # Move to output path if specified
+                # Move to output path if specified (deletes source file like image/video generation)
                 if output_path:
                     import shutil
+                    import glob
                     output = Path(output_path)
                     output.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(generated_file, output)
-                    print(f"[GRADIO TTS] Saved to: {output_path}")
+                    
+                    # Move file instead of copying (matches ComfyUI image/video pattern)
+                    shutil.move(generated_file, output)
+                    print(f"[GRADIO TTS] Audio moved from {generated_file} to {output_path}")
+                    
+                    # Cleanup Ultimate-TTS-Studio outputs folder (delete all generated audio files)
+                    # This matches the ComfyUI pattern where output folder is cleaned after moving files
+                    try:
+                        if self.output_dir.exists() and self.output_dir.is_dir():
+                            # Delete all audio files in the outputs folder
+                            deleted_count = 0
+                            for audio_file in self.output_dir.glob('*.wav'):
+                                try:
+                                    audio_file.unlink()
+                                    deleted_count += 1
+                                except Exception as e:
+                                    print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
+                            for audio_file in self.output_dir.glob('*.mp3'):
+                                try:
+                                    audio_file.unlink()
+                                    deleted_count += 1
+                                except Exception as e:
+                                    print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
+                            
+                            if deleted_count > 0:
+                                print(f"[GRADIO TTS] Cleaned up {deleted_count} audio file(s) from TTS Studio outputs folder")
+                    except Exception as e:
+                        print(f"[GRADIO TTS] Note: Could not cleanup TTS Studio outputs: {e}")
+                    
                     return str(output)
                 
                 return generated_file
