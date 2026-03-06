@@ -20,7 +20,8 @@ import wave
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+# override=True ensures .env values take precedence over shell environment variables
+load_dotenv(override=True)
 
 # Try to import mutagen for accurate MP3 duration
 try:
