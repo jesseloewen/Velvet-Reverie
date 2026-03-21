@@ -130,6 +130,16 @@
                         When enabled, frees RAM/VRAM after each job (slower but prevents memory issues)
                     </small>
                 </div>
+                <!-- Browser Notifications Setting -->
+                <div class="hw-setting">
+                    <label class="checkbox-label" style="margin: 0; padding: 0.5rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="browserNotifications" class="checkbox-input">
+                        <span style="font-size: 0.875rem;">Browser Notifications on Completion</span>
+                    </label>
+                    <small style="color: var(--text-muted); display: block; padding: 0 0.5rem 0.5rem; font-size: 0.75rem;">
+                        Get desktop notifications when generations finish (requires permission)
+                    </small>
+                </div>
                 <div class="hw-stat">
                     <div class="hw-label">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -748,7 +758,7 @@
                         <div class="batch-header" style="margin-bottom: 1.5rem;">
                             <h2 style="margin: 0 0 0.5rem 0;">Image Batch Generation</h2>
                             <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
-                                Select a folder from the input directory. All images in that folder will be queued using the same prompt and settings. Image size is used automatically.
+                                Select a folder from the input directory. All images in that folder will be queued using the same prompt and settings. Choose to use each image's original size or set a custom size for all.
                             </p>
                         </div>
 
@@ -796,7 +806,29 @@
                             </svg>
                         </button>
                         <div class="collapsible-content active" id="imageBatchParameters">
+                            <!-- Size Mode Selection -->
+                            <div class="form-group" style="grid-column: 1 / -1; margin-bottom: 1rem;">
+                                <label>Image Size Mode</label>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <label class="checkbox-label">
+                                        <input type="radio" name="imageBatchSizeMode" id="imageBatchUseOriginalSize" value="original" checked class="checkbox-input">
+                                        <span>Use Original Image Size (for each image)</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="radio" name="imageBatchSizeMode" id="imageBatchUseCustomSize" value="custom" class="checkbox-input">
+                                        <span>Use Custom Size (for all images)</span>
+                                    </label>
+                                </div>
+                            </div>
                             <div class="parameters-grid">
+                                <div class="form-group" id="imageBatchWidthGroup">
+                                    <label for="imageBatchWidth">Width</label>
+                                    <input type="number" id="imageBatchWidth" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
+                                </div>
+                                <div class="form-group" id="imageBatchHeightGroup">
+                                    <label for="imageBatchHeight">Height</label>
+                                    <input type="number" id="imageBatchHeight" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
+                                </div>
                                 <div class="form-group">
                                     <label for="imageBatchSteps">Steps</label>
                                     <input type="number" id="imageBatchSteps" value="4" min="1" max="100" class="form-control">

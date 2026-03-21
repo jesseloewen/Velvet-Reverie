@@ -223,6 +223,53 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✓ Auto-unload models setting initialized');
     } catch (e) { console.error('✗ Auto-unload models setting failed:', e); }
     
+    // Initialize browser notifications setting
+    try {
+        const browserNotificationsCheckbox = document.getElementById('browserNotifications');
+        
+        // Load saved preference from localStorage (default: false)
+        const savedNotifications = localStorage.getItem('browserNotifications');
+        if (savedNotifications !== null) {
+            browserNotificationsCheckbox.checked = savedNotifications === 'true';
+        }
+        
+        // Listen for changes
+        browserNotificationsCheckbox.addEventListener('change', async function() {
+            const enabled = this.checked;
+            
+            if (enabled) {
+                // Request notification permission
+                if (!('Notification' in window)) {
+                    showNotification('Browser notifications are not supported', 'Not Supported', 'error', 3000);
+                    this.checked = false;
+                    return;
+                }
+                
+                if (Notification.permission === 'denied') {
+                    showNotification('Notification permission was denied. Please enable it in browser settings.', 'Permission Denied', 'error', 5000);
+                    this.checked = false;
+                    return;
+                }
+                
+                if (Notification.permission !== 'granted') {
+                    const permission = await Notification.requestPermission();
+                    if (permission !== 'granted') {
+                        showNotification('Notification permission was not granted', 'Permission Required', 'warning', 3000);
+                        this.checked = false;
+                        return;
+                    }
+                }
+                
+                localStorage.setItem('browserNotifications', 'true');
+                showNotification('You will be notified when generations complete', 'Notifications Enabled', 'success', 3000);
+            } else {
+                localStorage.setItem('browserNotifications', 'false');
+                showNotification('Browser notifications disabled', 'Notifications Disabled', 'info', 3000);
+            }
+        });
+        console.log('✓ Browser notifications setting initialized');
+    } catch (e) { console.error('✗ Browser notifications setting failed:', e); }
+    
     // Restore header collapsed state from localStorage
     try {
         const headerContainer = document.getElementById('headerContainer');
@@ -1433,6 +1480,67 @@ function showNotification(message, title = 'Notice', type = 'info', duration = 5
     }
 }
 
+// Browser Notification System
+function sendBrowserNotification(job) {
+    // Check if browser notifications are enabled
+    const enabled = localStorage.getItem('browserNotifications') === 'true';
+    if (!enabled) return;
+    
+    // Check if browser supports notifications
+    if (!('Notification' in window)) return;
+    
+    // Check if permission is granted
+    if (Notification.permission !== 'granted') return;
+    
+    // Build notification content based on job type
+    let title = 'Generation Complete';
+    let body = '';
+    let icon = '/static/assets/velvet_icon.png';
+    
+    if (job.job_type === 'image') {
+        title = '🖼️ Image Generated';
+        body = job.prompt ? job.prompt.substring(0, 100) : 'Image generation complete';
+    } else if (job.job_type === 'video') {
+        title = '🎬 Video Generated';
+        body = job.prompt ? job.prompt.substring(0, 100) : 'Video generation complete';
+    } else if (job.job_type === 'tts') {
+        title = '🔊 Audio Generated';
+        body = job.text ? job.text.substring(0, 100) : 'TTS generation complete';
+    } else if (job.job_type === 'chat') {
+        title = '💬 Chat Response';
+        body = 'Chat response generated';
+    } else if (job.job_type === 'story') {
+        title = '📖 Story Response';
+        body = 'Story response generated';
+    } else if (job.job_type === 'autochat') {
+        title = '🤖 Auto Chat Update';
+        body = 'Auto chat conversation updated';
+    }
+    
+    // Create and show the notification
+    try {
+        const notification = new Notification(title, {
+            body: body,
+            icon: icon,
+            badge: icon,
+            tag: `job-${job.id}`, // Prevent duplicate notifications
+            requireInteraction: false,
+            silent: false
+        });
+        
+        // Click to focus window
+        notification.onclick = function() {
+            window.focus();
+            notification.close();
+        };
+        
+        // Auto-close after 5 seconds
+        setTimeout(() => notification.close(), 5000);
+    } catch (error) {
+        console.error('Error sending browser notification:', error);
+    }
+}
+
 // Legacy showAlert wrapper for compatibility
 function showAlert(message, title = 'Notice') {
     showNotification(message, title, 'info', 5000);
@@ -1857,6 +1965,9 @@ async function updateQueue() {
             if (job.status === 'completed' && job.refresh_folder && !lastSeenCompletedIds.has(job.id)) {
                 lastSeenCompletedIds.add(job.id);
                 shouldRefreshFolder = true;
+                
+                // Send browser notification if enabled
+                sendBrowserNotification(job);
             }
         }
         
@@ -6229,6 +6340,9 @@ function initializeBatchMode() {
 function initializeImageBatch() {
     const chooseBtn = document.getElementById('chooseImageBatchFolderBtn');
     const queueBtn = document.getElementById('queueImageBatchBtn');
+    const useOriginalSize = document.getElementById('imageBatchUseOriginalSize');
+    const useCustomSize = document.getElementById('imageBatchUseCustomSize');
+    
     if (chooseBtn) {
         chooseBtn.addEventListener('click', () => {
             imageBrowserMode = 'image-batch';
@@ -6241,6 +6355,28 @@ function initializeImageBatch() {
     if (queueBtn) {
         queueBtn.addEventListener('click', queueImageBatchGeneration);
     }
+    
+    // Add event listeners for size mode radio buttons
+    if (useOriginalSize) {
+        useOriginalSize.addEventListener('change', toggleImageBatchSizeFields);
+    }
+    if (useCustomSize) {
+        useCustomSize.addEventListener('change', toggleImageBatchSizeFields);
+    }
+}
+
+function toggleImageBatchSizeFields() {
+    const useCustomSize = document.getElementById('imageBatchUseCustomSize');
+    const widthField = document.getElementById('imageBatchWidth');
+    const heightField = document.getElementById('imageBatchHeight');
+    
+    if (useCustomSize && useCustomSize.checked) {
+        widthField.disabled = false;
+        heightField.disabled = false;
+    } else {
+        widthField.disabled = true;
+        heightField.disabled = true;
+    }
 }
 
 async function queueImageBatchGeneration() {
@@ -6250,6 +6386,9 @@ async function queueImageBatchGeneration() {
         return;
     }
     const folderPath = selectedImageBatchFolder || currentBrowserSubpath || '';
+    const useOriginalSize = document.getElementById('imageBatchUseOriginalSize').checked;
+    const width = parseInt(document.getElementById('imageBatchWidth').value);
+    const height = parseInt(document.getElementById('imageBatchHeight').value);
     const steps = parseInt(document.getElementById('imageBatchSteps').value);
     const cfg = parseFloat(document.getElementById('imageBatchCfg').value);
     const shift = parseFloat(document.getElementById('imageBatchShift').value);
@@ -6268,6 +6407,9 @@ async function queueImageBatchGeneration() {
             body: JSON.stringify({
                 prompt,
                 folder: folderPath,
+                use_original_size: useOriginalSize,
+                width,
+                height,
                 steps,
                 cfg,
                 shift,
