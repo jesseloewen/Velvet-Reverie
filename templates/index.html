@@ -130,14 +130,19 @@
                         When enabled, frees RAM/VRAM after each job (slower but prevents memory issues)
                     </small>
                 </div>
-                <!-- Browser Notifications Setting -->
+                <!-- Notification Type Setting -->
                 <div class="hw-setting">
-                    <label class="checkbox-label" style="margin: 0; padding: 0.5rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                        <input type="checkbox" id="browserNotifications" class="checkbox-input">
-                        <span style="font-size: 0.875rem;">Browser Notifications on Completion</span>
+                    <label style="display: block; padding: 0.5rem;">
+                        <span style="font-size: 0.875rem; font-weight: 500; display: block; margin-bottom: 0.5rem;">Completion Alerts</span>
+                        <select id="notificationType" class="form-control" style="width: 100%; padding: 0.5rem; font-size: 0.875rem;">
+                            <option value="none">None</option>
+                            <option value="notification">Desktop Notification</option>
+                            <option value="sound" selected>Sound Only</option>
+                            <option value="both">Both</option>
+                        </select>
                     </label>
                     <small style="color: var(--text-muted); display: block; padding: 0 0.5rem 0.5rem; font-size: 0.75rem;">
-                        Get desktop notifications when generations finish (requires permission)
+                        Choose how to be alerted when generations complete
                     </small>
                 </div>
                 <div class="hw-stat">

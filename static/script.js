@@ -223,31 +223,33 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✓ Auto-unload models setting initialized');
     } catch (e) { console.error('✗ Auto-unload models setting failed:', e); }
     
-    // Initialize browser notifications setting
+    // Initialize notification type setting
     try {
-        const browserNotificationsCheckbox = document.getElementById('browserNotifications');
+        const notificationTypeSelect = document.getElementById('notificationType');
         
-        // Load saved preference from localStorage (default: false)
-        const savedNotifications = localStorage.getItem('browserNotifications');
-        if (savedNotifications !== null) {
-            browserNotificationsCheckbox.checked = savedNotifications === 'true';
-        }
+        // Load saved preference from localStorage (default: 'sound')
+        const savedNotificationType = localStorage.getItem('notificationType') || 'sound';
+        notificationTypeSelect.value = savedNotificationType;
         
         // Listen for changes
-        browserNotificationsCheckbox.addEventListener('change', async function() {
-            const enabled = this.checked;
+        notificationTypeSelect.addEventListener('change', async function() {
+            const type = this.value;
             
-            if (enabled) {
-                // Request notification permission
+            // If notification or both, request permission
+            if ((type === 'notification' || type === 'both')) {
                 if (!('Notification' in window)) {
                     showNotification('Browser notifications are not supported', 'Not Supported', 'error', 3000);
-                    this.checked = false;
+                    // Revert to sound
+                    this.value = 'sound';
+                    localStorage.setItem('notificationType', 'sound');
                     return;
                 }
                 
                 if (Notification.permission === 'denied') {
                     showNotification('Notification permission was denied. Please enable it in browser settings.', 'Permission Denied', 'error', 5000);
-                    this.checked = false;
+                    // Revert to sound
+                    this.value = 'sound';
+                    localStorage.setItem('notificationType', 'sound');
                     return;
                 }
                 
@@ -255,20 +257,32 @@ document.addEventListener('DOMContentLoaded', function() {
                     const permission = await Notification.requestPermission();
                     if (permission !== 'granted') {
                         showNotification('Notification permission was not granted', 'Permission Required', 'warning', 3000);
-                        this.checked = false;
+                        // Revert to sound
+                        this.value = 'sound';
+                        localStorage.setItem('notificationType', 'sound');
                         return;
                     }
                 }
-                
-                localStorage.setItem('browserNotifications', 'true');
-                showNotification('You will be notified when generations complete', 'Notifications Enabled', 'success', 3000);
-            } else {
-                localStorage.setItem('browserNotifications', 'false');
-                showNotification('Browser notifications disabled', 'Notifications Disabled', 'info', 3000);
+            }
+            
+            localStorage.setItem('notificationType', type);
+            
+            // Show feedback message
+            const messages = {
+                'none': 'Completion alerts disabled',
+                'notification': 'Desktop notifications enabled',
+                'sound': 'Sound alerts enabled',
+                'both': 'Desktop notifications and sound enabled'
+            };
+            showNotification(messages[type], 'Alert Settings', 'success', 3000);
+            
+            // Play sound if sound or both selected (as preview)
+            if (type === 'sound' || type === 'both') {
+                playNotificationSound();
             }
         });
-        console.log('✓ Browser notifications setting initialized');
-    } catch (e) { console.error('✗ Browser notifications setting failed:', e); }
+        console.log('✓ Notification type setting initialized');
+    } catch (e) { console.error('✗ Notification type setting failed:', e); }
     
     // Restore header collapsed state from localStorage
     try {
@@ -1480,11 +1494,54 @@ function showNotification(message, title = 'Notice', type = 'info', duration = 5
     }
 }
 
+// Play Notification Sound
+function playNotificationSound() {
+    try {
+        // Create audio context if not exists
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Simple notification sound using Web Audio API (pleasant chime)
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Play two notes for a pleasant chime effect
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+    } catch (error) {
+        console.error('Error playing notification sound:', error);
+    }
+}
+
 // Browser Notification System
 function sendBrowserNotification(job) {
-    // Check if browser notifications are enabled
-    const enabled = localStorage.getItem('browserNotifications') === 'true';
-    if (!enabled) return;
+    // Get notification type preference
+    const notificationType = localStorage.getItem('notificationType') || 'sound';
+    
+    // If none, do nothing
+    if (notificationType === 'none') return;
+    
+    // Play sound if sound or both
+    if (notificationType === 'sound' || notificationType === 'both') {
+        playNotificationSound();
+    }
+    
+    // Send desktop notification if notification or both
+    if (notificationType === 'notification' || notificationType === 'both') {
+        sendDesktopNotification(job);
+    }
+}
+
+// Desktop Notification (split from sendBrowserNotification for clarity)
+function sendDesktopNotification(job) {
     
     // Check if browser supports notifications
     if (!('Notification' in window)) return;

@@ -1320,6 +1320,27 @@ textarea.form-control {
     accent-color: var(--accent-primary);
 }
 
+/* Radio Button Styles */
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+}
+
+.radio-label:hover {
+    opacity: 0.8;
+}
+
+.radio-input {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent-primary);
+}
+
 /* Range Slider Styles */
 input[type="range"] {
     -webkit-appearance: none;
