@@ -80,7 +80,9 @@ function storyTTSNow(messageIndex) {
     }
     
     const message = currentStorySession.messages[messageIndex];
-    ttsNow(message.content);
+    const messageId = message.response_id || message.message_id;
+    // Use the chat TTS modal from script.js
+    showChatTTSModal(message.content, messageId);
 }
 
 // Estimate token count for text (rough approximation)

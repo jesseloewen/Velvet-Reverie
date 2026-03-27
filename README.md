@@ -81,6 +81,7 @@ outputs/
 - **Gradio ChatterBox TTS** on `http://127.0.0.1:7860` (for text-to-speech)
 - **Ollama server** on `http://127.0.0.1:11434` (for AI chat features)
 - Optional: NVIDIA GPU with nvidia-smi for GPU/VRAM monitoring
+- **ffmpeg** (required for audio merging): Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
 
 ## Quick Start
 
@@ -476,7 +477,7 @@ The interface has **14 tabs**:
 │   ├── Wan2.2 I2V (API).json        # Video generation workflow (standard)
 │   └── Wan2.2 I2V NSFW (API).json   # Video generation workflow (NSFW)
 ├── cache/                      # Cache directories for ML frameworks
-├── requirements.txt            # Python dependencies (flask, psutil, pydub, mutagen, gradio_client)
+├── requirements.txt            # Python dependencies (flask, psutil, mutagen, gradio_client)
 └── PASSWORD_README.md          # Password change instructions
 ```
 
@@ -520,7 +521,7 @@ The interface has **14 tabs**:
 - Queue processing runs in daemon thread
 - Uses Python stdlib for ComfyUI and Ollama clients (urllib, json)
 - **Required dependency**: Flask
-- **Optional dependencies**: psutil (hardware monitoring), pydub (audio merging), mutagen (MP3 duration)
+- **Optional dependencies**: psutil (hardware monitoring), mutagen (MP3 duration), ffmpeg (audio merging)
 - **UTF-8 Encoding**: All file I/O uses `encoding='utf-8'` for Windows compatibility
 - **Smart Workflow Switching:**
   - Automatically detects workflow type changes (image/video/NSFW/chat)

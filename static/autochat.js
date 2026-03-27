@@ -900,7 +900,9 @@ function autochatTTSNow(index) {
     if (!currentAutoSession || !currentAutoSession.messages[index]) return;
     
     const message = currentAutoSession.messages[index];
-    ttsNow(message.content);
+    const messageId = message.response_id || message.message_id;
+    // Use the chat TTS modal from script.js
+    showChatTTSModal(message.content, messageId);
 }
 
 // Edit message

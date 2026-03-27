@@ -312,6 +312,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✓ Mobile keyboard fix initialized');
     } catch (e) { console.error('✗ Mobile keyboard fix failed:', e); }
     
+    // Prevent pull-to-refresh on mobile
+    try {
+        initializePreventPullToRefresh();
+        console.log('✓ Pull-to-refresh prevention initialized');
+    } catch (e) { console.error('✗ Pull-to-refresh prevention failed:', e); }
+    
     // Initialize TTS language dropdown state
     try {
         initializeTTSLanguageControls();
@@ -686,6 +692,59 @@ function initializeMobileKeyboardFix() {
     });
     
     console.log('Mobile keyboard fix initialized');
+}
+
+// Prevent Pull-to-Refresh on Mobile
+function initializePreventPullToRefresh() {
+    let touchStartY = 0;
+    let preventPullToRefresh = false;
+    
+    // Detect touchstart to check if user is at the top of the page
+    document.addEventListener('touchstart', function(e) {
+        touchStartY = e.touches[0].clientY;
+        
+        // Check if any scrollable element is at the top
+        const target = e.target;
+        const scrollableParent = findScrollableParent(target);
+        
+        if (scrollableParent) {
+            // If the scrollable element is at the top, we might need to prevent pull-to-refresh
+            preventPullToRefresh = scrollableParent.scrollTop === 0;
+        } else {
+            // If no scrollable parent, check document scroll
+            preventPullToRefresh = window.scrollY === 0;
+        }
+    }, { passive: true });
+    
+    // Prevent touchmove if pulling down from the top
+    document.addEventListener('touchmove', function(e) {
+        const touchY = e.touches[0].clientY;
+        const touchDelta = touchY - touchStartY;
+        
+        // If pulling down (positive delta) and at the top, prevent default
+        if (preventPullToRefresh && touchDelta > 0) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    
+    console.log('Pull-to-refresh prevention initialized');
+}
+
+// Helper function to find the nearest scrollable parent
+function findScrollableParent(element) {
+    if (!element || element === document.body) {
+        return null;
+    }
+    
+    const style = window.getComputedStyle(element);
+    const overflowY = style.overflowY;
+    const isScrollable = overflowY !== 'visible' && overflowY !== 'hidden';
+    
+    if (isScrollable && element.scrollHeight > element.clientHeight) {
+        return element;
+    }
+    
+    return findScrollableParent(element.parentElement);
 }
 
 // Event Listeners
@@ -4332,6 +4391,10 @@ function selectAudioFile(filename, folder, filePath) {
     if (audioBrowserMode === 'tts') {
         // Set the TTS narrator audio input - use filePath to include subfolder
         document.getElementById('ttsNarratorAudio').value = filePath;
+        showNotification(`Selected: ${filePath}`, 'Audio Selected', 'success', 2000);
+    } else if (audioBrowserMode === 'modal') {
+        // Set the modal TTS voice input
+        document.getElementById('modalTTSVoice').value = filePath;
         showNotification(`Selected: ${filePath}`, 'Audio Selected', 'success', 2000);
     }
     
@@ -8318,25 +8381,112 @@ function sendToTTS(text) {
     showNotification('Text copied to TTS tab', 'Success', 'success', 3000);
 }
 
-async function ttsNow(text) {
-    // Get current TTS parameters from UI
-    const refAudio = document.getElementById('ttsNarratorAudio').value.trim();
-    const seed = document.getElementById('ttsSeed').value.trim();
-    const filePrefix = document.getElementById('ttsFilePrefix').value.trim() || 'tts';
-    const subfolder = document.getElementById('ttsSubfolder').value.trim();
-    const ttsEngine = document.getElementById('ttsEngine').value || 'ChatterboxTTS';
-    const audioFormat = document.getElementById('ttsAudioFormat').value || 'wav';
-    const temperature = parseFloat(document.getElementById('ttsTemperature').value) || 0.8;
-    const exaggeration = parseFloat(document.getElementById('ttsExaggeration').value) || 0.5;
-    const cfgWeight = parseFloat(document.getElementById('ttsCfgWeight').value) || 0.5;
-    const chunkSize = parseInt(document.getElementById('ttsChunkSize').value) || 300;
-    const language = document.getElementById('ttsLanguage').value || 'en';
-    const repetitionPenalty = parseFloat(document.getElementById('ttsRepetitionPenalty').value) || 2.0;
+async function ttsNow(text, messageId = null) {
+    // Instead of directly queuing, show the modal with settings
+    showChatTTSModal(text, messageId);
+}
+
+// Chat TTS Modal Functions
+function showChatTTSModal(text, messageId = null) {
+    console.log('[TTS] Opening TTS modal for message:', messageId);
     
-    if (!refAudio) {
-        showNotification('Please configure reference audio in TTS settings first', 'Error', 'error', 5000);
+    // Populate modal with current TTS settings
+    const refAudio = document.getElementById('ttsNarratorAudio')?.value || 'Holly.mp3';
+    const ttsEngine = document.getElementById('ttsEngine')?.value || 'ChatterboxTTS';
+    const audioFormat = document.getElementById('ttsAudioFormat')?.value || 'wav';
+    const temperature = parseFloat(document.getElementById('ttsTemperature')?.value) || 0.8;
+    const exaggeration = parseFloat(document.getElementById('ttsExaggeration')?.value) || 0.5;
+    const cfgWeight = parseFloat(document.getElementById('ttsCfgWeight')?.value) || 0.5;
+    const language = document.getElementById('ttsLanguage')?.value || 'en';
+    const subfolder = document.getElementById('ttsSubfolder')?.value || '';
+    
+    // Set modal values
+    document.getElementById('modalTTSVoice').value = refAudio;
+    document.getElementById('modalTTSEngine').value = ttsEngine;
+    document.getElementById('modalTTSFormat').value = audioFormat;
+    document.getElementById('modalTTSTemperature').value = temperature;
+    document.getElementById('modalTTSTemperatureValue').textContent = temperature.toFixed(1);
+    document.getElementById('modalTTSExaggeration').value = exaggeration;
+    document.getElementById('modalTTSExaggerationValue').textContent = exaggeration.toFixed(1);
+    document.getElementById('modalTTSCfgWeight').value = cfgWeight;
+    document.getElementById('modalTTSCfgWeightValue').textContent = cfgWeight.toFixed(1);
+    document.getElementById('modalTTSLanguage').value = language;
+    document.getElementById('modalTTSSubfolder').value = subfolder;
+    
+    // Store text and message ID
+    document.getElementById('modalTTSMessageText').value = text;
+    document.getElementById('modalTTSMessageId').value = messageId || '';
+    
+    // Show modal
+    document.getElementById('chatTTSModal').style.display = 'flex';
+    
+    // Setup range input listeners for live updates
+    setupTTSModalRangeListeners();
+}
+
+function setupTTSModalRangeListeners() {
+    // Temperature
+    const tempSlider = document.getElementById('modalTTSTemperature');
+    const tempValue = document.getElementById('modalTTSTemperatureValue');
+    if (tempSlider && tempValue) {
+        tempSlider.oninput = function() {
+            tempValue.textContent = parseFloat(this.value).toFixed(1);
+        };
+    }
+    
+    // Exaggeration
+    const exagSlider = document.getElementById('modalTTSExaggeration');
+    const exagValue = document.getElementById('modalTTSExaggerationValue');
+    if (exagSlider && exagValue) {
+        exagSlider.oninput = function() {
+            exagValue.textContent = parseFloat(this.value).toFixed(1);
+        };
+    }
+    
+    // CFG Weight
+    const cfgSlider = document.getElementById('modalTTSCfgWeight');
+    const cfgValue = document.getElementById('modalTTSCfgWeightValue');
+    if (cfgSlider && cfgValue) {
+        cfgSlider.oninput = function() {
+            cfgValue.textContent = parseFloat(this.value).toFixed(1);
+        };
+    }
+}
+
+function closeChatTTSModal() {
+    document.getElementById('chatTTSModal').style.display = 'none';
+}
+
+function openAudioBrowserForModal() {
+    // Open audio browser in 'modal' mode to select file for the TTS modal
+    openAudioBrowser('modal');
+}
+
+async function submitChatTTS() {
+    // Get values from modal
+    const text = document.getElementById('modalTTSMessageText').value;
+    const messageId = document.getElementById('modalTTSMessageId').value;
+    const refAudio = document.getElementById('modalTTSVoice').value.trim();
+    const ttsEngine = document.getElementById('modalTTSEngine').value;
+    const audioFormat = document.getElementById('modalTTSFormat').value;
+    const temperature = parseFloat(document.getElementById('modalTTSTemperature').value);
+    const exaggeration = parseFloat(document.getElementById('modalTTSExaggeration').value);
+    const cfgWeight = parseFloat(document.getElementById('modalTTSCfgWeight').value);
+    const language = document.getElementById('modalTTSLanguage').value;
+    const subfolder = document.getElementById('modalTTSSubfolder').value.trim();
+    
+    if (!text) {
+        showNotification('No text to convert to speech', 'Error', 'error');
         return;
     }
+    
+    if (!refAudio) {
+        showNotification('Please specify a reference audio file', 'Error', 'error');
+        return;
+    }
+    
+    // Close modal
+    closeChatTTSModal();
     
     try {
         const response = await fetch('/api/queue/tts', {
@@ -8345,17 +8495,20 @@ async function ttsNow(text) {
             body: JSON.stringify({
                 text,
                 ref_audio: refAudio,
-                seed: seed ? parseInt(seed) : null,
-                file_prefix: filePrefix,
+                seed: null,
+                file_prefix: 'chat_tts',
                 subfolder,
                 tts_engine: ttsEngine,
                 audio_format: audioFormat,
                 temperature,
                 exaggeration,
                 cfg_weight: cfgWeight,
-                chunk_size: chunkSize,
+                chunk_size: 300,
                 language,
-                repetition_penalty: repetitionPenalty
+                repetition_penalty: 2.0,
+                // Track which chat message this TTS belongs to
+                chat_message_id: messageId,
+                session_id: currentChatSession?.session_id
             })
         });
         
@@ -8363,6 +8516,12 @@ async function ttsNow(text) {
         
         if (data.success) {
             showNotification(`TTS queued! ${data.total_sentences} sentence(s) will be generated.`, 'Success', 'success', 4000);
+            
+            // Store batch ID with message for later audio attachment
+            if (messageId && data.batch_id) {
+                // We'll handle this when TTS completes
+                console.log('[TTS] Batch ID:', data.batch_id, 'for message:', messageId);
+            }
         } else {
             showNotification(data.error || 'Failed to queue TTS generation', 'Error', 'error', 5000);
         }
@@ -10122,6 +10281,28 @@ function createChatMessageElement(message, isLoading = false, isLastUserMessage 
     
     wrapper.appendChild(header);
     wrapper.appendChild(content);
+    
+    // Add audio player if message has TTS audio
+    if (message.tts_audio) {
+        const audioContainer = document.createElement('div');
+        audioContainer.className = 'chat-message-audio';
+        audioContainer.style.cssText = 'margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);';
+        audioContainer.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                <span style="font-size: 0.875rem; color: var(--text-muted);">TTS Audio</span>
+            </div>
+            <audio controls style="width: 100%; max-width: 400px;">
+                <source src="/outputs/${message.tts_audio}" type="audio/wav">
+                Your browser does not support the audio element.
+            </audio>
+        `;
+        wrapper.appendChild(audioContainer);
+    }
+    
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(wrapper);
     
@@ -10207,7 +10388,8 @@ function createChatMessageElement(message, isLoading = false, isLastUserMessage 
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
         `;
-        ttsNowBtn.onclick = () => ttsNow(message.content);
+        // Pass both text and message ID to ttsNow
+        ttsNowBtn.onclick = () => ttsNow(message.content, messageId);
         btnContainer.appendChild(ttsNowBtn);
         
         // Edit button on all messages

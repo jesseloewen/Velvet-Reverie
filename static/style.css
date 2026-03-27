@@ -101,6 +101,9 @@ html {
     scroll-behavior: smooth;
     /* Support for devices with display cutouts (notches, navigation bars) */
     padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+    /* Prevent pull-to-refresh on mobile */
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
 }
 
 body {
@@ -109,6 +112,9 @@ body {
     color: var(--text-primary);
     line-height: 1.6;
     overflow: hidden;
+    /* Prevent pull-to-refresh on mobile */
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
 }
 
 /* Allow body scroll on mobile when keyboard is open */

@@ -31,13 +31,20 @@ except ImportError:
     MUTAGEN_AVAILABLE = False
     print("[AUDIO] Warning: mutagen not installed. MP3 duration will be estimated.")
 
-# Try to import pydub for audio merging
-try:
-    from pydub import AudioSegment
-    PYDUB_AVAILABLE = True
-except ImportError:
-    PYDUB_AVAILABLE = False
-    print("[AUDIO] Warning: pydub not installed. Audio merging will not be available.")
+# Check if ffmpeg is available for audio merging
+import subprocess
+import shutil
+
+def check_ffmpeg_available():
+    """Check if ffmpeg is available in system PATH"""
+    return shutil.which("ffmpeg") is not None or shutil.which("avconv") is not None
+
+FFMPEG_AVAILABLE = check_ffmpeg_available()
+if FFMPEG_AVAILABLE:
+    print("[AUDIO] ffmpeg detected - audio merging enabled")
+else:
+    print("[AUDIO] Warning: ffmpeg not found. Please install ffmpeg for audio merging.")
+    print("[AUDIO] Download from: https://ffmpeg.org/download.html")
 
 app = Flask(__name__)
 
@@ -319,6 +326,116 @@ def save_chats(chats):
             json.dump(chats, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving chats: {e}")
+
+def merge_tts_batch_for_chat(batch_id, chat_message_id, session_id):
+    """Merge TTS batch audio files and attach to chat message"""
+    try:
+        metadata = load_metadata()
+        
+        # Get all files for this batch
+        batch_files = [entry for entry in metadata 
+                      if entry.get('job_type') == 'tts' and entry.get('batch_id') == batch_id]
+        
+        if not batch_files:
+            print(f"[MERGE] No files found for batch {batch_id}")
+            return None
+        
+        # Group by sentence_index and get latest version of each
+        sentence_groups = {}
+        for file in batch_files:
+            idx = file.get('sentence_index')
+            if idx not in sentence_groups:
+                sentence_groups[idx] = []
+            sentence_groups[idx].append(file)
+        
+        # Get latest version for each sentence
+        files_to_merge = []
+        for idx in sorted(sentence_groups.keys()):
+            versions = sentence_groups[idx]
+            versions.sort(key=lambda x: x.get('version_number', 0), reverse=True)
+            files_to_merge.append(versions[0])
+        
+        if not files_to_merge:
+            return None
+        
+        # Collect valid file paths
+        valid_files = []
+        for file_entry in files_to_merge:
+            path_str = file_entry.get('path', '')
+            file_path = Path(path_str)
+            
+            if not file_path.is_absolute() and not file_path.exists():
+                file_path = OUTPUT_DIR / path_str if not file_path.exists() else file_path
+            
+            if not file_path.exists():
+                continue
+            
+            valid_files.append(file_path)
+        
+        if not valid_files:
+            return None
+        
+        # Generate output filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"chat_merged_{batch_id[:8]}_{timestamp}.wav"
+        output_path = OUTPUT_DIR / "audio" / "chat_merged" / output_filename
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Use ffmpeg to merge files
+        silence_path = OUTPUT_DIR / "audio" / f"silence_temp_{timestamp}.wav"
+        
+        # Create silence
+        silence_cmd = [
+            'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+            '-t', '0.1', '-y', str(silence_path)
+        ]
+        subprocess.run(silence_cmd, check=True, capture_output=True)
+        
+        # Build input list
+        inputs = []
+        for i, file_path in enumerate(valid_files):
+            inputs.extend(['-i', str(file_path)])
+            if i < len(valid_files) - 1:
+                inputs.extend(['-i', str(silence_path)])
+        
+        # Merge
+        stream_count = len(valid_files) + (len(valid_files) - 1)
+        filter_str = ''.join([f'[{i}:a]' for i in range(stream_count)]) + f'concat=n={stream_count}:v=0:a=1[out]'
+        
+        merge_cmd = ['ffmpeg'] + inputs + [
+            '-filter_complex', filter_str,
+            '-map', '[out]',
+            '-y', str(output_path)
+        ]
+        
+        subprocess.run(merge_cmd, check=True, capture_output=True)
+        
+        # Cleanup
+        if silence_path.exists():
+            silence_path.unlink()
+        
+        # Update chat message
+        if session_id and chat_message_id:
+            with chat_lock:
+                sessions = load_chats()
+                for session in sessions:
+                    if session['session_id'] == session_id:
+                        for message in session.get('messages', []):
+                            msg_id = message.get('message_id') or message.get('response_id')
+                            if msg_id == chat_message_id:
+                                relative_path = str(output_path.relative_to(OUTPUT_DIR))
+                                message['tts_audio'] = relative_path
+                                message['tts_batch_id'] = batch_id
+                                print(f"[MERGE] Attached audio to message: {relative_path}")
+                                break
+                        break
+                save_chats(sessions)
+        
+        return str(output_path.relative_to(OUTPUT_DIR))
+            
+    except Exception as e:
+        print(f"[MERGE] Error: {e}")
+        return None
 
 
 def load_stories():
@@ -810,6 +927,21 @@ def process_queue():
                         print(f"[TTS] All sentences completed")
                     else:
                         print(f"[TTS] Skipping sentence processing due to earlier failure")
+                    
+                    # Auto-merge audio if chat message tracking is enabled
+                    if job.get('chat_message_id') and job.get('status') != 'failed' and FFMPEG_AVAILABLE:
+                        try:
+                            print(f"[TTS] Auto-merging audio for chat message: {job.get('chat_message_id')}")
+                            merged_file = merge_tts_batch_for_chat(batch_id, job.get('chat_message_id'), job.get('session_id'))
+                            if merged_file:
+                                print(f"[TTS] Successfully auto-merged to: {merged_file}")
+                                job['merged_audio'] = merged_file
+                            else:
+                                print(f"[TTS] Auto-merge failed")
+                        except Exception as e:
+                            print(f"[TTS] Error during auto-merge: {e}")
+                            import traceback
+                            traceback.print_exc()
                     
                     # Calculate total generation duration
                     generation_duration = round(time.time() - start_time, 1)
@@ -3760,6 +3892,10 @@ def add_tts_to_queue():
     repetition_penalty = data.get('repetition_penalty', 2.0)
     emotion_description = data.get('emotion_description', '')
     
+    # Chat message tracking (optional)
+    chat_message_id = data.get('chat_message_id')
+    session_id = data.get('session_id')
+    
     if not text:
         return jsonify({'success': False, 'error': 'Text is required'}), 400
     
@@ -3870,7 +4006,10 @@ def add_tts_to_queue():
             'chunk_size': chunk_size,
             'language': language,
             'repetition_penalty': repetition_penalty,
-            'emotion_description': emotion_description
+            'emotion_description': emotion_description,
+            # Chat message tracking
+            'chat_message_id': chat_message_id,
+            'session_id': session_id
         }
         
         with queue_lock:
@@ -5414,10 +5553,10 @@ def download_audio_sentence(file_id):
 @require_auth
 def merge_audio_batch():
     """Merge selected audio files from a batch into a single file"""
-    if not PYDUB_AVAILABLE:
+    if not FFMPEG_AVAILABLE:
         return jsonify({
             'success': False,
-            'error': 'pydub is not installed. Please install it to use audio merging.'
+            'error': 'Audio merging requires ffmpeg to be installed on your system. Download from https://ffmpeg.org/download.html and add to PATH.'
         }), 500
     
     try:
@@ -5461,8 +5600,9 @@ def merge_audio_batch():
         if not files_to_merge:
             return jsonify({'success': False, 'error': 'No audio files found for merging'}), 404
         
-        # Merge audio files using pydub
-        combined = None
+        # Merge audio files using ffmpeg
+        # Collect valid file paths
+        valid_files = []
         for file_entry in files_to_merge:
             # Handle path - may be relative to project root or need OUTPUT_DIR
             path_str = file_entry.get('path', '')
@@ -5477,33 +5617,66 @@ def merge_audio_batch():
                 print(f"[AUDIO] Warning: File not found: {file_path}")
                 continue
             
-            try:
-                # Load audio file
-                audio_segment = AudioSegment.from_file(str(file_path))
-                
-                if combined is None:
-                    combined = audio_segment
-                else:
-                    # Add a small silence between sentences (100ms)
-                    silence = AudioSegment.silent(duration=100)
-                    combined = combined + silence + audio_segment
-                
-            except Exception as e:
-                print(f"[AUDIO] Error loading file {file_path}: {e}")
-                continue
+            valid_files.append(file_path)
         
-        if combined is None:
-            return jsonify({'success': False, 'error': 'Failed to merge audio files'}), 500
+        if not valid_files:
+            return jsonify({'success': False, 'error': 'No valid audio files found for merging'}), 404
         
         # Generate output filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"merged_{batch_id}_{timestamp}.wav"
         output_path = OUTPUT_DIR / "audio" / output_filename
         
-        # Export merged audio
-        combined.export(str(output_path), format="wav")
-        
-        print(f"[AUDIO] Merged {len(files_to_merge)} audio files into {output_filename}")
+        # Use ffmpeg to merge files with silence between them
+        try:
+            # Create a temporary file list for ffmpeg concat
+            concat_list_path = OUTPUT_DIR / "audio" / f"concat_list_{timestamp}.txt"
+            silence_path = OUTPUT_DIR / "audio" / f"silence_{timestamp}.wav"
+            
+            # Create 100ms silence file using ffmpeg
+            silence_cmd = [
+                'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+                '-t', '0.1', '-y', str(silence_path)
+            ]
+            subprocess.run(silence_cmd, check=True, capture_output=True)
+            
+            # Build ffmpeg filter_complex command to concatenate with silence
+            inputs = []
+            filter_parts = []
+            for i, file_path in enumerate(valid_files):
+                inputs.extend(['-i', str(file_path)])
+                if i > 0:
+                    inputs.extend(['-i', str(silence_path)])
+            
+            # Build filter complex string
+            stream_count = len(valid_files) + (len(valid_files) - 1)  # files + silences
+            filter_str = f"{''.join([f'[{i}:a]' for i in range(stream_count)])}concat=n={stream_count}:v=0:a=1[out]"
+            
+            # Run ffmpeg merge command
+            merge_cmd = ['ffmpeg'] + inputs + [
+                '-filter_complex', filter_str,
+                '-map', '[out]',
+                '-y', str(output_path)
+            ]
+            
+            result = subprocess.run(merge_cmd, check=True, capture_output=True, text=True)
+            
+            # Clean up temporary files
+            if concat_list_path.exists():
+                concat_list_path.unlink()
+            if silence_path.exists():
+                silence_path.unlink()
+            
+            print(f"[AUDIO] Merged {len(valid_files)} audio files into {output_filename}")
+            
+        except subprocess.CalledProcessError as e:
+            print(f"[AUDIO] ffmpeg error: {e.stderr}")
+            return jsonify({'success': False, 'error': f'ffmpeg error: {e.stderr}'}), 500
+        except Exception as e:
+            print(f"[AUDIO] Error during merge: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'error': str(e)}), 500
         
         # Send the merged file
         return send_file(
