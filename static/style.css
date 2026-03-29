@@ -5072,12 +5072,28 @@ input[type="range"]:focus {
 
 .audio-player {
     width: 100%;
+    height: 48px;
     margin-bottom: 0.75rem;
     border-radius: 4px;
 }
 
 .audio-player::-webkit-media-controls-panel {
     background: var(--bg-tertiary);
+}
+
+/* Desktop: Make audio player larger and more prominent */
+@media (min-width: 769px) {
+    .audio-player {
+        height: 54px;
+    }
+    
+    .audio-player-section {
+        padding: 1.25rem;
+    }
+    
+    .audio-controls {
+        padding: 0 0.75rem;
+    }
 }
 
 .current-sentence-display {

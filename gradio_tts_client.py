@@ -146,7 +146,8 @@ class GradioTTSClient:
         language: str = "en",
         repetition_penalty: float = 2.0,
         emotion_description: str = "",
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        skip_cleanup: bool = False
     ) -> Optional[str]:
         """
         Generate TTS audio using ChatterBox
@@ -165,6 +166,7 @@ class GradioTTSClient:
             repetition_penalty: Repetition penalty for multilingual (default 2.0)
             emotion_description: Emotion/style description for TTS v2 (optional, default "")
             output_path: Path to save output file (if None, file is not moved)
+            skip_cleanup: Skip cleanup of TTS output folder (for batch processing, default False)
             
         Returns:
             Path to generated audio file, or None on failure
@@ -268,28 +270,29 @@ class GradioTTSClient:
                     print(f"[GRADIO TTS] Audio moved from {generated_file} to {output_path}")
                     
                     # Cleanup Ultimate-TTS-Studio outputs folder (delete all generated audio files)
-                    # This matches the ComfyUI pattern where output folder is cleaned after moving files
-                    try:
-                        if self.output_dir.exists() and self.output_dir.is_dir():
-                            # Delete all audio files in the outputs folder
-                            deleted_count = 0
-                            for audio_file in self.output_dir.glob('*.wav'):
-                                try:
-                                    audio_file.unlink()
-                                    deleted_count += 1
-                                except Exception as e:
-                                    print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
-                            for audio_file in self.output_dir.glob('*.mp3'):
-                                try:
-                                    audio_file.unlink()
-                                    deleted_count += 1
-                                except Exception as e:
-                                    print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
-                            
-                            if deleted_count > 0:
-                                print(f"[GRADIO TTS] Cleaned up {deleted_count} audio file(s) from TTS Studio outputs folder")
-                    except Exception as e:
-                        print(f"[GRADIO TTS] Note: Could not cleanup TTS Studio outputs: {e}")
+                    # Skip cleanup if requested (for batch processing - cleanup once at the end)
+                    if not skip_cleanup:
+                        try:
+                            if self.output_dir.exists() and self.output_dir.is_dir():
+                                # Delete all audio files in the outputs folder
+                                deleted_count = 0
+                                for audio_file in self.output_dir.glob('*.wav'):
+                                    try:
+                                        audio_file.unlink()
+                                        deleted_count += 1
+                                    except Exception as e:
+                                        print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
+                                for audio_file in self.output_dir.glob('*.mp3'):
+                                    try:
+                                        audio_file.unlink()
+                                        deleted_count += 1
+                                    except Exception as e:
+                                        print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
+                                
+                                if deleted_count > 0:
+                                    print(f"[GRADIO TTS] Cleaned up {deleted_count} audio file(s) from TTS Studio outputs folder")
+                        except Exception as e:
+                            print(f"[GRADIO TTS] Note: Could not cleanup TTS Studio outputs: {e}")
                     
                     return str(output)
                 
@@ -303,6 +306,31 @@ class GradioTTSClient:
             import traceback
             traceback.print_exc()
             return None
+    
+    def cleanup_output_folder(self) -> int:
+        """Cleanup TTS Studio output folder. Returns number of files deleted."""
+        try:
+            if self.output_dir.exists() and self.output_dir.is_dir():
+                deleted_count = 0
+                for audio_file in self.output_dir.glob('*.wav'):
+                    try:
+                        audio_file.unlink()
+                        deleted_count += 1
+                    except Exception as e:
+                        print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
+                for audio_file in self.output_dir.glob('*.mp3'):
+                    try:
+                        audio_file.unlink()
+                        deleted_count += 1
+                    except Exception as e:
+                        print(f"[GRADIO TTS] Could not delete {audio_file.name}: {e}")
+                
+                if deleted_count > 0:
+                    print(f"[GRADIO TTS] Cleaned up {deleted_count} audio file(s) from TTS Studio outputs folder")
+                return deleted_count
+        except Exception as e:
+            print(f"[GRADIO TTS] Cleanup error: {e}")
+        return 0
     
     def health_check(self) -> bool:
         """Check if Gradio TTS server is accessible"""

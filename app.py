@@ -10,6 +10,7 @@ import os
 import json
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
@@ -819,36 +820,41 @@ def process_queue():
                                 # Don't use continue - let the job flow to completion section
                     
                     output_paths = []
+                    metadata_entries = []  # Collect metadata entries without saving
+                    batch_token = (batch_id or str(job.get('id', '')) or str(uuid.uuid4()))[:8]
                     
-                    # Process each sentence (only if job hasn't already failed)
-                    if job.get('status') != 'failed':
-                        for idx, sentence in enumerate(sentences):
-                            # Check if cancellation was requested
-                            if cancellation_requested:
-                                print(f"[TTS] Cancellation detected, stopping at sentence {idx + 1}/{total_sentences}")
-                                job['status'] = 'cancelled'
-                                break
-                            
-                            print(f"[TTS] Processing sentence {idx + 1}/{total_sentences}: {sentence[:50]}...")
-                            
+                    # Define worker function for parallel TTS generation
+                    def generate_sentence(idx, sentence):
+                        """Worker function to generate a single sentence in parallel"""
+                        try:
                             # Determine output file extension based on audio_format
                             file_ext = audio_format if audio_format in ['wav', 'mp3'] else 'wav'
                             
                             # For regenerations, use version suffix in filename
                             if is_regeneration:
-                                # Build filename like: tts_s1_v2.wav for sentence 1, version 2
                                 version_suffix = f"_s{original_sentence_index}_v{version_number}"
                                 versioned_prefix = f"{file_prefix}{version_suffix}"
-                                relative_path, output_path = get_next_filename(versioned_prefix, subfolder, file_ext, 'audio')
+                                # Thread-safe: Use unique prefix per sentence
+                                with queue_lock:  # Lock to prevent filename conflicts
+                                    relative_path, output_path = get_next_filename(versioned_prefix, subfolder, file_ext, 'audio')
                                 actual_sentence_index = original_sentence_index
                             else:
-                                # Normal generation - sequential naming
-                                relative_path, output_path = get_next_filename(file_prefix, subfolder, file_ext, 'audio')
+                                # Normal generation - include batch token to avoid overwriting files from older batches
+                                sentence_prefix = f"{file_prefix}_{batch_token}_s{idx:04d}"  # e.g., tts_a1b2c3d4_s0001
+                                # Thread-safe: Use unique prefix per sentence (no lock needed)
+                                if subfolder:
+                                    target_dir = OUTPUT_DIR / 'audio' / subfolder
+                                else:
+                                    target_dir = OUTPUT_DIR / 'audio'
+                                target_dir.mkdir(parents=True, exist_ok=True)
+                                filename = f"{sentence_prefix}.{file_ext}"
+                                output_path = target_dir / filename
+                                relative_path = output_path.relative_to(OUTPUT_DIR)
                                 actual_sentence_index = idx
                             
-                            print(f"[TTS] Output path: {output_path}")
+                            print(f"[TTS] [{idx + 1}/{total_sentences}] Starting: {sentence[:50]}...")
                             
-                            # Generate TTS using Gradio API
+                            # Generate TTS using Gradio API (skip cleanup until all sentences done)
                             result = gradio_tts_client.generate_tts(
                                 text=sentence,
                                 ref_audio_path=str(ref_audio_path),
@@ -862,69 +868,134 @@ def process_queue():
                                 language=job.get('language', 'en'),
                                 repetition_penalty=job.get('repetition_penalty', 2.0),
                                 emotion_description=job.get('emotion_description', ''),
-                                output_path=str(output_path)
+                                output_path=str(output_path),
+                                skip_cleanup=True
                             )
                             
                             if not result:
-                                print(f"[TTS] ERROR: Failed to generate audio for sentence {idx + 1}")
-                                job['status'] = 'failed'
-                                job['error'] = f'Failed to generate sentence {idx + 1}'
-                                job['failed_at'] = datetime.now().isoformat()
-                                break
+                                return {'success': False, 'idx': idx, 'error': f'Failed to generate audio'}
                             
                             # Calculate audio duration
                             audio_duration = get_audio_duration(output_path)
                             
-                            # Add metadata for this sentence
-                            entry = add_metadata_entry(
-                                str(output_path),
-                                sentence,
-                                0, 0,
-                                0,
-                                seed if seed else 0,
-                                file_prefix,
-                                subfolder,
-                                job_type='tts',
-                                batch_id=batch_id,
-                                sentence_index=actual_sentence_index,
-                                total_sentences=total_sentences,
-                                narrator_audio=ref_audio_name,
-                                tts_engine=tts_engine,
-                                audio_format=audio_format,
-                                temperature=job.get('temperature', 0.8),
-                                exaggeration=job.get('exaggeration', 0.5),
-                                cfg_weight=job.get('cfg_weight', 0.5),
-                                chunk_size=job.get('chunk_size', 300),
-                                language=job.get('language', 'en'),
-                                repetition_penalty=job.get('repetition_penalty', 2.0),
-                                emotion_description=job.get('emotion_description', ''),
-                                duration=audio_duration
-                            )
+                            # Create metadata entry
+                            entry = {
+                                "id": str(uuid.uuid4()),
+                                "filename": os.path.basename(output_path),
+                                "path": str(output_path),
+                                "subfolder": subfolder,
+                                "timestamp": datetime.now().isoformat(),
+                                "prompt": sentence,
+                                "text": sentence,
+                                "width": 0,
+                                "height": 0,
+                                "steps": 0,
+                                "cfg": 1.0,
+                                "shift": 3.0,
+                                "seed": seed if seed else 0,
+                                "use_image": False,
+                                "use_image_size": False,
+                                "image_filename": None,
+                                "file_prefix": file_prefix,
+                                "mcnl_lora": False,
+                                "snofs_lora": False,
+                                "male_lora": False,
+                                "job_type": 'tts',
+                                "batch_id": batch_id,
+                                "sentence_index": actual_sentence_index,
+                                "total_sentences": total_sentences,
+                                "narrator_audio": ref_audio_name,
+                                "ref_audio": ref_audio_name,
+                                "style": ref_audio_name,
+                                "version_number": version_number if is_regeneration else 0,
+                                "duration": audio_duration,
+                                "tts_engine": tts_engine,
+                                "audio_format": audio_format,
+                                "temperature": job.get('temperature', 0.8),
+                                "exaggeration": job.get('exaggeration', 0.5),
+                                "cfg_weight": job.get('cfg_weight', 0.5),
+                                "chunk_size": job.get('chunk_size', 300),
+                                "max_chars": job.get('chunk_size', 300),
+                                "language": job.get('language', 'en'),
+                                "repetition_penalty": job.get('repetition_penalty', 2.0),
+                                "emotion_description": job.get('emotion_description', ''),
+                                "silence_ms": 100
+                            }
                             
-                            # Update version number in metadata if regeneration
-                            if is_regeneration:
-                                metadata = load_metadata()
-                                for meta_entry in metadata:
-                                    if meta_entry.get('id') == entry['id']:
-                                        meta_entry['version_number'] = version_number
-                                        break
-                                save_metadata(metadata)
+                            print(f"[TTS] [{idx + 1}/{total_sentences}] Completed")
+                            return {'success': True, 'idx': idx, 'entry': entry, 'relative_path': str(relative_path)}
                             
-                            output_paths.append(str(relative_path))
-                            
-                            # Update job progress - update both job and active_generation
-                            with queue_lock:
-                                if active_generation and active_generation.get('id') == job['id']:
-                                    active_generation['completed_sentences'] = idx + 1
-                                    # Also update the job object directly
-                                    job['completed_sentences'] = idx + 1
-                            
-                            # Save immediately after each sentence for real-time updates
-                            save_queue_state()
-                            
-                            print(f"[TTS] Completed sentence {idx + 1}/{total_sentences}")
+                        except Exception as e:
+                            print(f"[TTS] [{idx + 1}/{total_sentences}] ERROR: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            return {'success': False, 'idx': idx, 'error': str(e)}
+                    
+                    # Process sentences in parallel (only if job hasn't already failed)
+                    if job.get('status') != 'failed':
+                        # Use ThreadPoolExecutor for parallel generation (max 3 concurrent)
+                        max_workers = min(3, len(sentences))  # Limit to 3 parallel generations
+                        results = [None] * len(sentences)  # Pre-allocate results array to maintain order
                         
-                        print(f"[TTS] All sentences completed")
+                        print(f"[TTS] Starting parallel generation with {max_workers} workers...")
+                        
+                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                            # Submit all sentences for generation
+                            future_to_idx = {executor.submit(generate_sentence, idx, sentence): idx 
+                                           for idx, sentence in enumerate(sentences)}
+                            
+                            # Collect results as they complete
+                            completed_count = 0
+                            for future in as_completed(future_to_idx):
+                                # Check for cancellation
+                                if cancellation_requested:
+                                    print(f"[TTS] Cancellation detected, stopping generation...")
+                                    job['status'] = 'cancelled'
+                                    executor.shutdown(wait=False, cancel_futures=True)
+                                    break
+                                
+                                idx = future_to_idx[future]
+                                result = future.result()
+                                results[idx] = result  # Store in correct position
+                                
+                                if result['success']:
+                                    completed_count += 1
+                                    # Update progress counter
+                                    with queue_lock:
+                                        if active_generation and active_generation.get('id') == job['id']:
+                                            active_generation['completed_sentences'] = completed_count
+                                        job['completed_sentences'] = completed_count
+                                else:
+                                    print(f"[TTS] ERROR on sentence {idx + 1}: {result.get('error')}")
+                                    job['status'] = 'failed'
+                                    job['error'] = f"Failed to generate sentence {idx + 1}: {result.get('error')}"
+                                    job['failed_at'] = datetime.now().isoformat()
+                                    executor.shutdown(wait=False, cancel_futures=True)
+                                    break
+                        
+                        # Process results in order (for metadata and output paths)
+                        if job.get('status') != 'failed' and job.get('status') != 'cancelled':
+                            for result in results:
+                                if result and result['success']:
+                                    metadata_entries.append(result['entry'])
+                                    output_paths.append(result['relative_path'])
+                        
+                        print(f"[TTS] All sentences completed, saving metadata...")
+                        
+                        # Save all metadata entries at once (single disk write)
+                        if metadata_entries:
+                            metadata = load_metadata()
+                            metadata.extend(metadata_entries)
+                            save_metadata(metadata)
+                            print(f"[TTS] Saved {len(metadata_entries)} metadata entries")
+                        
+                        # Cleanup TTS output folder once after all sentences
+                        print(f"[TTS] Cleaning up TTS output folder...")
+                        gradio_tts_client.cleanup_output_folder()
+                        
+                        # Save queue state once after all sentences
+                        save_queue_state()
+                        print(f"[TTS] Queue state saved")
                     else:
                         print(f"[TTS] Skipping sentence processing due to earlier failure")
                     
