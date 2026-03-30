@@ -2321,7 +2321,7 @@ function renderQueueItem(job, isActive) {
                 <div class="queue-item-image">
                     ${hasMedia ? (isVideo ? `
                         <div style="position: relative;">
-                            <video src="/outputs/${job.relative_path}" class="completed-image-thumb" style="object-fit: cover;" playsinline muted preload="metadata"></video>
+                            <img src="/api/thumbnail/${job.relative_path}" class="completed-image-thumb" style="object-fit: cover;" loading="lazy" onerror="this.src='/outputs/${job.relative_path}'">
                             <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none;">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" opacity="0.8">
                                     <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>
@@ -3908,11 +3908,9 @@ function openVideoBrowser() {
             if (previewContainer) previewContainer.style.display = 'none';
             if (gridView) gridView.style.display = 'flex';
             
-            // Stop video
-            const videoPlayer = document.getElementById('videoPreviewPlayer');
-            if (videoPlayer) {
-                videoPlayer.pause();
-                videoPlayer.src = '';
+            // Unload video
+            if (window.videoPreviewPlayer) {
+                window.videoPreviewPlayer.unloadVideo();
             }
         };
     }
@@ -3923,14 +3921,12 @@ function openVideoBrowser() {
 
 function closeVideoBrowser() {
     const modal = document.getElementById('videoBrowserModal');
-    const videoPlayer = document.getElementById('videoPreviewPlayer');
     const videoPreviewContainer = document.getElementById('videoPreviewContainer');
     const gridView = document.getElementById('videoBrowserGridView');
     
-    // Stop and reset video player
-    if (videoPlayer) {
-        videoPlayer.pause();
-        videoPlayer.src = '';
+    // Unload video to save bandwidth
+    if (window.videoPreviewPlayer) {
+        window.videoPreviewPlayer.unloadVideo();
     }
     
     // Reset views to default state
@@ -4113,10 +4109,16 @@ function renderVideoBrowserGrid(folders, videos) {
         html += `
             <div class="gallery-item" onclick="previewVideoBrowserVideo('${jsEscapedPath}', '${currentVideoBrowserFolder}')" style="cursor: pointer; position: relative;">
                 <div style="position: relative; width: 100%; padding-top: 75%; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden;">
+                    <img 
+                        src="/api/thumbnail/${relativePath}"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;"
+                        loading="lazy"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
+                    >
                     <video 
                         src="${videoUrl}" 
-                        preload="metadata"
-                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;"
+                        preload="none"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none;"
                         muted
                     ></video>
                     <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); transition: background 0.2s;">
@@ -4140,10 +4142,9 @@ function renderVideoBrowserGrid(folders, videos) {
 function previewVideoBrowserVideo(filepath, folder) {
     const videoPreviewContainer = document.getElementById('videoPreviewContainer');
     const gridView = document.getElementById('videoBrowserGridView');
-    const videoPlayer = document.getElementById('videoPreviewPlayer');
     const videoName = document.getElementById('videoPreviewName');
     
-    if (!videoPlayer || !videoPreviewContainer) return;
+    if (!videoPreviewContainer) return;
     
     // Hide grid, show preview
     if (gridView) gridView.style.display = 'none';
@@ -4152,7 +4153,13 @@ function previewVideoBrowserVideo(filepath, folder) {
     // Construct the URL for the video
     const videoUrl = folder === 'output' ? `/outputs/${filepath}` : `/api/video/${encodeURIComponent(filepath)}`;
     
-    videoPlayer.src = videoUrl;
+    // Load video in custom player
+    if (window.videoPreviewPlayer) {
+        window.videoPreviewPlayer.loadVideo(videoUrl);
+    } else {
+        console.error('[VideoPlayer] Custom video player not initialized');
+    }
+    
     const filename = filepath.split('/').pop();
     videoName.textContent = filename;
     
@@ -7053,7 +7060,8 @@ function renderVideosGrid(folders, videos) {
         html += `
             <div class="gallery-item" onclick="openVideoModal(${index})">
                 <div style="position: relative; width: 100%; height: 100%;">
-                    <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%;" playsinline muted preload="metadata"></video>
+                    <img src="/api/thumbnail/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%; display: none;" playsinline muted preload="none"></video>
                     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none;">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="white" opacity="0.8">
                             <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>

@@ -19,6 +19,9 @@ import hashlib
 from functools import wraps
 import wave
 from dotenv import load_dotenv
+from PIL import Image
+import cv2
+import numpy as np
 
 # Load environment variables from .env file
 # override=True ensures .env values take precedence over shell environment variables
@@ -259,7 +262,7 @@ def load_metadata():
     """Load image metadata from file"""
     OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
     if METADATA_FILE.exists():
-        with open(METADATA_FILE, 'r') as f:
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return []
 
@@ -267,8 +270,157 @@ def load_metadata():
 def save_metadata(metadata):
     """Save image metadata to file"""
     OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
-    with open(METADATA_FILE, 'w') as f:
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2)
+
+
+# ===== Video Thumbnail Generation =====
+
+def generate_video_thumbnail(video_path: Path, thumbnail_path: Path = None, max_size=(320, 240)):
+    """
+    Generate a thumbnail from the first frame of a video
+    
+    Args:
+        video_path: Path to the video file
+        thumbnail_path: Path where thumbnail should be saved (auto-generated if None)
+        max_size: Maximum thumbnail dimensions (width, height)
+    
+    Returns:
+        Path to the generated thumbnail, or None if generation failed
+    """
+    try:
+        # Auto-generate thumbnail path if not provided
+        if thumbnail_path is None:
+            thumbnail_path = video_path.with_suffix('.thumb.jpg')
+        
+        # Open video file
+        cap = cv2.VideoCapture(str(video_path))
+        
+        # Read first frame
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret or frame is None:
+            print(f"[THUMBNAIL] Failed to read first frame from {video_path}")
+            return None
+        
+        # Convert BGR to RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Convert to PIL Image
+        img = Image.fromarray(frame_rgb)
+        
+        # Resize maintaining aspect ratio
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        
+        # Ensure thumbnail directory exists
+        thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save as JPEG
+        img.save(thumbnail_path, 'JPEG', quality=85, optimize=True)
+        
+        print(f"[THUMBNAIL] Generated: {thumbnail_path}")
+        return thumbnail_path
+        
+    except Exception as e:
+        print(f"[THUMBNAIL] Error generating thumbnail for {video_path}: {e}")
+        return None
+
+
+def get_or_generate_thumbnail(video_path: Path):
+    """
+    Get existing thumbnail or generate a new one
+    
+    Args:
+        video_path: Path to the video file (can be relative or absolute)
+    
+    Returns:
+        Path to thumbnail (relative to OUTPUT_DIR), or None if generation failed
+    """
+    # Resolve video path
+    if not video_path.is_absolute():
+        video_path = OUTPUT_DIR / video_path
+    
+    if not video_path.exists():
+        print(f"[THUMBNAIL] Video file not found: {video_path}")
+        return None
+    
+    # Calculate thumbnail path (same location as video, with .thumb.jpg extension)
+    thumbnail_path = video_path.with_suffix('.thumb.jpg')
+    
+    # Return existing thumbnail if it exists and is newer than the video
+    if thumbnail_path.exists():
+        try:
+            video_mtime = video_path.stat().st_mtime
+            thumb_mtime = thumbnail_path.stat().st_mtime
+            if thumb_mtime >= video_mtime:
+                # Return path relative to OUTPUT_DIR
+                return thumbnail_path.relative_to(OUTPUT_DIR)
+        except Exception as e:
+            print(f"[THUMBNAIL] Error checking thumbnail timestamps: {e}")
+    
+    # Generate new thumbnail
+    result = generate_video_thumbnail(video_path, thumbnail_path)
+    
+    if result:
+        # Return path relative to OUTPUT_DIR
+        return thumbnail_path.relative_to(OUTPUT_DIR)
+    
+    return None
+
+
+def generate_all_video_thumbnails():
+    """
+    Background task to generate thumbnails for all existing videos
+    """
+    print("[THUMBNAIL] Starting thumbnail generation for all videos...")
+    
+    videos_dir = OUTPUT_DIR / "videos"
+    if not videos_dir.exists():
+        print("[THUMBNAIL] No videos directory found")
+        return
+    
+    # Find all video files
+    video_extensions = {'.mp4', '.webm', '.mov', '.avi', '.mkv'}
+    video_files = []
+    
+    for ext in video_extensions:
+        video_files.extend(videos_dir.rglob(f'*{ext}'))
+    
+    total = len(video_files)
+    generated = 0
+    skipped = 0
+    failed = 0
+    
+    for i, video_path in enumerate(video_files, 1):
+        try:
+            thumbnail_path = video_path.with_suffix('.thumb.jpg')
+            
+            # Skip if thumbnail exists and is newer
+            if thumbnail_path.exists():
+                video_mtime = video_path.stat().st_mtime
+                thumb_mtime = thumbnail_path.stat().st_mtime
+                if thumb_mtime >= video_mtime:
+                    skipped += 1
+                    continue
+            
+            # Generate thumbnail
+            result = generate_video_thumbnail(video_path, thumbnail_path)
+            
+            if result:
+                generated += 1
+            else:
+                failed += 1
+            
+            if i % 10 == 0:
+                print(f"[THUMBNAIL] Progress: {i}/{total} videos processed")
+                
+        except Exception as e:
+            print(f"[THUMBNAIL] Error processing {video_path}: {e}")
+            failed += 1
+    
+    print(f"[THUMBNAIL] Complete - Generated: {generated}, Skipped: {skipped}, Failed: {failed}")
+
 
 
 def get_unique_filename(target_path: Path) -> Path:
@@ -728,6 +880,16 @@ def process_queue():
                     )
                     
                     print(f"[VIDEO] Video generation completed")
+                    
+                    # Generate thumbnail for the video
+                    try:
+                        thumbnail_path = get_or_generate_thumbnail(output_path)
+                        if thumbnail_path:
+                            print(f"[VIDEO] Thumbnail generated: {thumbnail_path}")
+                        else:
+                            print(f"[VIDEO] Warning: Thumbnail generation failed")
+                    except Exception as e:
+                        print(f"[VIDEO] Error generating thumbnail: {e}")
                     
                     # Calculate generation duration
                     generation_duration = round(time.time() - start_time, 1)
@@ -5539,6 +5701,57 @@ def serve_video_from_input(filepath):
     return "Video not found", 404
 
 
+@app.route('/api/thumbnail/<path:filepath>')
+def serve_video_thumbnail(filepath):
+    """
+    Serve video thumbnail, generating it if necessary
+    Expects filepath to be relative to OUTPUT_DIR (e.g., 'videos/subfolder/video.mp4')
+    """
+    try:
+        # Get or generate thumbnail
+        thumbnail_rel_path = get_or_generate_thumbnail(Path(filepath))
+        
+        if thumbnail_rel_path is None:
+            # Return a default placeholder or 404
+            return "Thumbnail generation failed", 404
+        
+        # Serve the thumbnail
+        thumbnail_path = OUTPUT_DIR / thumbnail_rel_path
+        
+        if thumbnail_path.exists():
+            return send_file(thumbnail_path, mimetype='image/jpeg')
+        else:
+            return "Thumbnail not found", 404
+            
+    except Exception as e:
+        print(f"[THUMBNAIL] Error serving thumbnail for {filepath}: {e}")
+        return "Error generating thumbnail", 500
+
+
+@app.route('/api/thumbnails/generate-all', methods=['POST'])
+@require_auth
+def trigger_thumbnail_generation():
+    """
+    Manually trigger thumbnail generation for all videos
+    This is a background task that won't block the response
+    """
+    try:
+        # Start thumbnail generation in background thread
+        thread = threading.Thread(target=generate_all_video_thumbnails, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Thumbnail generation started in background'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+
 @app.route('/api/audio/input/<path:filepath>')
 def serve_audio_from_input(filepath):
     """Serve audio files from ComfyUI input directory"""
@@ -5940,6 +6153,11 @@ if __name__ == '__main__':
     
     # Ensure dummy image exists
     ensure_dummy_image()
+    
+    # Generate thumbnails for existing videos in background
+    print("Starting background thumbnail generation...")
+    thumbnail_thread = threading.Thread(target=generate_all_video_thumbnails, daemon=True)
+    thumbnail_thread.start()
     
     print("=" * 60)
     if ssl_context:

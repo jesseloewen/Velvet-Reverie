@@ -3,3 +3,5 @@ psutil
 mutagen
 gradio_client
 python-dotenv
+Pillow
+opencv-python

@@ -3291,7 +3291,7 @@
     <!-- Text Batch Instructions Modal -->
     <div class="custom-modal" id="batchInstructionsModal" style="display: none;">
         <div class="custom-modal-overlay"></div>
-        <div class="custom-modal-content" style="max-width: 900px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="custom-modal-content" style="max-width: min(900px, 100vw); max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; margin: 0 0.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="margin: 0;">Text Batch Instructions</h3>
                 <button class="btn btn-sm btn-primary" id="copyInstructionsBtn" title="Copy to Clipboard">
@@ -3316,7 +3316,7 @@
     <!-- Story Instructions Modal -->
     <div class="custom-modal" id="storyInstructionsModal" style="display: none;">
         <div class="custom-modal-overlay"></div>
-        <div class="custom-modal-content" style="max-width: 900px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="custom-modal-content" style="max-width: min(900px, 100vw); max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; margin: 0 0.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="margin: 0;">Story Mode Instructions</h3>
                 <button class="btn btn-sm btn-primary" id="copyStoryInstructionsBtn" title="Copy to Clipboard">
@@ -3341,7 +3341,7 @@
     <!-- Image Browser Modal -->
     <div class="custom-modal" id="imageBrowserModal" style="display: none;">
         <div class="custom-modal-overlay"></div>
-        <div class="custom-modal-content" style="max-width: 900px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="custom-modal-content" style="max-width: min(900px, 100vw); max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; margin: 0 0.5rem;">
             <h3>Browse Images</h3>
             
             <!-- Folder Tabs -->
@@ -3376,7 +3376,7 @@
     <!-- Video Browser Modal -->
     <div class="custom-modal" id="videoBrowserModal" style="display: none;">
         <div class="custom-modal-overlay"></div>
-        <div class="custom-modal-content" style="max-width: 900px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="custom-modal-content" style="max-width: min(900px, 100vw); max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; margin: 0 0.5rem;">
             <!-- Grid View Container -->
             <div id="videoBrowserGridView" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
                 <h3>Browse Videos</h3>
@@ -3422,10 +3422,8 @@
                 
                 <div id="videoPreviewName" style="font-weight: 500; margin-bottom: 1rem; color: var(--text-secondary);">Video Preview</div>
                 
-                <div style="flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--bg-secondary); border-radius: 8px; overflow: hidden;">
-                    <video id="videoPreviewPlayer" controls autoplay style="width: 100%; height: 100%; max-height: 100%; object-fit: contain;">
-                        Your browser does not support the video element.
-                    </video>
+                <div id="videoPreviewPlayerContainer" style="flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; max-width: 100%; overflow: hidden;">
+                    <!-- Custom video player will be injected here by video-player.js -->
                 </div>
                 
                 <div class="custom-modal-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
@@ -3439,7 +3437,7 @@
     <!-- Audio Browser Modal -->
     <div class="custom-modal" id="audioBrowserModal" style="display: none;">
         <div class="custom-modal-overlay"></div>
-        <div class="custom-modal-content" style="max-width: 900px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="custom-modal-content" style="max-width: min(900px, 100vw); max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; margin: 0 0.5rem;">
             <h3>Browse Audio Files</h3>
             
             <!-- Folder Tabs -->
@@ -3719,6 +3717,7 @@
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='video-player.js') }}"></script>
     <script src="{{ url_for('static', filename='story.js') }}"></script>
     <script src="{{ url_for('static', filename='story_modals.js') }}"></script>
     <script src="{{ url_for('static', filename='autochat.js') }}"></script>
