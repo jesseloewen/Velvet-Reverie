@@ -6432,20 +6432,19 @@ function initializeBatchMode() {
     
     if (batchBasePrompt) {
         batchBasePrompt.addEventListener('input', updateBatchPreview);
+        batchBasePrompt.addEventListener('paste', () => setTimeout(updateBatchPreview, 0));
+        batchBasePrompt.addEventListener('change', updateBatchPreview);
     }
     
     if (batchCSV) {
         batchCSV.addEventListener('input', updateBatchPreview);
+        batchCSV.addEventListener('paste', () => setTimeout(updateBatchPreview, 0));
+        batchCSV.addEventListener('change', updateBatchPreview);
     }
     
     // Batch buttons
-    const queueBatchBtn = document.getElementById('queueBatchBtn');
     const loadCSVFileBtn = document.getElementById('loadCSVFile');
     const csvFileInput = document.getElementById('csvFileInput');
-    
-    if (queueBatchBtn) {
-        queueBatchBtn.addEventListener('click', queueBatchGeneration);
-    }
     
     if (loadCSVFileBtn && csvFileInput) {
         loadCSVFileBtn.addEventListener('click', () => csvFileInput.click());
@@ -7121,15 +7120,66 @@ function extractParameters(basePrompt) {
     return parameters;
 }
 
+/**
+ * Split a single CSV line into fields, respecting RFC 4180 quoting:
+ *  - Fields may be wrapped in double-quotes.
+ *  - A literal double-quote inside a quoted field is escaped as "".
+ *  - Commas inside quoted fields are not treated as delimiters.
+ *  - Leading/trailing whitespace outside quotes is trimmed.
+ */
+function parseCSVLine(line) {
+    const fields = [];
+    let i = 0;
+    while (i < line.length) {
+        // Skip leading whitespace before field
+        while (i < line.length && line[i] === ' ') i++;
+
+        if (line[i] === '"') {
+            // Quoted field
+            i++; // skip opening quote
+            let field = '';
+            while (i < line.length) {
+                if (line[i] === '"') {
+                    if (line[i + 1] === '"') {
+                        // Escaped double-quote ("") → literal "
+                        field += '"';
+                        i += 2;
+                    } else {
+                        // Closing quote
+                        i++;
+                        break;
+                    }
+                } else {
+                    field += line[i];
+                    i++;
+                }
+            }
+            fields.push(field);
+            // Skip whitespace and then expect comma or end
+            while (i < line.length && line[i] === ' ') i++;
+            if (line[i] === ',') i++;
+        } else {
+            // Unquoted field — read until next comma
+            let start = i;
+            while (i < line.length && line[i] !== ',') i++;
+            fields.push(line.slice(start, i).trim());
+            if (line[i] === ',') i++;
+        }
+    }
+    // Handle trailing comma → empty last field
+    if (line.trimEnd().endsWith(',')) fields.push('');
+    return fields;
+}
+
 function parseCSV(csvText) {
     const lines = csvText.trim().split('\n').filter(line => line.trim());
     if (lines.length < 2) return null;
-    
-    const headers = lines[0].split(',').map(h => h.trim());
+
+    const headers = parseCSVLine(lines[0]).map(h => h.trim());
     const rows = [];
-    
+
     for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
+        const values = parseCSVLine(lines[i]);
         if (values.length === headers.length) {
             const row = {};
             headers.forEach((header, index) => {
@@ -7138,7 +7188,7 @@ function parseCSV(csvText) {
             rows.push(row);
         }
     }
-    
+
     return { headers, rows };
 }
 
@@ -7200,15 +7250,44 @@ function updateBatchPreview() {
         }
     }
     
-    // Parse CSV
-    if (!basePrompt || !csvText) {
-        batchPreview.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem;">Enter a base prompt with parameters and CSV data to preview the batch</div>';
+    // Parse CSV / simple list
+    if (!csvText) {
+        batchPreview.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem;">Enter prompts or CSV data above to preview the batch</div>';
         queueBatchBtn.disabled = true;
         batchCount.textContent = '0';
         batchPreviewData = [];
         return;
     }
-    
+
+    // ── Simple mode: no base prompt ──────────────────────────────────────────
+    // Each non-empty line is treated as a complete prompt for one image.
+    if (!basePrompt) {
+        const lines = csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length === 0) {
+            batchPreview.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem;">Enter prompts or CSV data above to preview the batch</div>';
+            queueBatchBtn.disabled = true;
+            batchCount.textContent = '0';
+            batchPreviewData = [];
+            return;
+        }
+        batchPreviewData = lines.map(line => ({ prompt: line, params: {} }));
+        let html = '<div style="display: flex; flex-direction: column; gap: 0.75rem;">';
+        batchPreviewData.forEach((item, index) => {
+            html += `
+                <div style="padding: 0.75rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--primary);">
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Image ${index + 1}</div>
+                    <div style="font-size: 0.95rem; color: var(--text);">${escapeHtml(item.prompt)}</div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        batchPreview.innerHTML = html;
+        queueBatchBtn.disabled = false;
+        batchCount.textContent = batchPreviewData.length.toString();
+        return;
+    }
+
+    // ── Template mode: base prompt has [param] placeholders ──────────────────
     const csvData = parseCSV(csvText);
     if (!csvData) {
         batchPreview.innerHTML = '<div style="text-align: center; color: var(--warning); padding: 2rem;">Invalid CSV format. First row should be parameter names, followed by value rows.</div>';
@@ -7223,7 +7302,15 @@ function updateBatchPreview() {
     const extraHeaders = csvData.headers.filter(h => !allRequiredParams.includes(h));
     
     if (missingParams.length > 0) {
-        batchPreview.innerHTML = `<div style="text-align: center; color: var(--warning); padding: 2rem;">Missing CSV columns: ${missingParams.join(', ')}</div>`;
+        batchPreview.innerHTML = `<div style="text-align: center; color: var(--warning); padding: 2rem;">Missing CSV columns: ${missingParams.join(', ')}<br><small style="color: var(--text-muted);">Add these columns to your CSV header row, or leave the base prompt empty to generate one image per line.</small></div>`;
+        queueBatchBtn.disabled = true;
+        batchCount.textContent = '0';
+        batchPreviewData = [];
+        return;
+    }
+
+    if (csvData.rows.length === 0) {
+        batchPreview.innerHTML = '<div style="text-align: center; color: var(--warning); padding: 2rem;">No valid data rows found. Check that your CSV rows have the same number of columns as the header.</div>';
         queueBatchBtn.disabled = true;
         batchCount.textContent = '0';
         batchPreviewData = [];
@@ -8497,6 +8584,21 @@ async function submitChatTTS() {
     closeChatTTSModal();
     
     try {
+        // Determine session_id and file_prefix based on the active tab
+        const activeTabEl = document.querySelector('.tab-content.active');
+        const activeTabId = activeTabEl ? activeTabEl.id : '';
+        let sessionId = null;
+        let filePrefix = 'chat_tts';
+        if (activeTabId === 'autochatTab') {
+            sessionId = (typeof currentAutoSession !== 'undefined') ? currentAutoSession?.session_id : null;
+            filePrefix = 'autochat_tts';
+        } else if (activeTabId === 'storyTab') {
+            sessionId = currentStorySession?.session_id;
+            filePrefix = 'story_tts';
+        } else {
+            sessionId = currentChatSession?.session_id;
+        }
+
         const response = await fetch('/api/queue/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -8504,7 +8606,7 @@ async function submitChatTTS() {
                 text,
                 ref_audio: refAudio,
                 seed: null,
-                file_prefix: 'chat_tts',
+                file_prefix: filePrefix,
                 subfolder,
                 tts_engine: ttsEngine,
                 audio_format: audioFormat,
@@ -8516,7 +8618,7 @@ async function submitChatTTS() {
                 repetition_penalty: 2.0,
                 // Track which chat message this TTS belongs to
                 chat_message_id: messageId,
-                session_id: currentChatSession?.session_id
+                session_id: sessionId
             })
         });
         
