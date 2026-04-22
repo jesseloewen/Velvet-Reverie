@@ -4107,7 +4107,7 @@ function renderVideoBrowserGrid(folders, videos) {
             : `/api/video/${encodeURIComponent(relativePath)}`;
         
         html += `
-            <div class="gallery-item" onclick="previewVideoBrowserVideo('${jsEscapedPath}', '${currentVideoBrowserFolder}')" style="cursor: pointer; position: relative;">
+            <div class="gallery-item video-hover-preview" onclick="previewVideoBrowserVideo('${jsEscapedPath}', '${currentVideoBrowserFolder}')" style="cursor: pointer; position: relative;">
                 <div style="position: relative; width: 100%; padding-top: 75%; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden;">
                     <img 
                         src="/api/thumbnail/${relativePath}"
@@ -4120,8 +4120,9 @@ function renderVideoBrowserGrid(folders, videos) {
                         preload="none"
                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none;"
                         muted
+                        playsinline
                     ></video>
-                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); transition: background 0.2s;">
+                    <div class="video-card-play-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); transition: opacity 0.15s ease;">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" style="opacity: 0.9;">
                             <polygon points="5 3 19 12 5 21 5 3"></polygon>
                         </svg>
@@ -4137,12 +4138,144 @@ function renderVideoBrowserGrid(folders, videos) {
     }
     
     grid.innerHTML = html;
+    bindVideoHoverPreviews(grid);
+}
+
+const MOBILE_PREVIEW_HOLD_MS = 180;
+let activeVideoPreviewCard = null;
+
+function startVideoHoverPreview(cardElement) {
+    if (!cardElement) return;
+
+    if (activeVideoPreviewCard && activeVideoPreviewCard !== cardElement) {
+        stopVideoHoverPreview(activeVideoPreviewCard);
+    }
+
+    const imageElement = cardElement.querySelector('img');
+    const videoElement = cardElement.querySelector('video');
+    const overlayElement = cardElement.querySelector('.video-card-play-overlay');
+    if (!videoElement) return;
+
+    if (imageElement) {
+        imageElement.style.display = 'none';
+    }
+
+    videoElement.style.display = 'block';
+    if (overlayElement) {
+        overlayElement.style.opacity = '0';
+    }
+
+    const playPromise = videoElement.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+            // Ignore autoplay errors; preview will still show first frame when available.
+        });
+    }
+
+    activeVideoPreviewCard = cardElement;
+}
+
+function stopVideoHoverPreview(cardElement) {
+    if (!cardElement) return;
+
+    const imageElement = cardElement.querySelector('img');
+    const videoElement = cardElement.querySelector('video');
+    const overlayElement = cardElement.querySelector('.video-card-play-overlay');
+    if (!videoElement) return;
+
+    videoElement.pause();
+    videoElement.currentTime = 0;
+
+    const hasThumbnail = imageElement && imageElement.naturalWidth > 0;
+    if (hasThumbnail) {
+        videoElement.style.display = 'none';
+        imageElement.style.display = 'block';
+    } else {
+        videoElement.style.display = 'block';
+    }
+
+    if (overlayElement) {
+        overlayElement.style.opacity = '1';
+    }
+
+    if (activeVideoPreviewCard === cardElement) {
+        activeVideoPreviewCard = null;
+    }
+}
+
+function stopActiveVideoPreview() {
+    if (activeVideoPreviewCard) {
+        stopVideoHoverPreview(activeVideoPreviewCard);
+    }
+}
+
+function bindVideoHoverPreviews(containerElement) {
+    if (!containerElement) return;
+
+    const previewCards = containerElement.querySelectorAll('.video-hover-preview');
+    previewCards.forEach(cardElement => {
+        if (cardElement.dataset.hoverPreviewBound === 'true') {
+            return;
+        }
+
+        cardElement.addEventListener('mouseenter', () => startVideoHoverPreview(cardElement));
+        cardElement.addEventListener('mouseleave', () => stopVideoHoverPreview(cardElement));
+
+        cardElement.style.touchAction = 'manipulation';
+        const mediaElements = cardElement.querySelectorAll('img, video');
+        mediaElements.forEach(mediaElement => {
+            mediaElement.draggable = false;
+            mediaElement.style.webkitUserDrag = 'none';
+            mediaElement.style.webkitTouchCallout = 'none';
+        });
+
+        cardElement.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+        });
+
+        cardElement.addEventListener('touchstart', (event) => {
+            if (event.touches.length !== 1) return;
+
+            cardElement.dataset.mobilePreviewActive = 'false';
+            if (cardElement._mobilePreviewTimer) {
+                clearTimeout(cardElement._mobilePreviewTimer);
+            }
+
+            cardElement._mobilePreviewTimer = setTimeout(() => {
+                startVideoHoverPreview(cardElement);
+                cardElement.dataset.mobilePreviewActive = 'true';
+                cardElement.dataset.blockNextClick = 'true';
+            }, MOBILE_PREVIEW_HOLD_MS);
+        }, { passive: true });
+
+        const clearTouchTimer = () => {
+            if (cardElement._mobilePreviewTimer) {
+                clearTimeout(cardElement._mobilePreviewTimer);
+                cardElement._mobilePreviewTimer = null;
+            }
+        };
+
+        cardElement.addEventListener('touchend', clearTouchTimer, { passive: true });
+        cardElement.addEventListener('touchcancel', clearTouchTimer, { passive: true });
+
+        cardElement.addEventListener('click', (event) => {
+            if (cardElement.dataset.blockNextClick === 'true') {
+                event.preventDefault();
+                event.stopPropagation();
+                cardElement.dataset.blockNextClick = 'false';
+            }
+        }, true);
+
+        cardElement.dataset.hoverPreviewBound = 'true';
+    });
 }
 
 function previewVideoBrowserVideo(filepath, folder) {
     const videoPreviewContainer = document.getElementById('videoPreviewContainer');
     const gridView = document.getElementById('videoBrowserGridView');
     const videoName = document.getElementById('videoPreviewName');
+
+    stopActiveVideoPreview();
     
     if (!videoPreviewContainer) return;
     
@@ -7057,11 +7190,11 @@ function renderVideosGrid(folders, videos) {
     // Render videos
     videos.forEach((video, index) => {
         html += `
-            <div class="gallery-item" onclick="openVideoModal(${index})">
+            <div class="gallery-item video-hover-preview" onclick="openVideoModal(${index})">
                 <div style="position: relative; width: 100%; height: 100%;">
                     <img src="/api/thumbnail/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                     <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%; display: none;" playsinline muted preload="none"></video>
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none;">
+                    <div class="video-card-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: opacity 0.15s ease;">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="white" opacity="0.8">
                             <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>
                             <polygon points="10 8 16 12 10 16" fill="white"></polygon>
@@ -7082,6 +7215,7 @@ function renderVideosGrid(folders, videos) {
     
     if (html) {
         grid.innerHTML = html;
+        bindVideoHoverPreviews(grid);
         grid.style.display = 'grid';
         empty.style.display = 'none';
     } else {
@@ -7092,6 +7226,8 @@ function renderVideosGrid(folders, videos) {
 
 function openVideoModal(index) {
     if (index < 0 || index >= videosItems.length) return;
+
+    stopActiveVideoPreview();
     
     currentVideoIndex = index;
     const video = videosItems[index];
@@ -10405,7 +10541,7 @@ function createChatMessageElement(message, isLoading = false, isLastUserMessage 
                 </svg>
                 <span style="font-size: 0.875rem; color: var(--text-muted);">TTS Audio</span>
             </div>
-            <audio controls style="width: 100%; max-width: 400px;">
+            <audio controls style="width: 100%;">
                 <source src="/outputs/${message.tts_audio}" type="audio/wav">
                 Your browser does not support the audio element.
             </audio>

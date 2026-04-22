@@ -87,6 +87,8 @@ GRADIO_OUTPUT_DIR = Path(os.getenv('GRADIO_OUTPUT_DIR', '../Ultimate-TTS-Studio.
 # Paths Configuration
 OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', 'outputs'))
 OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR = OUTPUT_DIR / "data"
+THUMBNAILS_DIR = DATA_DIR / "thumbnails"
 METADATA_FILE = OUTPUT_DIR / "metadata.json"
 QUEUE_FILE = OUTPUT_DIR / "queue_state.json"
 CHATS_FILE = OUTPUT_DIR / "chats" / "chats.json"
@@ -108,6 +110,8 @@ DOCS_DIR = Path(os.getenv('DOCS_DIR', 'docs'))
 (OUTPUT_DIR / "videos").mkdir(exist_ok=True)
 (OUTPUT_DIR / "audio").mkdir(exist_ok=True)
 (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
+THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Global queue and status
 generation_queue = []
@@ -291,7 +295,7 @@ def generate_video_thumbnail(video_path: Path, thumbnail_path: Path = None, max_
     try:
         # Auto-generate thumbnail path if not provided
         if thumbnail_path is None:
-            thumbnail_path = video_path.with_suffix('.thumb.jpg')
+            thumbnail_path = get_thumbnail_path_for_video(video_path)
         
         # Open video file
         cap = cv2.VideoCapture(str(video_path))
@@ -327,6 +331,24 @@ def generate_video_thumbnail(video_path: Path, thumbnail_path: Path = None, max_
         return None
 
 
+def get_thumbnail_path_for_video(video_path: Path) -> Path:
+    """
+    Build thumbnail path under OUTPUT_DIR/data/thumbnails, mirroring video subfolders.
+    """
+    if video_path.is_absolute():
+        try:
+            relative_video_path = video_path.resolve().relative_to(OUTPUT_DIR.resolve())
+        except ValueError:
+            safe_name = hashlib.sha256(str(video_path).encode('utf-8')).hexdigest()[:16]
+            return THUMBNAILS_DIR / f"{safe_name}.thumb.jpg"
+    else:
+        relative_video_path = video_path
+        if relative_video_path.parts and relative_video_path.parts[0].lower() == 'outputs':
+            relative_video_path = Path(*relative_video_path.parts[1:])
+
+    return THUMBNAILS_DIR / relative_video_path.parent / f"{relative_video_path.name}.thumb.jpg"
+
+
 def get_or_generate_thumbnail(video_path: Path):
     """
     Get existing thumbnail or generate a new one
@@ -345,8 +367,9 @@ def get_or_generate_thumbnail(video_path: Path):
         print(f"[THUMBNAIL] Video file not found: {video_path}")
         return None
     
-    # Calculate thumbnail path (same location as video, with .thumb.jpg extension)
-    thumbnail_path = video_path.with_suffix('.thumb.jpg')
+    # Calculate thumbnail paths (new location + legacy location)
+    thumbnail_path = get_thumbnail_path_for_video(video_path)
+    legacy_thumbnail_path = video_path.with_suffix('.thumb.jpg')
     
     # Return existing thumbnail if it exists and is newer than the video
     if thumbnail_path.exists():
@@ -358,6 +381,18 @@ def get_or_generate_thumbnail(video_path: Path):
                 return thumbnail_path.relative_to(OUTPUT_DIR)
         except Exception as e:
             print(f"[THUMBNAIL] Error checking thumbnail timestamps: {e}")
+
+    # Migrate legacy thumbnail if it exists and is still valid
+    if legacy_thumbnail_path.exists():
+        try:
+            video_mtime = video_path.stat().st_mtime
+            legacy_thumb_mtime = legacy_thumbnail_path.stat().st_mtime
+            if legacy_thumb_mtime >= video_mtime:
+                thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(legacy_thumbnail_path, thumbnail_path)
+                return thumbnail_path.relative_to(OUTPUT_DIR)
+        except Exception as e:
+            print(f"[THUMBNAIL] Error migrating legacy thumbnail: {e}")
     
     # Generate new thumbnail
     result = generate_video_thumbnail(video_path, thumbnail_path)
@@ -394,13 +429,24 @@ def generate_all_video_thumbnails():
     
     for i, video_path in enumerate(video_files, 1):
         try:
-            thumbnail_path = video_path.with_suffix('.thumb.jpg')
+            thumbnail_path = get_thumbnail_path_for_video(video_path)
+            legacy_thumbnail_path = video_path.with_suffix('.thumb.jpg')
             
             # Skip if thumbnail exists and is newer
             if thumbnail_path.exists():
                 video_mtime = video_path.stat().st_mtime
                 thumb_mtime = thumbnail_path.stat().st_mtime
                 if thumb_mtime >= video_mtime:
+                    skipped += 1
+                    continue
+
+            # Reuse legacy thumbnail when possible
+            if legacy_thumbnail_path.exists():
+                video_mtime = video_path.stat().st_mtime
+                legacy_thumb_mtime = legacy_thumbnail_path.stat().st_mtime
+                if legacy_thumb_mtime >= video_mtime:
+                    thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(legacy_thumbnail_path, thumbnail_path)
                     skipped += 1
                     continue
             
