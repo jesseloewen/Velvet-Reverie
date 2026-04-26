@@ -392,7 +392,7 @@ class ComfyUIClient:
                     
                     if output_path:
                         # Move from ComfyUI output to our outputs folder (avoid duplication)
-                        comfyui_output = Path('..') / 'comfy.git' / 'app' / 'output'
+                        comfyui_output = self.output_dir
                         if subfolder:
                             comfyui_output = comfyui_output / subfolder
                         comfyui_output = comfyui_output / filename
@@ -507,7 +507,7 @@ class ComfyUIClient:
                     
                     if output_path:
                         # Move from ComfyUI output to our outputs folder (avoid duplication)
-                        comfyui_output = Path('..') / 'comfy.git' / 'app' / 'output'
+                        comfyui_output = self.output_dir
                         if subfolder:
                             comfyui_output = comfyui_output / subfolder
                         comfyui_output = comfyui_output / filename
@@ -711,7 +711,7 @@ class ComfyUIClient:
                     
                     if output_path:
                         # Move from ComfyUI output to our outputs folder (avoid duplication)
-                        comfyui_output = Path('..') / 'comfy.git' / 'app' / 'output'
+                        comfyui_output = self.output_dir
                         if subfolder:
                             comfyui_output = comfyui_output / subfolder
                         comfyui_output = comfyui_output / filename

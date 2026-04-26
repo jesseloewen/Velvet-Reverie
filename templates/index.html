@@ -1222,7 +1222,7 @@
                 <section class="tab-content" id="browserTab">
                     <div class="gallery-panel">
                     <div class="gallery-header">
-                        <h2>Image Browser</h2>
+                        <h2>Image Browser <span id="imageBrowserCount" class="gallery-counter">0</span></h2>
                         <div class="gallery-toolbar">
                             <button class="btn btn-sm" id="newFolderBtn" title="New Folder">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1580,7 +1580,7 @@
                 <section class="tab-content" id="videosTab">
                     <div class="gallery-panel">
                         <div class="gallery-header">
-                            <h2>Videos Browser</h2>
+                            <h2>Videos Browser <span id="videoBrowserCount" class="gallery-counter">0</span></h2>
                             <div class="gallery-toolbar">
                                 <button class="btn btn-sm" id="videosRefreshBtn" title="Refresh">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2810,10 +2810,6 @@
                                             Generate
                                         </button>
                                     </div>
-                                    <label class="checkbox-label" style="margin-top: 0.5rem;">
-                                        <input type="checkbox" id="chatAutoGenerateTitle" class="checkbox-input" checked>
-                                        <span>Auto-generate title on first response</span>
-                                    </label>
                                 </div>
 
                                 <!-- System Instructions -->

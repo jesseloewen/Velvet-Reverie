@@ -10,6 +10,8 @@ function getVideoMimeType(filename) {
 
 // State
 let queueUpdateInterval;
+let queueUpdateInFlight = false;
+let lastQueueRenderSignature = '';
 let currentImageIndex = 0;
 let images = [];
 let savedImages = null; // Store original images when opening video modal
@@ -40,6 +42,22 @@ let queueFilters = {
     completed: true
 };
 let queueReversed = false; // Queue direction (false = newest first, true = oldest first)
+
+// Browser loading/request state (prevents stale slow-drive responses from repainting UI)
+let browseFolderRequestToken = 0;
+let browseFolderAbortController = null;
+let imageBrowserRequestToken = 0;
+let imageBrowserAbortController = null;
+let videoBrowserRequestToken = 0;
+let videoBrowserAbortController = null;
+let videosRequestToken = 0;
+let videosAbortController = null;
+
+// Lightweight tab refresh cache
+let browserLastLoadedPath = null;
+let browserLastLoadedAt = 0;
+let videosLastLoadedPath = null;
+let videosLastLoadedAt = 0;
 
 // Fullscreen zoom state
 let zoomLevel = 1;
@@ -91,6 +109,9 @@ let storyAutoScrollEnabled = true;
 // Hover comparison state
 let hoverCompareEnabled = false;
 let hoverCompareRadius = 80; // Default radius in pixels
+
+// In-memory TTS reference audio (persists until page refresh)
+let lastUsedTtsReferenceAudio = '';
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -696,36 +717,65 @@ function initializeMobileKeyboardFix() {
 
 // Prevent Pull-to-Refresh on Mobile
 function initializePreventPullToRefresh() {
+    const userAgent = navigator.userAgent || '';
+    const isFirefoxAndroid = /Android/i.test(userAgent) && /Firefox\//i.test(userAgent);
+    if (isFirefoxAndroid) {
+        console.log('Skipping pull-to-refresh prevention on Firefox Android for reliable scrolling');
+        return;
+    }
+
     let touchStartY = 0;
     let preventPullToRefresh = false;
+    let activeScrollableParent = null;
     
     // Detect touchstart to check if user is at the top of the page
     document.addEventListener('touchstart', function(e) {
+        if (!e.touches || e.touches.length === 0) {
+            return;
+        }
+
         touchStartY = e.touches[0].clientY;
+
+        // Only consider pull-to-refresh blocking for gestures that start near the top edge.
+        if (touchStartY > 40) {
+            preventPullToRefresh = false;
+            activeScrollableParent = null;
+            return;
+        }
         
         // Check if any scrollable element is at the top
         const target = e.target;
-        const scrollableParent = findScrollableParent(target);
+        activeScrollableParent = findScrollableParent(target);
         
-        if (scrollableParent) {
-            // If the scrollable element is at the top, we might need to prevent pull-to-refresh
-            preventPullToRefresh = scrollableParent.scrollTop === 0;
-        } else {
-            // If no scrollable parent, check document scroll
-            preventPullToRefresh = window.scrollY === 0;
-        }
+        // Only block pull-to-refresh when the page itself is the scroll context.
+        // Internal scroll containers (main content, sidebars, modals) must keep native touch scrolling.
+        const scrollingRoot = document.scrollingElement || document.documentElement;
+        preventPullToRefresh = !activeScrollableParent && (scrollingRoot ? scrollingRoot.scrollTop === 0 : window.scrollY === 0);
     }, { passive: true });
     
     // Prevent touchmove if pulling down from the top
     document.addEventListener('touchmove', function(e) {
+        if (!preventPullToRefresh || activeScrollableParent) {
+            return;
+        }
+
+        if (!e.cancelable || !e.touches || e.touches.length === 0) {
+            return;
+        }
+
         const touchY = e.touches[0].clientY;
         const touchDelta = touchY - touchStartY;
         
         // If pulling down (positive delta) and at the top, prevent default
-        if (preventPullToRefresh && touchDelta > 0) {
+        if (touchDelta > 12) {
             e.preventDefault();
         }
     }, { passive: false });
+
+    document.addEventListener('touchend', function() {
+        preventPullToRefresh = false;
+        activeScrollableParent = null;
+    }, { passive: true });
     
     console.log('Pull-to-refresh prevention initialized');
 }
@@ -738,7 +788,7 @@ function findScrollableParent(element) {
     
     const style = window.getComputedStyle(element);
     const overflowY = style.overflowY;
-    const isScrollable = overflowY !== 'visible' && overflowY !== 'hidden';
+    const isScrollable = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
     
     if (isScrollable && element.scrollHeight > element.clientHeight) {
         return element;
@@ -937,6 +987,21 @@ function initializeEventListeners() {
             loadAudioBrowserFolder(folder, '');
         });
     });
+
+    const ttsNarratorAudioInput = document.getElementById('ttsNarratorAudio');
+    if (ttsNarratorAudioInput) {
+        rememberTtsReferenceAudio(ttsNarratorAudioInput.value || 'Holly.mp3');
+        ttsNarratorAudioInput.addEventListener('change', () => {
+            rememberTtsReferenceAudio(ttsNarratorAudioInput.value);
+        });
+    }
+
+    const modalTTSVoiceInput = document.getElementById('modalTTSVoice');
+    if (modalTTSVoiceInput) {
+        modalTTSVoiceInput.addEventListener('change', () => {
+            rememberTtsReferenceAudio(modalTTSVoiceInput.value);
+        });
+    }
     
     const closeAudioBrowserBtn = document.getElementById('closeAudioBrowserBtn');
     if (closeAudioBrowserBtn) {
@@ -1461,11 +1526,19 @@ function switchTab(tabName) {
     
     // Load content based on tab
     if (tabName === 'browser') {
-        browseFolder(''); // Load root folder when switching to browser tab
+        const targetPath = currentPath || 'images';
+        const now = Date.now();
+        if (browserLastLoadedPath !== targetPath || (now - browserLastLoadedAt) > 10000) {
+            browseFolder(targetPath);
+        }
     } else if (tabName === 'reveal') {
         loadRevealBrowser();
     } else if (tabName === 'videos') {
-        loadVideos();
+        const targetPath = videosCurrentPath || 'videos';
+        const now = Date.now();
+        if (videosLastLoadedPath !== targetPath || (now - videosLastLoadedAt) > 10000) {
+            loadVideos(targetPath);
+        }
     } else if (tabName === 'audio') {
         loadAudioBatches();
     } else if (tabName === 'chat') {
@@ -2037,6 +2110,40 @@ function formatDuration(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function buildQueueRenderSignature(queue, active, completed) {
+    const queueRows = (Array.isArray(queue) ? queue : []).map(job => [
+        job.id,
+        job.status,
+        job.job_type,
+        job.relative_path,
+        job.completed_sentences,
+        job.total_sentences
+    ]);
+    const activeRow = active ? [
+        active.id,
+        active.status,
+        active.job_type,
+        active.completed_sentences,
+        active.total_sentences,
+        active.start_time
+    ] : null;
+    const completedRows = (Array.isArray(completed) ? completed : []).map(job => [
+        job.id,
+        job.status,
+        job.job_type,
+        job.relative_path,
+        job.generation_duration
+    ]);
+
+    return JSON.stringify({
+        queueRows,
+        activeRow,
+        completedRows,
+        filters: queueFilters,
+        reversed: queueReversed
+    });
+}
+
 function updateLiveTimers() {
     const timerBadges = document.querySelectorAll('.timer-badge[data-start-time]');
     timerBadges.forEach(badge => {
@@ -2059,6 +2166,11 @@ function startQueueUpdates() {
 }
 
 async function updateQueue() {
+    if (queueUpdateInFlight) {
+        return;
+    }
+
+    queueUpdateInFlight = true;
     try {
         const response = await fetch('/api/queue');
         if (!response.ok) {
@@ -2086,18 +2198,25 @@ async function updateQueue() {
                 sendBrowserNotification(job);
             }
         }
-        
-        // Render the queue
-        renderQueue(data.queue, data.active, completedJobs);
+
+        // Render only when queue data/state actually changed.
+        const newSignature = buildQueueRenderSignature(data.queue, data.active, completedJobs);
+        if (newSignature !== lastQueueRenderSignature) {
+            renderQueue(data.queue, data.active, completedJobs);
+            lastQueueRenderSignature = newSignature;
+        }
         
         // Refresh folder if we detected new completions
-        if (shouldRefreshFolder) {
+        const browserTab = document.getElementById('browserTab');
+        if (shouldRefreshFolder && browserTab && browserTab.classList.contains('active')) {
             setTimeout(() => {
                 browseFolder(currentPath);
             }, 500);
         }
     } catch (error) {
         console.error('Error updating queue:', error);
+    } finally {
+        queueUpdateInFlight = false;
     }
 }
 
@@ -2203,6 +2322,11 @@ function renderQueue(queue, active, completed) {
         completedList.style.display = 'none';
         completedList.innerHTML = '';
     }
+
+    // Enable hover/touch-hold previews for completed video cards in queue sections.
+    bindVideoHoverPreviews(queueList);
+    bindVideoHoverPreviews(activeJob);
+    bindVideoHoverPreviews(completedList);
     
     // Show empty message only if nothing to display
     const hasItems = (queueFilters.queued && queue.length > 0) || 
@@ -2216,21 +2340,34 @@ function renderQueue(queue, active, completed) {
 
 function renderQueueItem(job, isActive) {
     const statusClass = `status-${job.status}`;
-    const hasMedia = job.status === 'completed' && job.relative_path;
-    const hasInputImage = job.image_filename && (job.status === 'queued' || job.status === 'generating');
-    const showMedia = hasMedia || hasInputImage;
     const isVideo = job.job_type === 'video' || (job.relative_path && (job.relative_path.endsWith('.mp4') || job.relative_path.endsWith('.webm')));
     const isTTS = job.job_type === 'tts';
     const isChat = job.job_type === 'chat';
     const isStory = job.job_type === 'story';
     const isAutochat = job.job_type === 'autochat';
     const isNameGen = job.job_type === 'generate_session_name';
+    const supportsQueueMedia = !(isTTS || isChat || isStory || isAutochat || isNameGen);
+    const hasMedia = supportsQueueMedia && job.status === 'completed' && job.relative_path;
+    const hasInputImage = supportsQueueMedia && job.image_filename && (job.status === 'queued' || job.status === 'generating');
+    const showMedia = hasMedia || hasInputImage;
     
     // Ensure job.id exists
     if (!job.id) {
         console.error('Job missing ID:', job);
         return '';
     }
+
+    const normalizedRelativePath = (job.relative_path || '').replace(/\\/g, '/');
+    const encodedRelativePath = normalizedRelativePath
+        ? normalizedRelativePath.split('/').map(segment => encodeURIComponent(segment)).join('/')
+        : '';
+    const normalizedThumbnailPath = (job.thumbnail_path || '').replace(/\\/g, '/');
+    const encodedThumbnailPath = normalizedThumbnailPath
+        ? normalizedThumbnailPath.split('/').map(segment => encodeURIComponent(segment)).join('/')
+        : '';
+    const completedVideoThumbSrc = encodedThumbnailPath
+        ? `/outputs/${encodedThumbnailPath}`
+        : (encodedRelativePath ? `/api/thumbnail/${encodedRelativePath}` : '');
     
     // Build parameters HTML based on job type
     let paramsHTML = '';
@@ -2320,9 +2457,10 @@ function renderQueueItem(job, isActive) {
             ${showMedia ? `
                 <div class="queue-item-image">
                     ${hasMedia ? (isVideo ? `
-                        <div style="position: relative;">
-                            <img src="/api/thumbnail/${job.relative_path}" class="completed-image-thumb" style="object-fit: cover;" loading="lazy" onerror="this.src='/outputs/${job.relative_path}'">
-                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none;">
+                        <div class="video-hover-preview" style="position: relative; width: 100%; height: 100%;">
+                            <img src="${completedVideoThumbSrc}" class="completed-image-thumb" style="object-fit: contain;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <video src="/outputs/${encodedRelativePath}" class="completed-video-preview" style="display: none;" playsinline muted loop preload="none"></video>
+                            <div class="video-card-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: opacity 0.15s ease;">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" opacity="0.8">
                                     <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>
                                     <polygon points="10 8 16 12 10 16" fill="white"></polygon>
@@ -3831,10 +3969,46 @@ let selectedVideoBatchFolder = '';
 let currentVideoBrowserFolder = 'input'; // 'input' or 'output'
 let currentVideoBrowserSubpath = ''; // Current subfolder path
 
+function ensureLoadingOverlay(containerId, overlayId) {
+    const container = document.getElementById(containerId);
+    if (!container || !container.parentElement) return null;
+
+    const host = container.parentElement;
+    host.classList.add('media-loading-host');
+
+    let overlay = document.getElementById(overlayId);
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = overlayId;
+        overlay.className = 'media-loading-overlay';
+        overlay.innerHTML = `
+            <span class="media-loading-spinner" aria-hidden="true"></span>
+            <span class="media-loading-text">Loading...</span>
+        `;
+        overlay.style.display = 'none';
+        host.appendChild(overlay);
+    }
+
+    return overlay;
+}
+
+function setLoadingOverlay(containerId, overlayId, isLoading, message = 'Loading...') {
+    const container = document.getElementById(containerId);
+    const overlay = ensureLoadingOverlay(containerId, overlayId);
+    if (!container || !overlay) return;
+
+    const textEl = overlay.querySelector('.media-loading-text');
+    if (textEl) {
+        textEl.textContent = message;
+    }
+
+    overlay.style.display = isLoading ? 'flex' : 'none';
+    container.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+}
+
 function openImageBrowser(mode) {
     console.log('openImageBrowser called with mode:', mode);
     imageBrowserMode = mode;
-    currentBrowserSubpath = ''; // Reset to root
     const modal = document.getElementById('imageBrowserModal');
     console.log('Image browser modal element:', modal);
     if (!modal) {
@@ -3854,9 +4028,11 @@ function openImageBrowser(mode) {
     
     modal.style.display = 'flex';
     console.log('Modal display set to flex');
-    
-    // Load input folder by default
-    loadImageBrowserFolder('input', '');
+
+    // Reopen where the browser was last used in this page session.
+    const targetFolder = currentBrowserFolder || 'input';
+    const targetSubpath = currentBrowserSubpath || '';
+    loadImageBrowserFolder(targetFolder, targetSubpath);
 }
 
 // ============================================================================
@@ -3882,10 +4058,10 @@ function openVideoBrowser() {
     // Setup tab listeners
     const tabs = modal.querySelectorAll('.video-browser-tab');
     tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
+        tab.onclick = () => {
             const folder = tab.dataset.folder;
             loadVideoBrowserFolder(folder, '');
-        });
+        };
     });
     
     // Setup close button for grid view
@@ -3937,6 +4113,7 @@ function closeVideoBrowser() {
 }
 
 async function loadVideoBrowserFolder(folder, subpath) {
+    const requestToken = ++videoBrowserRequestToken;
     currentVideoBrowserFolder = folder;
     currentVideoBrowserSubpath = subpath || '';
     
@@ -3947,9 +4124,13 @@ async function loadVideoBrowserFolder(folder, subpath) {
             tab.classList.add('active');
         }
     });
-    
-    // Update path display
-    renderVideoBrowserPath(folder, subpath);
+
+    setLoadingOverlay('videoBrowserGrid', 'videoBrowserGridLoadingOverlay', true, 'Loading videos...');
+
+    if (videoBrowserAbortController) {
+        videoBrowserAbortController.abort();
+    }
+    videoBrowserAbortController = new AbortController();
     
     try {
         // For output folder, default to 'videos' subfolder if at root
@@ -3957,18 +4138,27 @@ async function loadVideoBrowserFolder(folder, subpath) {
         if (folder === 'output' && !subpath) {
             effectiveSubpath = 'videos';
         }
+
+        // Render path immediately, then refresh with direct-count once data loads.
+        renderVideoBrowserPath(folder, effectiveSubpath || subpath);
         
         // Fetch files from appropriate folder
         const endpoint = folder === 'input' 
             ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}`
             : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}`;
         
-        const response = await fetch(endpoint);
+        const response = await fetch(endpoint, { signal: videoBrowserAbortController.signal });
         const data = await response.json();
+
+        if (requestToken !== videoBrowserRequestToken) {
+            return;
+        }
         
         if (!data.success && data.success !== undefined) {
             throw new Error(data.error || 'Failed to load videos');
         }
+
+        renderVideoBrowserPath(folder, effectiveSubpath || subpath, data.current_counts?.videos);
         
         // Get folders and files from response
         const folders = data.folders || [];
@@ -3988,21 +4178,32 @@ async function loadVideoBrowserFolder(folder, subpath) {
         // Render folders and videos
         renderVideoBrowserGrid(data.folders || [], videoFiles);
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
         console.error('Error loading video browser folder:', error);
         showNotification('Error loading videos', 'Error', 'error');
+    } finally {
+        if (requestToken === videoBrowserRequestToken) {
+            setLoadingOverlay('videoBrowserGrid', 'videoBrowserGridLoadingOverlay', false);
+            videoBrowserAbortController = null;
+        }
     }
 }
 
-function renderVideoBrowserPath(folder, subpath) {
+function renderVideoBrowserPath(folder, subpath, currentVideoCount = null) {
     const pathDisplay = document.getElementById('videoBrowserPathText');
     if (!pathDisplay) return;
+
+    const hasCount = Number.isInteger(currentVideoCount);
+    const countLabel = hasCount ? ` (${currentVideoCount} ${currentVideoCount === 1 ? 'video' : 'videos'})` : '';
     
     // Build path display similar to image browser
     const folderName = folder === 'input' ? 'Input' : 'Output';
     
     if (!subpath) {
         // At root of selected folder
-        pathDisplay.textContent = folderName;
+        pathDisplay.textContent = `${folderName}${countLabel}`;
     } else {
         // In a subfolder
         // For output folder, remove 'videos' prefix from display if present
@@ -4014,9 +4215,9 @@ function renderVideoBrowserPath(folder, subpath) {
         }
         
         if (displayPath) {
-            pathDisplay.textContent = `${folderName} / ${displayPath.replace(/\//g, ' / ')}`;
+            pathDisplay.textContent = `${folderName} / ${displayPath.replace(/\//g, ' / ')}${countLabel}`;
         } else {
-            pathDisplay.textContent = folderName;
+            pathDisplay.textContent = `${folderName}${countLabel}`;
         }
     }
 }
@@ -4060,6 +4261,12 @@ function renderVideoBrowserGrid(folders, videos) {
         const folderPath = typeof folderItem === 'object' && folderItem.path 
             ? folderItem.path 
             : (currentVideoBrowserSubpath ? `${currentVideoBrowserSubpath}/${folderName}` : folderName);
+        const fallbackVideoCount = typeof folderItem === 'object' && Number.isInteger(folderItem.video_count)
+            ? folderItem.video_count
+            : null;
+        const folderLabel = typeof folderItem === 'object'
+            ? formatBrowserFolderLabel(folderName, folderItem, fallbackVideoCount)
+            : folderName;
         
         // Escape for JavaScript string (single quotes and backslashes)
         const jsEscapedPath = folderPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -4070,7 +4277,7 @@ function renderVideoBrowserGrid(folders, videos) {
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                     </svg>
-                    <span style="margin-top: 0.5rem; font-size: 0.875rem; text-align: center; word-break: break-word;">${escapeHtml(folderName)}</span>
+                    <span style="margin-top: 0.5rem; font-size: 0.875rem; text-align: center; word-break: break-word;">${escapeHtml(folderLabel)}</span>
                 </div>
             </div>
         `;
@@ -4121,6 +4328,7 @@ function renderVideoBrowserGrid(folders, videos) {
                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none;"
                         muted
                         playsinline
+                        loop
                     ></video>
                     <div class="video-card-play-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); transition: opacity 0.15s ease;">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" style="opacity: 0.9;">
@@ -4161,6 +4369,7 @@ function startVideoHoverPreview(cardElement) {
     }
 
     videoElement.style.display = 'block';
+    videoElement.loop = true;
     if (overlayElement) {
         overlayElement.style.opacity = '0';
     }
@@ -4311,7 +4520,6 @@ let currentAudioBrowserSubpath = '';
 function openAudioBrowser(mode) {
     console.log('openAudioBrowser called with mode:', mode);
     audioBrowserMode = mode;
-    currentAudioBrowserSubpath = ''; // Reset to root
     const modal = document.getElementById('audioBrowserModal');
     if (!modal) {
         console.error('Audio browser modal not found!');
@@ -4319,9 +4527,11 @@ function openAudioBrowser(mode) {
     }
     
     modal.style.display = 'flex';
-    
-    // Load input folder by default
-    loadAudioBrowserFolder('input', '');
+
+    // Reopen where the browser was last used in this page session.
+    const targetFolder = currentAudioBrowserFolder || 'input';
+    const targetSubpath = currentAudioBrowserSubpath || '';
+    loadAudioBrowserFolder(targetFolder, targetSubpath);
 }
 
 function closeAudioBrowser() {
@@ -4399,6 +4609,8 @@ async function loadAudioBrowserFolder(folder, subpath) {
         
         // Render folders
         folders.forEach(folderItem => {
+            const fallbackAudioCount = Number.isInteger(folderItem?.audio_count) ? folderItem.audio_count : null;
+            const folderLabel = formatBrowserFolderLabel(folderItem.name, folderItem, fallbackAudioCount);
             const div = document.createElement('div');
             div.className = 'browser-folder-item';
             div.innerHTML = `
@@ -4407,7 +4619,7 @@ async function loadAudioBrowserFolder(folder, subpath) {
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                     </svg>
                 </div>
-                <div class="browser-folder-name">${escapeHtml(folderItem.name)}</div>
+                <div class="browser-folder-name">${escapeHtml(folderLabel)}</div>
             `;
             div.addEventListener('click', () => {
                 loadAudioBrowserFolder(folder, folderItem.path);
@@ -4433,7 +4645,7 @@ async function loadAudioBrowserFolder(folder, subpath) {
                     </svg>
                 </div>
                 <div style="flex: 1; min-width: 0; cursor: pointer;" class="audio-select-area">
-                    <div style="font-weight: 500; margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(filename)}</div>
+                    <div class="browser-audio-name">${escapeHtml(filename)}</div>
                     ${file.size ? `<div style="font-size: 0.75rem; color: var(--text-muted);">${formatFileSize(file.size)}</div>` : ''}
                 </div>
                 <button class="btn btn-sm audio-play-btn" style="flex-shrink: 0; padding: 0.5rem; display: flex; align-items: center; justify-content: center;" title="Preview audio">
@@ -4531,10 +4743,12 @@ function selectAudioFile(filename, folder, filePath) {
     if (audioBrowserMode === 'tts') {
         // Set the TTS narrator audio input - use filePath to include subfolder
         document.getElementById('ttsNarratorAudio').value = filePath;
+        rememberTtsReferenceAudio(filePath);
         showNotification(`Selected: ${filePath}`, 'Audio Selected', 'success', 2000);
     } else if (audioBrowserMode === 'modal') {
         // Set the modal TTS voice input
         document.getElementById('modalTTSVoice').value = filePath;
+        rememberTtsReferenceAudio(filePath);
         showNotification(`Selected: ${filePath}`, 'Audio Selected', 'success', 2000);
     }
     
@@ -4547,6 +4761,70 @@ function formatFileSize(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+function formatBrowserFolderLabel(folderName, folderData, fallbackItemCount = null) {
+    const itemCount = Number.isInteger(folderData?.item_count)
+        ? folderData.item_count
+        : (Number.isInteger(fallbackItemCount) ? fallbackItemCount : null);
+    const folderCount = Number.isInteger(folderData?.folder_count) ? folderData.folder_count : null;
+
+    if (!Number.isInteger(itemCount) && !Number.isInteger(folderCount)) {
+        return folderName;
+    }
+
+    const summaryParts = [];
+    if (Number.isInteger(itemCount)) {
+        summaryParts.push(`${itemCount} ${itemCount === 1 ? 'item' : 'items'}`);
+    }
+    if (Number.isInteger(folderCount)) {
+        summaryParts.push(`${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`);
+    }
+
+    return `${folderName} (${summaryParts.join(', ')})`;
+}
+
+function normalizeTtsReferenceAudio(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function rememberTtsReferenceAudio(value) {
+    const normalized = normalizeTtsReferenceAudio(value);
+    if (!normalized) {
+        return;
+    }
+
+    lastUsedTtsReferenceAudio = normalized;
+
+    const narratorAudioInput = document.getElementById('ttsNarratorAudio');
+    if (narratorAudioInput && narratorAudioInput.value !== normalized) {
+        narratorAudioInput.value = normalized;
+    }
+
+    const modalVoiceInput = document.getElementById('modalTTSVoice');
+    if (modalVoiceInput && modalVoiceInput.value !== normalized) {
+        modalVoiceInput.value = normalized;
+    }
+}
+
+function getPreferredTtsReferenceAudio() {
+    if (lastUsedTtsReferenceAudio) {
+        return lastUsedTtsReferenceAudio;
+    }
+
+    const narratorAudioInput = document.getElementById('ttsNarratorAudio');
+    const narratorValue = normalizeTtsReferenceAudio(narratorAudioInput?.value);
+    if (narratorValue) {
+        return narratorValue;
+    }
+
+    const modalVoiceInput = document.getElementById('modalTTSVoice');
+    const modalValue = normalizeTtsReferenceAudio(modalVoiceInput?.value);
+    if (modalValue) {
+        return modalValue;
+    }
+
+    return 'Holly.mp3';
+}
+
 function closeImageBrowser() {
     const modal = document.getElementById('imageBrowserModal');
     modal.style.display = 'none';
@@ -4555,6 +4833,7 @@ function closeImageBrowser() {
 }
 
 async function loadImageBrowserFolder(folder, subpath) {
+    const requestToken = ++imageBrowserRequestToken;
     currentBrowserFolder = folder;
     currentBrowserSubpath = subpath || '';
     
@@ -4565,6 +4844,13 @@ async function loadImageBrowserFolder(folder, subpath) {
             tab.classList.add('active');
         }
     });
+
+    setLoadingOverlay('imageBrowserGrid', 'imageBrowserGridLoadingOverlay', true, 'Loading images...');
+
+    if (imageBrowserAbortController) {
+        imageBrowserAbortController.abort();
+    }
+    imageBrowserAbortController = new AbortController();
     
     try {
         // For output folder, default to 'images' subfolder if at root
@@ -4586,12 +4872,18 @@ async function loadImageBrowserFolder(folder, subpath) {
             ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}`
             : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}`;
         
-        const response = await fetch(endpoint);
+        const response = await fetch(endpoint, { signal: imageBrowserAbortController.signal });
         const data = await response.json();
+
+        if (requestToken !== imageBrowserRequestToken) {
+            return;
+        }
+
+        renderImageBrowserPath(folder, effectiveSubpath || subpath, data.current_counts?.images);
         
         // Render folders and images
         const grid = document.getElementById('imageBrowserGrid');
-        grid.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         
         const folders = data.folders || [];
         const files = folder === 'input' ? (data.images || []) : (data.files || []);
@@ -4633,11 +4925,13 @@ async function loadImageBrowserFolder(folder, subpath) {
             backDiv.addEventListener('click', () => {
                 loadImageBrowserFolder(folder, effectiveParent);
             });
-            grid.appendChild(backDiv);
+            fragment.appendChild(backDiv);
         }
         
         // Render folders
         folders.forEach(folderItem => {
+            const fallbackImageCount = Number.isInteger(folderItem?.image_count) ? folderItem.image_count : null;
+            const folderLabel = formatBrowserFolderLabel(folderItem.name, folderItem, fallbackImageCount);
             const div = document.createElement('div');
             div.className = 'browser-folder-item';
             div.innerHTML = `
@@ -4646,13 +4940,13 @@ async function loadImageBrowserFolder(folder, subpath) {
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                     </svg>
                 </div>
-                <div class="browser-folder-name">${escapeHtml(folderItem.name)}</div>
+                <div class="browser-folder-name">${escapeHtml(folderLabel)}</div>
             `;
             div.addEventListener('click', () => {
                 // Always navigate into folders
                 loadImageBrowserFolder(folder, folderItem.path);
             });
-            grid.appendChild(div);
+            fragment.appendChild(div);
         });
         
         // Render images (audio files filtered out)
@@ -4694,20 +4988,32 @@ async function loadImageBrowserFolder(folder, subpath) {
                 selectBrowsedImage(filePathForSelection, folder, imagePath);
             });
             
-            grid.appendChild(div);
+            fragment.appendChild(div);
         });
+
+        grid.replaceChildren(fragment);
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
         console.error('Error loading browser folder:', error);
         showNotification('Error loading images', 'Error', 'error');
+    } finally {
+        if (requestToken === imageBrowserRequestToken) {
+            setLoadingOverlay('imageBrowserGrid', 'imageBrowserGridLoadingOverlay', false);
+            imageBrowserAbortController = null;
+        }
     }
 }
 
-function renderImageBrowserPath(folder, subpath) {
+function renderImageBrowserPath(folder, subpath, currentImageCount = null) {
     const pathDisplay = document.getElementById('imageBrowserPathText');
     const folderName = folder === 'input' ? 'Input' : 'Images';
+    const hasCount = Number.isInteger(currentImageCount);
+    const countLabel = hasCount ? ` (${currentImageCount} ${currentImageCount === 1 ? 'image' : 'images'})` : '';
     
     if (!subpath || (folder === 'output' && subpath === 'images')) {
-        pathDisplay.innerHTML = folderName;
+        pathDisplay.innerHTML = `${folderName}${countLabel}`;
     } else {
         // Build clickable breadcrumb path
         const parts = subpath.split(/[/\\]/).filter(p => p);
@@ -4723,6 +5029,8 @@ function renderImageBrowserPath(folder, subpath) {
             html += ' / ';
             html += `<span class="browser-path-part" style="cursor: pointer;" onclick="loadImageBrowserFolder('${folder}', '${pathCopy}')">${escapeHtml(part)}</span>`;
         });
+
+        html += countLabel;
         
         pathDisplay.innerHTML = html;
     }
@@ -4850,10 +5158,24 @@ async function selectBrowsedImage(filename, folder, imagePath) {
 
 // Folder Browsing
 async function browseFolder(path) {
+    const requestToken = ++browseFolderRequestToken;
+    setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', true, 'Loading folder...');
+
+    if (browseFolderAbortController) {
+        browseFolderAbortController.abort();
+    }
+    browseFolderAbortController = new AbortController();
+
     try {
         // Always restrict to 'images' root folder
-        const response = await fetch(`/api/browse?path=${encodeURIComponent(path)}&root=images`);
+        const response = await fetch(`/api/browse?path=${encodeURIComponent(path)}&root=images`, {
+            signal: browseFolderAbortController.signal
+        });
         const data = await response.json();
+
+        if (requestToken !== browseFolderRequestToken) {
+            return;
+        }
         
         currentPath = data.current_path;
         allItems = [...data.folders, ...data.files];
@@ -4867,12 +5189,24 @@ async function browseFolder(path) {
             // Include only image files, explicitly exclude videos
             return imageExtensions.includes(ext) && !videoExtensions.includes(ext);
         });
+
+        const imageFileCount = Number.isInteger(data.current_counts?.images)
+            ? data.current_counts.images
+            : images.length;
         
         selectedItems.clear();
         
-        renderBreadcrumb(currentPath);
+        renderBreadcrumb(currentPath, imageFileCount);
         renderGallery(data.folders, data.files);
         updateSelectionButtons();
+
+        const imageBrowserCount = document.getElementById('imageBrowserCount');
+        if (imageBrowserCount) {
+            imageBrowserCount.textContent = String(imageFileCount);
+        }
+
+        browserLastLoadedPath = currentPath || 'images';
+        browserLastLoadedAt = Date.now();
         
         // If fullscreen viewer is active, jump to newest image (index 0)
         if (isFullscreenActive && images.length > 0) {
@@ -4880,11 +5214,19 @@ async function browseFolder(path) {
             showFullscreenImage(0);
         }
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
         console.error('Error browsing folder:', error);
+    } finally {
+        if (requestToken === browseFolderRequestToken) {
+            setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', false);
+            browseFolderAbortController = null;
+        }
     }
 }
 
-function renderBreadcrumb(path) {
+function renderBreadcrumb(path, imageFileCount = null) {
     const breadcrumb = document.getElementById('breadcrumb');
     // Remove 'images' prefix from path for display (since we're rooted in images folder)
     let displayPath = path;
@@ -4905,6 +5247,10 @@ function renderBreadcrumb(path) {
         html += ' / ';
         html += `<span class="breadcrumb-item" onclick="browseFolder('${pathCopy}')">${escapeHtml(part)}</span>`;
     });
+
+    if (Number.isInteger(imageFileCount)) {
+        html += ` <span style="color: var(--text-muted);">(${imageFileCount} ${imageFileCount === 1 ? 'image' : 'images'})</span>`;
+    }
     
     breadcrumb.innerHTML = html;
 }
@@ -4939,6 +5285,8 @@ function renderGallery(folders, files) {
         const isSelected = selectedItems.has(folder.path);
         const escapedPath = escapeJsString(folder.path);
         const clickHandler = selectionMode ? `toggleItemSelection(event, '${escapedPath}')` : `browseFolder('${escapedPath}')`;
+        const fallbackImageCount = Number.isInteger(folder.image_count) ? folder.image_count : null;
+        const folderLabel = formatBrowserFolderLabel(folder.name, folder, fallbackImageCount);
         html += `
             <div class="gallery-item folder-item ${isSelected ? 'selected' : ''} ${selectionMode ? 'selection-mode' : ''}" 
                  data-path="${escapeHtml(folder.path)}" 
@@ -4950,7 +5298,7 @@ function renderGallery(folders, files) {
                     </svg>
                 </div>
                 <div class="gallery-item-info">
-                    <div class="gallery-item-prompt">${escapeHtml(folder.name)}</div>
+                    <div class="gallery-item-prompt">${escapeHtml(folderLabel)}</div>
                 </div>
             </div>
         `;
@@ -5845,8 +6193,8 @@ function showFullscreenImage(index) {
                 console.log(`[Match Sizes FS] Applying ${matchedSize.width}x${matchedSize.height} to fullscreen image`);
                 img.style.width = `${matchedSize.width}px`;
                 img.style.height = `${matchedSize.height}px`;
-                img.style.maxWidth = '90vw';
-                img.style.maxHeight = '90vh';
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
                 img.style.objectFit = 'contain';
             }
         } catch (error) {
@@ -6604,11 +6952,8 @@ function initializeImageBatch() {
     
     if (chooseBtn) {
         chooseBtn.addEventListener('click', () => {
-            imageBrowserMode = 'image-batch';
             selectedImageBatchFolder = '';
-            loadImageBrowserFolder('input', '');
-            const modal = document.getElementById('imageBrowserModal');
-            modal.style.display = 'flex';
+            openImageBrowser('image-batch');
         });
     }
     if (queueBtn) {
@@ -6698,11 +7043,8 @@ function initializeVideoBatch() {
     const queueBtn = document.getElementById('queueVideoBatchBtn');
     if (chooseBtn) {
         chooseBtn.addEventListener('click', () => {
-            imageBrowserMode = 'video-batch';
             selectedVideoBatchFolder = '';
-            loadImageBrowserFolder('input', '');
-            const modal = document.getElementById('imageBrowserModal');
-            modal.style.display = 'flex';
+            openImageBrowser('video-batch');
         });
     }
     if (queueBtn) {
@@ -7083,21 +7425,27 @@ let currentVideoIndex = 0;
 function initializeVideoBrowser() {
     const refreshBtn = document.getElementById('videosRefreshBtn');
     if (refreshBtn) refreshBtn.addEventListener('click', () => loadVideos('videos'));
-    
-    // Auto-load when switching to tab
-    const videosTabBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.dataset.tab === 'videos');
-    if (videosTabBtn) {
-        videosTabBtn.addEventListener('click', () => {
-            loadVideos(videosCurrentPath || 'videos');
-        });
-    }
 }
 
 async function loadVideos(path) {
+    const requestToken = ++videosRequestToken;
+    setLoadingOverlay('videosGrid', 'videosGridLoadingOverlay', true, 'Loading videos...');
+
+    if (videosAbortController) {
+        videosAbortController.abort();
+    }
+    videosAbortController = new AbortController();
+
     try {
         // Always restrict to 'videos' root folder
-        const response = await fetch(`/api/browse?path=${encodeURIComponent(path || 'videos')}&root=videos`);
+        const response = await fetch(`/api/browse?path=${encodeURIComponent(path || 'videos')}&root=videos`, {
+            signal: videosAbortController.signal
+        });
         const data = await response.json();
+
+        if (requestToken !== videosRequestToken) {
+            return;
+        }
         
         videosCurrentPath = data.current_path || '';
         
@@ -7108,17 +7456,37 @@ async function loadVideos(path) {
             const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
             return videoExtensions.includes(ext);
         });
+
+        const videoFileCount = Number.isInteger(data.current_counts?.videos)
+            ? data.current_counts.videos
+            : videoFiles.length;
         
         videosItems = videoFiles;
-        renderVideosBreadcrumb(videosCurrentPath);
+        renderVideosBreadcrumb(videosCurrentPath, videoFileCount);
         renderVideosGrid(data.folders, videoFiles);
+
+        const videoBrowserCount = document.getElementById('videoBrowserCount');
+        if (videoBrowserCount) {
+            videoBrowserCount.textContent = String(videoFileCount);
+        }
+
+        videosLastLoadedPath = videosCurrentPath || 'videos';
+        videosLastLoadedAt = Date.now();
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
         console.error('Error loading videos:', error);
         showNotification('Error loading videos', 'Error', 'error');
+    } finally {
+        if (requestToken === videosRequestToken) {
+            setLoadingOverlay('videosGrid', 'videosGridLoadingOverlay', false);
+            videosAbortController = null;
+        }
     }
 }
 
-function renderVideosBreadcrumb(path) {
+function renderVideosBreadcrumb(path, videoFileCount = null) {
     const breadcrumb = document.getElementById('videosBreadcrumb');
     if (!breadcrumb) return;
     
@@ -7140,6 +7508,10 @@ function renderVideosBreadcrumb(path) {
         html += ' / ';
         html += `<span class="breadcrumb-item" onclick="loadVideos('${pathCopy}')">${escapeHtml(part)}</span>`;
     });
+
+    if (Number.isInteger(videoFileCount)) {
+        html += ` <span style="color: var(--text-muted);">(${videoFileCount} ${videoFileCount === 1 ? 'video' : 'videos'})</span>`;
+    }
     
     breadcrumb.innerHTML = html;
 }
@@ -7173,6 +7545,8 @@ function renderVideosGrid(folders, videos) {
     // Render folders
     folders.forEach(folder => {
         const escapedPath = escapeJsString(folder.path);
+        const fallbackVideoCount = Number.isInteger(folder.video_count) ? folder.video_count : null;
+        const folderLabel = formatBrowserFolderLabel(folder.name, folder, fallbackVideoCount);
         html += `
             <div class="gallery-item folder-item" onclick="loadVideos('${escapedPath}')">
                 <div class="folder-icon">
@@ -7181,7 +7555,7 @@ function renderVideosGrid(folders, videos) {
                     </svg>
                 </div>
                 <div class="gallery-item-info">
-                    <div class="gallery-item-prompt">${escapeHtml(folder.name)}</div>
+                    <div class="gallery-item-prompt">${escapeHtml(folderLabel)}</div>
                 </div>
             </div>
         `;
@@ -7193,7 +7567,7 @@ function renderVideosGrid(folders, videos) {
             <div class="gallery-item video-hover-preview" onclick="openVideoModal(${index})">
                 <div style="position: relative; width: 100%; height: 100%;">
                     <img src="/api/thumbnail/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                    <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%; display: none;" playsinline muted preload="none"></video>
+                    <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%; display: none;" playsinline muted loop preload="none"></video>
                     <div class="video-card-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: opacity 0.15s ease;">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="white" opacity="0.8">
                             <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>
@@ -8622,7 +8996,7 @@ function showChatTTSModal(text, messageId = null) {
     console.log('[TTS] Opening TTS modal for message:', messageId);
     
     // Populate modal with current TTS settings
-    const refAudio = document.getElementById('ttsNarratorAudio')?.value || 'Holly.mp3';
+    const refAudio = getPreferredTtsReferenceAudio();
     const ttsEngine = document.getElementById('ttsEngine')?.value || 'ChatterboxTTS';
     const audioFormat = document.getElementById('ttsAudioFormat')?.value || 'wav';
     const temperature = parseFloat(document.getElementById('ttsTemperature')?.value) || 0.8;
@@ -8715,6 +9089,8 @@ async function submitChatTTS() {
         showNotification('Please specify a reference audio file', 'Error', 'error');
         return;
     }
+
+    rememberTtsReferenceAudio(refAudio);
     
     // Close modal
     closeChatTTSModal();
@@ -8803,6 +9179,8 @@ async function generateTTS() {
         showAlert('Error', 'Please specify a reference audio file');
         return;
     }
+
+    rememberTtsReferenceAudio(refAudio);
     
     try {
         const response = await fetch('/api/queue/tts', {
@@ -10047,8 +10425,12 @@ async function loadChatSessions() {
                 const freshSession = chatSessions.find(s => s.session_id === currentChatSession.session_id);
                 if (freshSession) {
                     // Update current session with fresh data (preserves session_id and all other fields)
+                    const previousName = currentChatSession.chat_name;
                     console.log('[CHAT] Updating currentChatSession with fresh data from server');
                     currentChatSession = freshSession;
+                    if (previousName !== freshSession.chat_name) {
+                        syncActiveChatNameUI(freshSession.chat_name);
+                    }
                 } else {
                     // Current session was deleted, clear it
                     console.log('[CHAT] Current session no longer exists, clearing');
@@ -10276,6 +10658,15 @@ async function selectChatSession(sessionId, skipPollingResume = false) {
     } finally {
         isLoadingChatSession = false;
     }
+}
+
+function syncActiveChatNameUI(chatName) {
+    const safeName = chatName || 'New Chat';
+    const chatTitle = document.getElementById('chatTitle');
+    if (chatTitle) chatTitle.textContent = safeName;
+
+    const chatSessionName = document.getElementById('chatSessionName');
+    if (chatSessionName) chatSessionName.value = safeName;
 }
 
 function loadChatUI() {
@@ -11122,6 +11513,19 @@ function startChatStreamingPolling(responseId) {
             const oldSession = currentChatSession;
             if (currentChatSession && currentChatSession.session_id === sessionId) {
                 currentChatSession = session;
+
+                // Reflect server-side auto-generated title immediately.
+                const oldName = oldSession ? oldSession.chat_name : null;
+                if (oldName !== session.chat_name) {
+                    syncActiveChatNameUI(session.chat_name);
+
+                    const sessionIndex = chatSessions.findIndex(s => s.session_id === sessionId);
+                    if (sessionIndex !== -1) {
+                        chatSessions[sessionIndex].chat_name = session.chat_name;
+                        chatSessions[sessionIndex].updated_at = session.updated_at;
+                        renderChatSessions();
+                    }
+                }
             }
             
             const currentContent = message.content || '';
@@ -11233,28 +11637,6 @@ function startChatStreamingPolling(responseId) {
                 
                 // Reload session list to update order (most recent first)
                 loadChatSessions();
-                
-                // Auto-generate title if enabled and this is the first response
-                const autoGenerateCheckbox = document.getElementById('chatAutoGenerateTitle');
-                if (autoGenerateCheckbox && autoGenerateCheckbox.checked) {
-                    // Use session data from response (always fresh, works even if chat tab isn't open)
-                    const sessionData = data.session;
-                    if (sessionData && sessionData.messages) {
-                        // Count how many assistant messages exist (completed ones)
-                        const completedAssistantMessages = sessionData.messages.filter(
-                            m => m.role === 'assistant' && m.completed
-                        ).length;
-                        
-                        // If this is the first completed assistant response, auto-generate title
-                        if (completedAssistantMessages === 1) {
-                            console.log('[CHAT] Auto-generating title for first response in session:', sessionId);
-                            setTimeout(() => {
-                                // Call generate with specific session ID (works even if chat tab isn't active)
-                                generateSessionNameForSession(sessionId);
-                            }, 500); // Small delay to ensure session is updated
-                        }
-                    }
-                }
                 
                 // CRITICAL FIX: Re-create message element to show action buttons
                 // The buttons only appear when !isLoading in createChatMessageElement
@@ -11369,34 +11751,6 @@ async function autoSaveChatParameters() {
     }
 }
 
-async function generateSessionNameForSession(sessionId) {
-    // Generate name for any session by ID (works even if not currently active)
-    console.log('[CHAT] Auto-generating title for session:', sessionId);
-    
-    try {
-        const response = await fetch('/api/chat/generate_name', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            console.log('[CHAT] Auto-generate request sent for session:', sessionId);
-            // Sessions will be reloaded automatically when the title is generated
-        } else {
-            console.error('[CHAT] Failed to auto-generate title:', data.error);
-        }
-    } catch (error) {
-        console.error('[CHAT] Error auto-generating title:', error);
-    }
-}
-
 async function generateSessionName() {
     if (!currentChatSession) return;
     
@@ -11448,8 +11802,7 @@ async function generateSessionName() {
                         if (newName !== currentChatSession.chat_name) {
                             // Name was updated
                             currentChatSession.chat_name = newName;
-                            const sessionNameInput = document.getElementById('chatSessionName');
-                            if (sessionNameInput) sessionNameInput.value = newName;
+                            syncActiveChatNameUI(newName);
                             
                             // Update session list
                             await loadChatSessions();

@@ -27,6 +27,17 @@ import numpy as np
 # override=True ensures .env values take precedence over shell environment variables
 load_dotenv(override=True)
 
+# Optional startup delay (seconds) to give external services time to boot.
+try:
+    STARTUP_DELAY_SECONDS = float(os.getenv('STARTUP_DELAY_SECONDS', '0'))
+except ValueError:
+    STARTUP_DELAY_SECONDS = 0.0
+    print("[STARTUP] Warning: STARTUP_DELAY_SECONDS is invalid; using 0")
+
+if __name__ == '__main__' and STARTUP_DELAY_SECONDS > 0:
+    print(f"[STARTUP] Delaying app startup by {STARTUP_DELAY_SECONDS} second(s)...")
+    time.sleep(STARTUP_DELAY_SECONDS)
+
 # Try to import mutagen for accurate MP3 duration
 try:
     from mutagen.mp3 import MP3
@@ -101,6 +112,12 @@ WORKFLOWS_DIR = Path(os.getenv('WORKFLOWS_DIR', 'workflows'))
 # ComfyUI paths (for input files and output)
 COMFYUI_INPUT_DIR = Path(os.getenv('COMFYUI_INPUT_DIR', '../comfy.git/app/input'))
 COMFYUI_OUTPUT_DIR = Path(os.getenv('COMFYUI_OUTPUT_DIR', '../comfy.git/app/output'))
+COMFYUI_TEMP_INPUT_SUBDIR = os.getenv('COMFYUI_TEMP_INPUT_SUBDIR', '_staged')
+
+# User-managed input library paths (separate from ComfyUI input)
+INPUT_DIR = Path(os.getenv('INPUT_DIR', 'input'))
+TTS_AUDIO_INPUT_DIR = Path(os.getenv('TTS_AUDIO_INPUT_DIR', str(INPUT_DIR / 'audio_tts')))
+DEFAULT_INPUT_IMAGE = os.getenv('DEFAULT_INPUT_IMAGE', 'permanent/violet.webp')
 
 # Documentation directory
 DOCS_DIR = Path(os.getenv('DOCS_DIR', 'docs'))
@@ -112,6 +129,8 @@ DOCS_DIR = Path(os.getenv('DOCS_DIR', 'docs'))
 (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
 DATA_DIR.mkdir(exist_ok=True)
 THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+INPUT_DIR.mkdir(parents=True, exist_ok=True)
+TTS_AUDIO_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Global queue and status
 generation_queue = []
@@ -148,19 +167,55 @@ cancellation_requested = False
 # Global setting for auto-unload models (controlled via web UI)
 auto_unload_models = False
 
+# Public endpoints that must remain reachable before authentication.
+PUBLIC_PATHS = {
+    '/',
+    '/api/auth/login',
+    '/api/auth/check',
+    '/api/auth/logout',
+}
+PUBLIC_PATH_PREFIXES = (
+    '/static/',
+)
+
+
+def is_authenticated_request() -> bool:
+    """Return True if this request is authenticated via session or remember-me cookie."""
+    if session.get('authenticated'):
+        return True
+
+    remember_token = request.cookies.get('remember_token')
+    if remember_token and remember_token == get_remember_token():
+        session['authenticated'] = True
+        session.permanent = True
+        return True
+
+    return False
+
+
+@app.before_request
+def enforce_authentication():
+    """Block all non-public routes until the app is unlocked."""
+    path = request.path or '/'
+
+    if path in PUBLIC_PATHS or path.startswith(PUBLIC_PATH_PREFIXES):
+        return None
+
+    if is_authenticated_request():
+        return None
+
+    if path.startswith('/api/') or path.startswith('/outputs/'):
+        return jsonify({'error': 'Unauthorized', 'authenticated': False}), 401
+
+    return render_template('login.html'), 401
+
 # Authentication decorator
 def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check session
-        if session.get('authenticated'):
+        if is_authenticated_request():
             return f(*args, **kwargs)
-        # Check remember me cookie
-        remember_token = request.cookies.get('remember_token')
-        if remember_token and remember_token == get_remember_token():
-            session['authenticated'] = True
-            session.permanent = True
-            return f(*args, **kwargs)
+
         # Not authenticated
         return jsonify({'error': 'Unauthorized', 'authenticated': False}), 401
     return decorated_function
@@ -221,15 +276,9 @@ def logout():
 @app.route('/api/auth/check', methods=['GET'])
 def check_auth():
     """Check if user is authenticated"""
-    # Check session
-    if session.get('authenticated'):
+    if is_authenticated_request():
         return jsonify({'authenticated': True})
-    # Check remember me cookie
-    remember_token = request.cookies.get('remember_token')
-    if remember_token and remember_token == get_remember_token():
-        session['authenticated'] = True
-        session.permanent = True
-        return jsonify({'authenticated': True})
+
     return jsonify({'authenticated': False})
 
 
@@ -260,6 +309,107 @@ def get_next_filename(prefix: str, subfolder: str = "", extension: str = "png", 
             relative_path = filepath.relative_to(OUTPUT_DIR)
             return str(relative_path), filepath
         index += 1
+
+
+def _normalize_media_path(path_str: str) -> str:
+    """Normalize a relative media path to use forward slashes and no leading slash."""
+    normalized = (path_str or '').replace('\\', '/').strip()
+    while normalized.startswith('/'):
+        normalized = normalized[1:]
+    if normalized.lower().startswith('outputs/'):
+        normalized = normalized[len('outputs/'):]
+    return normalized
+
+
+def resolve_comfy_input_filename(path_hint: str, media_label: str = 'file', prefer_tts_audio: bool = False) -> tuple:
+    """
+    Resolve a file reference from the user input library and stage it into ComfyUI input.
+
+    Source priority:
+    1. Absolute local path
+    2. TTS audio input folder (when prefer_tts_audio=True)
+    3. General input folder
+    4. OUTPUT_DIR fallback (legacy compatibility)
+    5. COMFYUI_INPUT_DIR fallback (legacy compatibility)
+
+    The resolved source is always copied into COMFYUI_INPUT_DIR/COMFYUI_TEMP_INPUT_SUBDIR
+    and the staged relative path is returned for workflow execution.
+
+    Returns:
+        (relative_path_for_comfyui, staged_absolute_path_or_none)
+    """
+    normalized = _normalize_media_path(path_hint)
+    if not normalized:
+        raise FileNotFoundError(f"{media_label} path is empty")
+
+    source_path = None
+    provided_path = Path(path_hint)
+
+    if provided_path.is_absolute() and provided_path.exists() and provided_path.is_file():
+        source_path = provided_path
+    else:
+        search_roots = []
+        if prefer_tts_audio:
+            search_roots.append(TTS_AUDIO_INPUT_DIR)
+        search_roots.append(INPUT_DIR)
+
+        for root in search_roots:
+            candidate = root / normalized
+            if candidate.exists() and candidate.is_file():
+                source_path = candidate
+                break
+
+        if source_path is None:
+            output_candidate = OUTPUT_DIR / normalized
+            if output_candidate.exists() and output_candidate.is_file():
+                source_path = output_candidate
+
+        if source_path is None:
+            comfy_candidate = COMFYUI_INPUT_DIR / normalized
+            if comfy_candidate.exists() and comfy_candidate.is_file():
+                source_path = comfy_candidate
+
+        if source_path is None:
+            # Support default image by filename (e.g., violet.webp) from input/permanent.
+            input_permanent_candidate = INPUT_DIR / 'permanent' / Path(normalized).name
+            if input_permanent_candidate.exists() and input_permanent_candidate.is_file():
+                source_path = input_permanent_candidate
+
+        if source_path is None:
+            comfy_permanent_candidate = COMFYUI_INPUT_DIR / 'permanent' / Path(normalized).name
+            if comfy_permanent_candidate.exists() and comfy_permanent_candidate.is_file():
+                source_path = comfy_permanent_candidate
+
+        if source_path is None:
+            local_candidate = Path(normalized)
+            if local_candidate.exists() and local_candidate.is_file():
+                source_path = local_candidate.resolve()
+
+    if source_path is None:
+        raise FileNotFoundError(
+            f"{media_label} not found in input or output folders: {path_hint}"
+        )
+
+    COMFYUI_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    staged_dir = COMFYUI_INPUT_DIR / COMFYUI_TEMP_INPUT_SUBDIR
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    staged_name = f"{uuid.uuid4().hex}_{source_path.name}"
+    staged_path = staged_dir / staged_name
+    shutil.copy2(source_path, staged_path)
+    print(f"[INPUT_STAGING] Copied {source_path} -> {staged_path}")
+    return staged_path.relative_to(COMFYUI_INPUT_DIR).as_posix(), staged_path
+
+
+def cleanup_staged_input_files(staged_files):
+    """Delete temporary files staged into COMFYUI_INPUT_DIR for workflow execution."""
+    for staged_file in staged_files:
+        try:
+            staged_path = Path(staged_file)
+            if staged_path.exists() and staged_path.is_file():
+                staged_path.unlink()
+                print(f"[INPUT_STAGING] Removed temporary file: {staged_path}")
+        except Exception as e:
+            print(f"[INPUT_STAGING] Warning: Could not remove staged file {staged_file}: {e}")
 
 
 def load_metadata():
@@ -825,6 +975,85 @@ def add_metadata_entry(image_path, prompt, width, height, steps, seed, file_pref
     return entry
 
 
+def auto_generate_first_chat_name(session_id: str, model: str = None):
+    """Auto-generate a chat name from the first user+assistant exchange only."""
+    with chat_lock:
+        sessions = load_chats()
+        session_data = None
+        for s in sessions:
+            if s.get('session_id') == session_id:
+                session_data = s
+                break
+
+        if not session_data:
+            return None
+
+        messages = session_data.get('messages', [])
+        first_user_msg = next(
+            (m for m in messages if m.get('role') == 'user' and (m.get('content') or '').strip()),
+            None
+        )
+        completed_assistant_messages = [
+            m for m in messages
+            if m.get('role') == 'assistant' and m.get('completed') and (m.get('content') or '').strip()
+        ]
+
+        # Only auto-name exactly once: when the first assistant response has completed.
+        if not first_user_msg or len(completed_assistant_messages) != 1:
+            return None
+
+        first_assistant_msg = completed_assistant_messages[0]
+        model_to_use = model or session_data.get('model', 'llama3.2')
+
+    user_content = (first_user_msg.get('content') or '').strip()
+    assistant_content = (first_assistant_msg.get('content') or '').strip()
+    if not user_content or not assistant_content:
+        return None
+
+    name_prompt = (
+        "Generate a SHORT, descriptive chat title (2-5 words max) based ONLY on this first exchange. "
+        "No quotes. Output only the title.\n\n"
+        f"User: {user_content}\n"
+        f"Assistant: {assistant_content}\n\n"
+        "Title:"
+    )
+
+    response_gen = ollama_client.chat(
+        model=model_to_use,
+        messages=[{'role': 'user', 'content': name_prompt}],
+        stream=False
+    )
+    generated_name = ''.join(response_gen).strip().strip('"\' ')
+
+    if not generated_name:
+        return None
+
+    if len(generated_name) > 50:
+        generated_name = generated_name[:50].strip()
+
+    with chat_lock:
+        sessions = load_chats()
+        for s in sessions:
+            if s.get('session_id') != session_id:
+                continue
+
+            # Recheck completion count to avoid races before updating title.
+            completed_assistant_count = sum(
+                1
+                for m in s.get('messages', [])
+                if m.get('role') == 'assistant' and m.get('completed') and (m.get('content') or '').strip()
+            )
+            if completed_assistant_count != 1:
+                return None
+
+            s['chat_name'] = generated_name
+            s['updated_at'] = datetime.now().isoformat()
+            save_chats(sessions)
+            return generated_name
+
+    return None
+
+
 def process_queue():
     """Background thread to process the generation queue"""
     global active_generation, generation_queue, completed_jobs, last_workflow_type, cancellation_requested, queue_paused
@@ -873,11 +1102,18 @@ def process_queue():
                 cancellation_requested = False  # Reset cancellation flag
         
         if job:
+            staged_input_files = []
             try:
                 start_time = job.get('start_time', time.time())
                 job_type = job.get('job_type', 'image')
                 file_prefix = job.get('file_prefix', 'velvet')
                 subfolder = job.get('subfolder', '')
+                # Reset per-job outputs so values from a previous loop iteration
+                # cannot leak into jobs that do not generate media files.
+                output_path = None
+                relative_path = None
+                metadata_entry = None
+                generation_duration = None
                 
                 # Get the seed (generate if not provided)
                 seed = job.get('seed')
@@ -909,13 +1145,21 @@ def process_queue():
                     print(f"[VIDEO] Prompt: {job['prompt']}")
                     print(f"[VIDEO] Image: {job.get('image_filename', 'violet.webp')}")
                     print(f"[VIDEO] Frames: {job.get('frames', 64)}, FPS: {job.get('fps', 16)}, Megapixels: {job.get('megapixels', 0.25)}")
+
+                    video_source_image = job.get('image_filename', DEFAULT_INPUT_IMAGE)
+                    resolved_video_image, staged_video_image = resolve_comfy_input_filename(
+                        video_source_image,
+                        media_label='video source image'
+                    )
+                    if staged_video_image is not None:
+                        staged_input_files.append(staged_video_image)
                     
                     relative_path, output_path = get_next_filename(file_prefix, subfolder, 'mp4', 'videos')
                     print(f"[VIDEO] Output path: {output_path}")
                     
                     comfyui_client.generate_video(
                         positive_prompt=job['prompt'],
-                        image_filename=job.get('image_filename', 'violet.webp'),
+                        image_filename=resolved_video_image,
                         frames=job.get('frames', 64),
                         megapixels=job.get('megapixels', 0.25),
                         fps=job.get('fps', 16),
@@ -931,6 +1175,7 @@ def process_queue():
                     try:
                         thumbnail_path = get_or_generate_thumbnail(output_path)
                         if thumbnail_path:
+                            job['thumbnail_path'] = str(thumbnail_path).replace('\\', '/')
                             print(f"[VIDEO] Thumbnail generated: {thumbnail_path}")
                         else:
                             print(f"[VIDEO] Warning: Thumbnail generation failed")
@@ -997,14 +1242,20 @@ def process_queue():
                     if is_regeneration:
                         print(f"[TTS] Regenerating sentence {original_sentence_index} (version {version_number})")
                     
-                    # Resolve reference audio file path from ComfyUI input directory
-                    ref_audio_path = COMFYUI_INPUT_DIR / ref_audio_name
-                    
-                    # Check if reference audio exists
-                    if not ref_audio_path.exists():
-                        print(f"[TTS] ERROR: Reference audio not found: {ref_audio_path}")
+                    # Resolve reference audio from configured input/output folders.
+                    try:
+                        resolved_ref_audio, staged_ref_audio = resolve_comfy_input_filename(
+                            ref_audio_name,
+                            media_label='TTS reference audio',
+                            prefer_tts_audio=True
+                        )
+                        if staged_ref_audio is not None:
+                            staged_input_files.append(staged_ref_audio)
+                        ref_audio_path = COMFYUI_INPUT_DIR / resolved_ref_audio
+                    except Exception as e:
+                        print(f"[TTS] ERROR: {e}")
                         job['status'] = 'failed'
-                        job['error'] = f'Reference audio file not found: {ref_audio_name}'
+                        job['error'] = str(e)
                         job['failed_at'] = datetime.now().isoformat()
                         # Don't use continue - let the job flow to completion section
                     
@@ -1578,6 +1829,17 @@ Session name:"""
                                             msg['cancelled'] = True
                                         break
                                 save_chats(sessions)
+
+                        # Force automatic naming on first completed chat response only.
+                        # This runs before the queue item is marked completed.
+                        if not has_error and not cancellation_requested and full_response.strip():
+                            try:
+                                auto_generated_name = auto_generate_first_chat_name(session_id, model)
+                                if auto_generated_name:
+                                    job['generated_name'] = auto_generated_name
+                                    print(f"[CHAT] Auto-generated session name: {auto_generated_name}")
+                            except Exception as name_error:
+                                print(f"[CHAT] Warning: auto-name generation failed: {name_error}")
                         
                         status_text = "cancelled" if cancellation_requested else "completed"
                         print(f"[CHAT] Response {status_text}: {len(full_response)} characters")
@@ -2350,6 +2612,14 @@ Session name:"""
                     
                     # Generate image with auto-incrementing filename
                     relative_path, output_path = get_next_filename(file_prefix, subfolder)
+
+                    source_image_path = job.get('image_filename') if use_image else DEFAULT_INPUT_IMAGE
+                    resolved_image_filename, staged_image = resolve_comfy_input_filename(
+                        source_image_path,
+                        media_label='image input'
+                    )
+                    if staged_image is not None:
+                        staged_input_files.append(staged_image)
                     
                     comfyui_client.generate_image(
                         positive_prompt=job['prompt'],
@@ -2361,7 +2631,7 @@ Session name:"""
                         shift=job.get('shift', 3.0),
                         use_image=use_image,
                         use_image_size=job.get('use_image_size', False),
-                        image_filename=job.get('image_filename'),
+                        image_filename=resolved_image_filename,
                         mcnl_lora=job.get('mcnl_lora', False),
                         snofs_lora=job.get('snofs_lora', False),
                         male_lora=job.get('male_lora', False),
@@ -2397,18 +2667,18 @@ Session name:"""
                 if job.get('status') not in ('cancelled', 'failed'):
                     job['status'] = 'completed'
                 
-                # Handle TTS, chat, and story jobs differently (they don't have single output_path)
-                if job_type not in ('tts', 'chat', 'story'):
-                    # Only set these if output_path was actually created
-                    if 'output_path' in locals():
-                        job['output_path'] = str(output_path)
-                    if 'relative_path' in locals():
-                        job['relative_path'] = str(relative_path)
-                    if 'metadata_entry' in locals():
-                        job['metadata_id'] = metadata_entry['id']
+                # Attach media fields only when this specific job generated media.
+                if output_path is not None:
+                    job['output_path'] = str(output_path)
+                if relative_path is not None:
+                    job['relative_path'] = str(relative_path)
+                if metadata_entry is not None:
+                    job['metadata_id'] = metadata_entry['id']
                 
                 job['completed_at'] = datetime.now().isoformat()
                 if 'generation_duration' not in job:
+                    if generation_duration is None:
+                        generation_duration = round(time.time() - start_time, 1)
                     job['generation_duration'] = generation_duration
                 job['refresh_folder'] = True
                 
@@ -2420,6 +2690,8 @@ Session name:"""
                 job['status'] = 'failed'
                 job['error'] = str(e)
                 job['failed_at'] = datetime.now().isoformat()
+
+            cleanup_staged_input_files(staged_input_files)
             
             # Always process completion inside a critical section to ensure sequential batch processing
             with queue_lock:
@@ -3910,7 +4182,7 @@ def add_image_batch_to_queue():
     Can use original image sizes or a custom size for all images."""
     data = request.json
     prompt = (data.get('prompt') or '').strip()
-    folder = data.get('folder', '').strip()  # relative path under ComfyUI input
+    folder = data.get('folder', '').strip()  # relative path under configured input folder
     use_original_size = bool(data.get('use_original_size', True))
     width = int(data.get('width', 1024))
     height = int(data.get('height', 1024))
@@ -3928,12 +4200,12 @@ def add_image_batch_to_queue():
         return jsonify({'success': False, 'error': 'Prompt required'}), 400
 
     try:
-        # Resolve ComfyUI input directory
-        if not COMFYUI_INPUT_DIR.exists():
-            return jsonify({'success': False, 'error': 'ComfyUI input directory not found'}), 500
+        # Resolve configured input directory
+        if not INPUT_DIR.exists():
+            return jsonify({'success': False, 'error': 'Input directory not found'}), 500
 
         # Navigate to selected subfolder (or root if empty)
-        current_dir = COMFYUI_INPUT_DIR / folder if folder else COMFYUI_INPUT_DIR
+        current_dir = INPUT_DIR / folder if folder else INPUT_DIR
         if not current_dir.exists() or not current_dir.is_dir():
             return jsonify({'success': False, 'error': 'Invalid input folder'}), 400
 
@@ -3953,7 +4225,7 @@ def add_image_batch_to_queue():
         with queue_lock:
             for file in image_files:
                 # Build relative path from input root for image_filename
-                rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
+                rel_path = str(file.relative_to(INPUT_DIR))
                 job = {
                     'id': str(uuid.uuid4()),
                     'prompt': prompt,
@@ -4002,12 +4274,12 @@ def queue_video_batch():
         if not prompt:
             return jsonify({'success': False, 'error': 'Prompt is required'}), 400
 
-        # Define ComfyUI input directory
-        if not COMFYUI_INPUT_DIR.exists():
-            return jsonify({'success': False, 'error': 'ComfyUI input directory not found'}), 400
+        # Define configured input directory
+        if not INPUT_DIR.exists():
+            return jsonify({'success': False, 'error': 'Input directory not found'}), 400
 
         # Navigate to selected subfolder (or root if empty)
-        current_dir = COMFYUI_INPUT_DIR / folder if folder else COMFYUI_INPUT_DIR
+        current_dir = INPUT_DIR / folder if folder else INPUT_DIR
         if not current_dir.exists() or not current_dir.is_dir():
             return jsonify({'success': False, 'error': 'Invalid input folder'}), 400
 
@@ -4027,7 +4299,7 @@ def queue_video_batch():
         with queue_lock:
             for file in image_files:
                 # Build relative path from input root for image_filename
-                rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
+                rel_path = str(file.relative_to(INPUT_DIR))
                 job = {
                     'id': str(uuid.uuid4()),
                     'job_type': 'video',
@@ -4502,6 +4774,49 @@ def get_recent_generation():
     return jsonify({'success': True, 'files': sorted_metadata})
 
 
+def count_media_files(directory: Path, image_extensions=None, video_extensions=None, audio_extensions=None, recursive=False):
+    """Count media files in a directory, optionally including nested subfolders."""
+    image_extensions = image_extensions or set()
+    video_extensions = video_extensions or set()
+    audio_extensions = audio_extensions or set()
+
+    counts = {'images': 0, 'videos': 0, 'audio': 0}
+
+    if not directory.exists() or not directory.is_dir():
+        return counts
+
+    if recursive:
+        for root, _, files in os.walk(directory):
+            for filename in files:
+                ext = Path(filename).suffix.lower()
+                if ext in image_extensions:
+                    counts['images'] += 1
+                elif ext in video_extensions:
+                    counts['videos'] += 1
+                elif ext in audio_extensions:
+                    counts['audio'] += 1
+    else:
+        for child in directory.iterdir():
+            if not child.is_file():
+                continue
+            ext = child.suffix.lower()
+            if ext in image_extensions:
+                counts['images'] += 1
+            elif ext in video_extensions:
+                counts['videos'] += 1
+            elif ext in audio_extensions:
+                counts['audio'] += 1
+
+    return counts
+
+
+def count_direct_subfolders(directory: Path) -> int:
+    """Count direct child folders for a directory."""
+    if not directory.exists() or not directory.is_dir():
+        return 0
+    return sum(1 for child in directory.iterdir() if child.is_dir())
+
+
 @app.route('/api/browse')
 @require_auth
 def browse_folder():
@@ -4528,16 +4843,38 @@ def browse_folder():
     
     if not current_dir.exists() or not current_dir.is_dir():
         return jsonify({'error': 'Invalid directory'}), 404
+
+    image_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}
+    video_extensions = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'}
+
+    current_counts = count_media_files(
+        current_dir,
+        image_extensions=image_extensions,
+        video_extensions=video_extensions,
+        recursive=False
+    )
     
     # Get folders
     folders = []
     for item in current_dir.iterdir():
         if item.is_dir():
             rel_path = str(item.relative_to(OUTPUT_DIR)).replace('\\', '/')
+            folder_counts = count_media_files(
+                item,
+                image_extensions=image_extensions,
+                video_extensions=video_extensions,
+                recursive=True
+            )
+            folder_item_count = folder_counts['images'] + folder_counts['videos']
+            folder_subfolder_count = count_direct_subfolders(item)
             folders.append({
                 'name': item.name,
                 'path': rel_path,
-                'type': 'folder'
+                'type': 'folder',
+                'image_count': folder_counts['images'],
+                'video_count': folder_counts['videos'],
+                'item_count': folder_item_count,
+                'folder_count': folder_subfolder_count
             })
     
     # Get files with metadata (filter out audio files)
@@ -4582,7 +4919,11 @@ def browse_folder():
     return jsonify({
         'current_path': subfolder,
         'folders': folders,
-        'files': files
+        'files': files,
+        'current_counts': {
+            'images': current_counts['images'],
+            'videos': current_counts['videos']
+        }
     })
 
 
@@ -4631,19 +4972,13 @@ def upload_image():
         return jsonify({'success': False, 'error': 'Invalid file type. Allowed: ' + ', '.join(allowed_extensions)}), 400
     
     try:
-        # Save to ComfyUI input directory
-        
-        # Verify directory exists
-        if not COMFYUI_INPUT_DIR.exists():
-            return jsonify({
-                'success': False, 
-                'error': f'ComfyUI input directory not found at {COMFYUI_INPUT_DIR.absolute()}'
-            }), 500
+        # Save to configured user input directory
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
         
         # Generate unique filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"upload_{timestamp}{file_ext}"
-        filepath = COMFYUI_INPUT_DIR / filename
+        filepath = INPUT_DIR / filename
         
         # Save file
         file.save(str(filepath))
@@ -4678,9 +5013,8 @@ def extract_frames_from_video():
         return jsonify({'success': False, 'error': 'No video filename provided'}), 400
     
     try:
-        # Locate video file in ComfyUI input directory
-        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-        video_path = COMFYUI_INPUT_DIR / video_filename
+        # Locate video file in configured input directory
+        video_path = INPUT_DIR / video_filename
         
         if not video_path.exists():
             return jsonify({'success': False, 'error': f'Video file not found: {video_filename}'}), 404
@@ -4721,8 +5055,8 @@ def extract_frames_from_video():
             # Append FPS to user-provided folder name
             output_folder = f"{output_folder}_{playback_fps_str}fps"
         
-        # Create output directory: input/frame_edit/[folder_name]/
-        frame_edit_base = COMFYUI_INPUT_DIR / 'frame_edit'
+        # Create output directory: INPUT_DIR/frame_edit/[folder_name]/
+        frame_edit_base = INPUT_DIR / 'frame_edit'
         frame_edit_base.mkdir(exist_ok=True)
         
         output_dir = frame_edit_base / output_folder
@@ -4807,9 +5141,8 @@ def get_frame_edit_count():
     if not folder_name:
         return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
     
-    # Locate frames in ComfyUI input/frame_edit/[folder]/
-    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-    frame_folder = COMFYUI_INPUT_DIR / 'frame_edit' / folder_name
+    # Locate frames in INPUT_DIR/frame_edit/[folder]/
+    frame_folder = INPUT_DIR / 'frame_edit' / folder_name
     
     if not frame_folder.exists():
         return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
@@ -4841,9 +5174,8 @@ def process_frame_edit_batch():
     if not folder_name:
         return jsonify({'success': False, 'error': 'Invalid folder path'}), 400
     
-    # Locate frames in ComfyUI input/frame_edit/[folder]/
-    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-    frame_folder = COMFYUI_INPUT_DIR / 'frame_edit' / folder_name
+    # Locate frames in INPUT_DIR/frame_edit/[folder]/
+    frame_folder = INPUT_DIR / 'frame_edit' / folder_name
     
     if not frame_folder.exists():
         return jsonify({'success': False, 'error': f'Frame folder not found: {folder_name}'}), 404
@@ -4974,9 +5306,7 @@ def stitch_frames_to_video():
     if source == 'input':
         # Use folder path as-is from input directory
         folder_name = folder.strip()
-        # Use absolute path construction to avoid path resolution issues
-        COMFYUI_INPUT_DIR = Path.cwd().parent / 'comfy.git' / 'app' / 'input'
-        frame_folder = COMFYUI_INPUT_DIR / folder_name
+        frame_folder = INPUT_DIR / folder_name
     else:
         # Use folder path as-is from output (already includes 'images/' if needed)
         folder_name = folder.strip()
@@ -5112,27 +5442,47 @@ def browse_images():
     
     try:
         if folder == 'input':
-            # List images and folders from ComfyUI input directory
-            COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-            
-            if not COMFYUI_INPUT_DIR.exists():
+            # List images and folders from configured input directory
+            if not INPUT_DIR.exists():
                 return jsonify({'success': False, 'error': 'Input directory not found'}), 404
             
             # Navigate to subfolder if specified
-            current_dir = COMFYUI_INPUT_DIR / subpath if subpath else COMFYUI_INPUT_DIR
+            current_dir = INPUT_DIR / subpath if subpath else INPUT_DIR
             
             if not current_dir.exists() or not current_dir.is_dir():
                 return jsonify({'success': False, 'error': 'Invalid directory'}), 404
+
+            image_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}
+            video_extensions = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'}
+
+            current_counts = count_media_files(
+                current_dir,
+                image_extensions=image_extensions,
+                video_extensions=video_extensions,
+                recursive=False
+            )
             
             # Get folders
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(COMFYUI_INPUT_DIR))
+                    rel_path = str(item.relative_to(INPUT_DIR))
+                    folder_counts = count_media_files(
+                        item,
+                        image_extensions=image_extensions,
+                        video_extensions=video_extensions,
+                        recursive=True
+                    )
+                    folder_item_count = folder_counts['images'] + folder_counts['videos']
+                    folder_subfolder_count = count_direct_subfolders(item)
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
-                        'type': 'folder'
+                        'type': 'folder',
+                        'image_count': folder_counts['images'],
+                        'video_count': folder_counts['videos'],
+                        'item_count': folder_item_count,
+                        'folder_count': folder_subfolder_count
                     })
             
             # Get all image and video files
@@ -5142,7 +5492,7 @@ def browse_images():
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in allowed_extensions:
                     # Store relative path from input root
-                    rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
+                    rel_path = str(file.relative_to(INPUT_DIR))
                     images.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -5158,7 +5508,11 @@ def browse_images():
                 'images': images, 
                 'folders': folders,
                 'current_path': subpath,
-                'folder': 'input'
+                'folder': 'input',
+                'current_counts': {
+                    'images': current_counts['images'],
+                    'videos': current_counts['videos']
+                }
             })
         else:
             # For output folder, use existing browse endpoint functionality
@@ -5177,14 +5531,12 @@ def browse_audio_files():
         audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'}
         
         if folder == 'input':
-            # List audio files from ComfyUI input directory
-            COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-            
-            if not COMFYUI_INPUT_DIR.exists():
-                return jsonify({'success': False, 'error': 'Input directory not found'}), 404
+            # List audio files from dedicated TTS audio input directory
+            if not TTS_AUDIO_INPUT_DIR.exists():
+                return jsonify({'success': False, 'error': 'TTS audio input directory not found'}), 404
             
             # Navigate to subfolder if specified
-            current_dir = COMFYUI_INPUT_DIR / subpath if subpath else COMFYUI_INPUT_DIR
+            current_dir = TTS_AUDIO_INPUT_DIR / subpath if subpath else TTS_AUDIO_INPUT_DIR
             
             if not current_dir.exists() or not current_dir.is_dir():
                 return jsonify({'success': False, 'error': 'Invalid directory'}), 404
@@ -5193,18 +5545,27 @@ def browse_audio_files():
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(COMFYUI_INPUT_DIR))
+                    rel_path = str(item.relative_to(TTS_AUDIO_INPUT_DIR))
+                    folder_counts = count_media_files(
+                        item,
+                        audio_extensions=audio_extensions,
+                        recursive=True
+                    )
+                    folder_subfolder_count = count_direct_subfolders(item)
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
-                        'type': 'folder'
+                        'type': 'folder',
+                        'audio_count': folder_counts['audio'],
+                        'item_count': folder_counts['audio'],
+                        'folder_count': folder_subfolder_count
                     })
             
             # Get audio files
             audio_files = []
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in audio_extensions:
-                    rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
+                    rel_path = str(file.relative_to(TTS_AUDIO_INPUT_DIR))
                     audio_files.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -5235,10 +5596,19 @@ def browse_audio_files():
             for item in current_dir.iterdir():
                 if item.is_dir():
                     rel_path = str(item.relative_to(OUTPUT_DIR))
+                    folder_counts = count_media_files(
+                        item,
+                        audio_extensions=audio_extensions,
+                        recursive=True
+                    )
+                    folder_subfolder_count = count_direct_subfolders(item)
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
-                        'type': 'folder'
+                        'type': 'folder',
+                        'audio_count': folder_counts['audio'],
+                        'item_count': folder_counts['audio'],
+                        'folder_count': folder_subfolder_count
                     })
             
             # Get audio files with metadata
@@ -5351,37 +5721,45 @@ def browse_audio():
                 'folder': 'output'
             })
         else:
-            # List audio files from ComfyUI input directory
-            COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-            
-            if not COMFYUI_INPUT_DIR.exists():
-                return jsonify({'success': False, 'error': 'Input directory not found'}), 404
+            # List audio files from dedicated TTS audio input directory
+            if not TTS_AUDIO_INPUT_DIR.exists():
+                return jsonify({'success': False, 'error': 'TTS audio input directory not found'}), 404
             
             # Navigate to subfolder if specified
-            current_dir = COMFYUI_INPUT_DIR / subpath if subpath else COMFYUI_INPUT_DIR
+            current_dir = TTS_AUDIO_INPUT_DIR / subpath if subpath else TTS_AUDIO_INPUT_DIR
             
             if not current_dir.exists() or not current_dir.is_dir():
                 return jsonify({'success': False, 'error': 'Invalid directory'}), 404
+
+            # Get all audio files
+            allowed_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a'}
             
             # Get folders
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(COMFYUI_INPUT_DIR))
+                    rel_path = str(item.relative_to(TTS_AUDIO_INPUT_DIR))
+                    folder_counts = count_media_files(
+                        item,
+                        audio_extensions=allowed_extensions,
+                        recursive=True
+                    )
+                    folder_subfolder_count = count_direct_subfolders(item)
                     folders.append({
                         'name': item.name,
                         'path': rel_path,
-                        'type': 'folder'
+                        'type': 'folder',
+                        'audio_count': folder_counts['audio'],
+                        'item_count': folder_counts['audio'],
+                        'folder_count': folder_subfolder_count
                     })
             
-            # Get all audio files
-            allowed_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a'}
             audio_files = []
             
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in allowed_extensions:
                     # Store relative path from input root
-                    rel_path = str(file.relative_to(COMFYUI_INPUT_DIR))
+                    rel_path = str(file.relative_to(TTS_AUDIO_INPUT_DIR))
                     audio_files.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -5405,11 +5783,10 @@ def browse_audio():
 
 @app.route('/api/image/input/<path:filepath>')
 def serve_input_image(filepath):
-    """Serve images from ComfyUI input directory (supports subfolders)"""
+    """Serve images from configured input directory (supports subfolders)"""
     try:
-        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
         # Resolve to absolute path
-        absolute_dir = COMFYUI_INPUT_DIR.resolve()
+        absolute_dir = INPUT_DIR.resolve()
         file_path = absolute_dir / filepath
         
         # Security check: ensure the file is within the input directory
@@ -5441,7 +5818,7 @@ def serve_input_image(filepath):
 
 @app.route('/api/copy_to_input', methods=['POST'])
 def copy_to_input():
-    """Copy an image from output folder to input folder"""
+    """Copy a file from output folder to configured input library"""
     data = request.json
     filename = data.get('filename', '')
     
@@ -5456,22 +5833,22 @@ def copy_to_input():
             print(f"Source file not found: {source}")
             return jsonify({'success': False, 'error': f'Source file not found: {filename}'}), 404
         
-        # Destination: ComfyUI input directory (root level)
-        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
+        # Destination: user input directory (audio files go to dedicated TTS folder)
+        audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'}
+        destination_root = TTS_AUDIO_INPUT_DIR if source.suffix.lower() in audio_extensions else INPUT_DIR
+        destination_dir = destination_root / 'from_output'
+        destination_dir.mkdir(parents=True, exist_ok=True)
         
-        if not COMFYUI_INPUT_DIR.exists():
-            return jsonify({'success': False, 'error': 'Input directory not found'}), 500
-        
-        # Generate unique filename if file already exists (copy to root of input folder)
+        # Generate unique filename if file already exists
         dest_filename = source.name
-        dest_path = COMFYUI_INPUT_DIR / dest_filename
+        dest_path = destination_dir / dest_filename
         
         counter = 1
         while dest_path.exists():
             stem = source.stem
             suffix = source.suffix
             dest_filename = f"{stem}_{counter}{suffix}"
-            dest_path = COMFYUI_INPUT_DIR / dest_filename
+            dest_path = destination_dir / dest_filename
             counter += 1
         
         # Copy file
@@ -5479,11 +5856,13 @@ def copy_to_input():
         shutil.copy2(source, dest_path)
         
         print(f"Copied {source} to {dest_path}")
+
+        relative_filename = dest_path.relative_to(destination_root).as_posix()
         
         return jsonify({
             'success': True,
-            'filename': dest_filename,
-            'message': 'Image copied to input folder'
+            'filename': relative_filename,
+            'message': 'File copied to input library'
         })
     except Exception as e:
         print(f"Error copying to input: {e}")
@@ -5494,7 +5873,7 @@ def copy_to_input():
 
 @app.route('/api/copy_folder_to_input', methods=['POST'])
 def copy_folder_to_input():
-    """Copy an entire folder from output to ComfyUI input directory"""
+    """Copy an entire folder from output to configured input directory"""
     data = request.json
     folder_path = data.get('folder_path', '').strip()
     
@@ -5511,34 +5890,33 @@ def copy_folder_to_input():
         if not source_folder.is_dir():
             return jsonify({'success': False, 'error': f'Path is not a directory: {folder_path}'}), 400
         
-        # Destination: ComfyUI input directory
-        COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-        
-        if not COMFYUI_INPUT_DIR.exists():
-            return jsonify({'success': False, 'error': 'Input directory not found'}), 500
+        # Destination: user input directory under a dedicated from_output subfolder
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        destination_root = INPUT_DIR / 'from_output'
+        destination_root.mkdir(parents=True, exist_ok=True)
         
         # Get folder name and create destination path
         folder_name = source_folder.name
-        dest_folder = COMFYUI_INPUT_DIR / folder_name
+        dest_folder = destination_root / folder_name
         
         # Handle duplicate folder names by appending counter
         counter = 1
         while dest_folder.exists():
-            dest_folder = COMFYUI_INPUT_DIR / f"{folder_name}_{counter}"
+            dest_folder = destination_root / f"{folder_name}_{counter}"
             counter += 1
         
         # Copy entire folder
         import shutil
         shutil.copytree(source_folder, dest_folder)
         
-        # Return the relative folder name (not full path, just the folder name)
-        result_folder_name = dest_folder.name
+        # Return the relative folder path from INPUT_DIR for downstream generation requests
+        result_folder_name = dest_folder.relative_to(INPUT_DIR).as_posix()
         print(f"Copied folder from {source_folder} to {dest_folder}")
         
         return jsonify({
             'success': True,
             'folder_name': result_folder_name,
-            'message': 'Folder copied to input directory'
+            'message': 'Folder copied to input library'
         })
     except Exception as e:
         print(f"Error copying folder to input: {e}")
@@ -5732,12 +6110,11 @@ def serve_image(filepath):
 
 @app.route('/api/video/<path:filepath>')
 def serve_video_from_input(filepath):
-    """Serve videos from ComfyUI input directory or outputs directory"""
-    # Try ComfyUI input directory first
-    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-    comfyui_input = COMFYUI_INPUT_DIR / filepath
-    if comfyui_input.exists() and comfyui_input.is_file():
-        return send_video_with_range_support(comfyui_input)
+    """Serve videos from configured input directory or outputs directory"""
+    # Try configured input directory first
+    input_video = INPUT_DIR / filepath
+    if input_video.exists() and input_video.is_file():
+        return send_video_with_range_support(input_video)
     
     # Fallback to outputs directory
     output_path = OUTPUT_DIR / filepath
@@ -5800,9 +6177,12 @@ def trigger_thumbnail_generation():
 
 @app.route('/api/audio/input/<path:filepath>')
 def serve_audio_from_input(filepath):
-    """Serve audio files from ComfyUI input directory"""
-    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-    audio_path = COMFYUI_INPUT_DIR / filepath
+    """Serve audio files from dedicated TTS audio input directory"""
+    audio_path = TTS_AUDIO_INPUT_DIR / filepath
+
+    if not audio_path.exists() or not audio_path.is_file():
+        # Fallback for legacy paths stored in general input folder
+        audio_path = INPUT_DIR / filepath
     
     if not audio_path.exists() or not audio_path.is_file():
         return "Audio file not found", 404
@@ -6136,8 +6516,7 @@ def get_hardware_stats():
 
 def ensure_dummy_image():
     """Create a dummy image if permanent\violet.webp doesn't exist"""
-    COMFYUI_INPUT_DIR = Path('..') / 'comfy.git' / 'app' / 'input'
-    permanent_dir = COMFYUI_INPUT_DIR / 'permanent'
+    permanent_dir = INPUT_DIR / 'permanent'
     dummy_image_path = permanent_dir / 'violet.webp'
     
     if not dummy_image_path.exists():
