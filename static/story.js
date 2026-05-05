@@ -284,6 +284,7 @@ async function loadStorySessions() {
         storySessions = data.sessions || [];
         
         renderStorySessions();
+        updateStoryAudioControlsState();
     } catch (error) {
         console.error('[STORY] Error loading sessions:', error);
     }
@@ -408,6 +409,10 @@ async function selectStorySession(sessionId, skipPollingResume = false) {
         
         const data = await response.json();
         if (!data.success) throw new Error('Failed to load session');
+
+        if (currentStorySession && currentStorySession.session_id !== data.session.session_id) {
+            stopConversationAudioPlayback('story', { hard: true });
+        }
         
         currentStorySession = data.session;
         
@@ -541,6 +546,8 @@ async function renderStoryMessages() {
         if (contextBar) contextBar.style.width = '0%';
         const contextLabel = document.getElementById('storyContextLabel');
         if (contextLabel) contextLabel.textContent = '';
+        stopConversationAudioPlayback('story', { hard: true });
+        updateStoryAudioControlsState();
         return;
     }
     
@@ -574,10 +581,12 @@ async function renderStoryMessages() {
     
     // Clear container and append DOM elements directly (preserves event listeners)
     container.innerHTML = '';
-    messages.forEach(msg => {
-        const messageEl = createStoryMessageElement(msg);
+    messages.forEach((msg, index) => {
+        const messageEl = createStoryMessageElement(msg, index);
         container.appendChild(messageEl);
     });
+
+    updateStoryAudioControlsState();
     
     // Start polling for incomplete messages
     messages.forEach(msg => {
@@ -587,7 +596,7 @@ async function renderStoryMessages() {
     });
 }
 
-function createStoryMessageElement(message) {
+function createStoryMessageElement(message, messageIndex = -1) {
     const div = document.createElement('div');
     div.className = `chat-message ${message.role}`;
     
@@ -671,6 +680,14 @@ function createStoryMessageElement(message) {
     // Assemble the message
     wrapper.appendChild(header);
     wrapper.appendChild(contentDiv);
+
+    if (message.tts_audio) {
+        const audioContainer = createConversationAudioElement('story', message.tts_audio, messageIndex);
+        if (audioContainer) {
+            wrapper.appendChild(audioContainer);
+        }
+    }
+
     div.appendChild(avatar);
     div.appendChild(wrapper);
     
@@ -696,12 +713,6 @@ function createStoryMessageElement(message) {
         btnContainer.appendChild(copyBtn);
         
         // Send to TTS button - navigates to TTS tab with text
-        const messageIndex = currentStorySession?.messages.findIndex(m => 
-            (m.message_id && m.message_id === message.message_id) || 
-            (m.response_id && m.response_id === message.response_id) ||
-            (m.timestamp === message.timestamp && m.content === content)
-        );
-        
         console.log('[STORY] Button creation - messageIndex:', messageIndex, 'message:', message);
         
         const sendTTSBtn = document.createElement('button');

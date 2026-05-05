@@ -97,6 +97,46 @@ let chatPollingIntervals = {}; // Track polling intervals by response_id
 let isLoadingChatSession = false; // Prevent recursive calls
 let chatAutoScrollEnabled = true; // Keep chat pinned to bottom unless user scrolls up
 let currentBranchPath = []; // Active branch path (array of branch_ids)
+const CONVERSATION_DOWNLOAD_ICON = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+    </svg>
+`;
+const CONVERSATION_BUSY_ICON = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="8" opacity="0.3"></circle>
+        <path d="M20 12a8 8 0 0 0-8-8"></path>
+    </svg>
+`;
+
+const conversationAudioPlaybackStates = {
+    chat: {
+        queue: [],
+        position: -1,
+        activePlayer: null,
+        isPlaying: false,
+        autoPlayEnabled: false,
+        isDownloading: false
+    },
+    story: {
+        queue: [],
+        position: -1,
+        activePlayer: null,
+        isPlaying: false,
+        autoPlayEnabled: false,
+        isDownloading: false
+    },
+    autochat: {
+        queue: [],
+        position: -1,
+        activePlayer: null,
+        isPlaying: false,
+        autoPlayEnabled: false,
+        isDownloading: false
+    }
+};
 
 // Story state
 let storySessions = [];
@@ -175,6 +215,11 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeAutoChat();
         console.log('✓ Auto Chat initialized');
     } catch (e) { console.error('✗ Auto Chat failed:', e); }
+
+    try {
+        initializeConversationAudioAutoplayHandlers();
+        console.log('✓ Conversation audio autoplay handlers initialized');
+    } catch (e) { console.error('✗ Conversation audio autoplay handlers failed:', e); }
     
     try {
         initializeInputImageToggle();
@@ -215,6 +260,12 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeThemeSelector();
         console.log('✓ Theme selector initialized');
     } catch (e) { console.error('✗ Theme selector failed:', e); }
+
+    // Initialize media blur setting
+    try {
+        initializeMediaBlurToggle();
+        console.log('✓ Media blur setting initialized');
+    } catch (e) { console.error('✗ Media blur setting failed:', e); }
     
     // Initialize auto-unload models setting
     try {
@@ -635,11 +686,93 @@ function initializeMobileKeyboardFix() {
     let lastWindowHeight = window.innerHeight;
     let lastVisualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
     let keyboardOpen = false;
+    let lastFocusedInput = null;
+    let preKeyboardState = null;
+
+    function isTextEntryElement(element) {
+        if (!element || !element.tagName) return false;
+        const tagName = element.tagName.toUpperCase();
+        if (tagName === 'TEXTAREA') return true;
+        if (tagName === 'INPUT') {
+            const inputType = (element.type || 'text').toLowerCase();
+            return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(inputType);
+        }
+        return element.isContentEditable === true;
+    }
+
+    function getActiveInputElement() {
+        const active = document.activeElement;
+        return isTextEntryElement(active) ? active : null;
+    }
+
+    function getKeyboardInset() {
+        if (!window.visualViewport) return 0;
+        const viewport = window.visualViewport;
+        return Math.max(0, Math.round(window.innerHeight - (viewport.height + viewport.offsetTop)));
+    }
+
+    function cachePreKeyboardState(activeInput) {
+        const contentWrapper = document.querySelector('.content-wrapper');
+        const inputScrollParent = activeInput ? (findScrollableParent(activeInput) || contentWrapper) : contentWrapper;
+
+        preKeyboardState = {
+            bodyOverflow: document.body.style.overflow,
+            windowScrollY: window.scrollY,
+            contentWrapperScrollTop: contentWrapper ? contentWrapper.scrollTop : 0,
+            inputScrollParent,
+            inputScrollTop: inputScrollParent ? inputScrollParent.scrollTop : 0
+        };
+    }
+
+    function restorePreKeyboardState() {
+        if (!preKeyboardState) return;
+
+        const {
+            bodyOverflow,
+            windowScrollY,
+            contentWrapperScrollTop,
+            inputScrollParent,
+            inputScrollTop
+        } = preKeyboardState;
+
+        document.body.style.overflow = bodyOverflow || '';
+
+        const contentWrapper = document.querySelector('.content-wrapper');
+        if (contentWrapper) {
+            contentWrapper.scrollTop = contentWrapperScrollTop || 0;
+        }
+
+        if (inputScrollParent && inputScrollParent !== contentWrapper) {
+            inputScrollParent.scrollTop = inputScrollTop || 0;
+        }
+
+        if (window.scrollY !== (windowScrollY || 0)) {
+            window.scrollTo({ top: windowScrollY || 0, behavior: 'auto' });
+        }
+
+        preKeyboardState = null;
+    }
+
+    function keepFocusedInputVisible() {
+        const activeInput = getActiveInputElement() || lastFocusedInput;
+        if (!activeInput || typeof activeInput.scrollIntoView !== 'function') return;
+
+        requestAnimationFrame(() => {
+            activeInput.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        });
+    }
     
     function handleKeyboardStateChange() {
+        const activeInput = getActiveInputElement();
+        if (activeInput) {
+            lastFocusedInput = activeInput;
+        }
+
         // Get current viewport heights
         const currentWindowHeight = window.innerHeight;
         const currentVisualHeight = window.visualViewport ? window.visualViewport.height : currentWindowHeight;
+        const keyboardInset = getKeyboardInset();
+        document.documentElement.style.setProperty('--mobile-keyboard-offset', `${keyboardInset}px`);
         
         // Calculate height differences
         const windowHeightDiff = lastWindowHeight - currentWindowHeight;
@@ -648,6 +781,7 @@ function initializeMobileKeyboardFix() {
         // Keyboard likely opened (significant height decrease)
         if ((visualHeightDiff > 150 || windowHeightDiff > 150) && !keyboardOpen) {
             keyboardOpen = true;
+            cachePreKeyboardState(activeInput || lastFocusedInput);
             document.body.classList.add('keyboard-open');
             
             // Allow scrolling when keyboard is open
@@ -658,27 +792,22 @@ function initializeMobileKeyboardFix() {
             if (!sidebarOpen) {
                 document.body.style.overflow = 'auto';
             }
+
+            keepFocusedInputVisible();
             
             console.log('Keyboard opened - enabling scroll');
+        }
+        // Keyboard stays open: keep active input in view while viewport animates
+        else if (keyboardOpen && (visualHeightDiff > 20 || windowHeightDiff > 20)) {
+            keepFocusedInputVisible();
         }
         // Keyboard likely closed (height increased back significantly)
         else if (keyboardOpen && (visualHeightDiff < -100 || windowHeightDiff < -100)) {
             keyboardOpen = false;
             document.body.classList.remove('keyboard-open');
-            
-            // Restore overflow state based on sidebar status
-            const backdrop = document.getElementById('sidebarBackdrop');
-            if (!backdrop || !backdrop.classList.contains('active')) {
-                document.body.style.overflow = '';
-            }
-            
-            // Scroll to top of content wrapper to ensure header is visible
-            const contentWrapper = document.querySelector('.content-wrapper');
-            if (contentWrapper && contentWrapper.scrollTop > 0) {
-                setTimeout(() => {
-                    contentWrapper.scrollTo({ top: 0, behavior: 'smooth' });
-                }, 100);
-            }
+
+            document.documentElement.style.setProperty('--mobile-keyboard-offset', '0px');
+            restorePreKeyboardState();
             
             console.log('Keyboard closed - restoring scroll state');
         }
@@ -699,14 +828,16 @@ function initializeMobileKeyboardFix() {
     
     // Additional detection via focus events
     document.addEventListener('focusin', function(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        if (isTextEntryElement(e.target)) {
+            lastFocusedInput = e.target;
             // Give keyboard time to animate in
             setTimeout(handleKeyboardStateChange, 300);
+            setTimeout(keepFocusedInputVisible, 380);
         }
     });
     
     document.addEventListener('focusout', function(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        if (isTextEntryElement(e.target)) {
             // Give keyboard time to animate out
             setTimeout(handleKeyboardStateChange, 300);
         }
@@ -1473,6 +1604,8 @@ function initializeTabs() {
 }
 
 function switchTab(tabName) {
+    const currentActiveTabId = document.querySelector('.tab-content.active')?.id;
+
     // Update button states
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
@@ -1517,10 +1650,22 @@ function switchTab(tabName) {
     };
     
     const tabId = tabs[tabName];
+    if (currentActiveTabId && tabId && currentActiveTabId !== tabId) {
+        stopAllConversationAudioPlayback(false);
+    }
+
     if (tabId) {
         const element = document.getElementById(tabId);
         if (element) {
             element.classList.add('active');
+        }
+    }
+
+    // Keep chat headers (model selector and controls) visible when entering chat tabs.
+    if (tabName === 'chat' || tabName === 'story' || tabName === 'autochat') {
+        const contentWrapper = document.querySelector('.content-wrapper');
+        if (contentWrapper) {
+            contentWrapper.scrollTop = 0;
         }
     }
     
@@ -1551,8 +1696,10 @@ function switchTab(tabName) {
             } else {
                 console.log('[CHAT] Current session no longer exists, clearing');
                 currentChatSession = null;
+                stopWholeChatAudioPlayback(false);
                 chatAutoScrollEnabled = true;
                 setChatScrollButtonVisibility(false);
+                updateChatAudioControlsState();
             }
         }
     } else if (tabName === 'story') {
@@ -1873,6 +2020,15 @@ function toggleHeader() {
     
     // Save state to localStorage
     localStorage.setItem('headerCollapsed', isCollapsed ? 'true' : 'false');
+
+    // If a chat tab is active, keep the chat header area visible after header toggle.
+    const activeTab = document.querySelector('.tab-btn.active')?.getAttribute('data-tab');
+    if (activeTab === 'chat' || activeTab === 'story' || activeTab === 'autochat') {
+        const contentWrapper = document.querySelector('.content-wrapper');
+        if (contentWrapper) {
+            contentWrapper.scrollTop = 0;
+        }
+    }
 }
 
 async function clearQueue() {
@@ -4006,6 +4162,209 @@ function setLoadingOverlay(containerId, overlayId, isLoading, message = 'Loading
     container.setAttribute('aria-busy', isLoading ? 'true' : 'false');
 }
 
+function ensureBrowserTopLoadingStatus(containerId, statusId) {
+    const container = document.getElementById(containerId);
+    if (!container) return null;
+
+    let status = document.getElementById(statusId);
+    if (!status) {
+        status = document.createElement('span');
+        status.id = statusId;
+        status.className = 'browser-top-loading-status';
+        status.innerHTML = `
+            <span class="browser-top-loading-spinner" aria-hidden="true"></span>
+            <span class="browser-top-loading-text">Loading...</span>
+        `;
+        status.style.display = 'none';
+        container.appendChild(status);
+    }
+
+    return status;
+}
+
+function setBrowserTopLoadingStatus(containerId, statusId, isLoading, message = 'Loading...') {
+    const status = ensureBrowserTopLoadingStatus(containerId, statusId);
+    if (!status) return;
+
+    const textEl = status.querySelector('.browser-top-loading-text');
+    if (textEl) {
+        textEl.textContent = message;
+    }
+
+    status.style.display = isLoading ? 'inline-flex' : 'none';
+}
+
+const SESSION_BROWSER_COUNT_CACHE_KEY = 'velvet.browser.counts.v1';
+let sessionBrowserCountCache = null;
+
+function loadSessionBrowserCountCache() {
+    if (sessionBrowserCountCache) {
+        return sessionBrowserCountCache;
+    }
+
+    try {
+        const raw = sessionStorage.getItem(SESSION_BROWSER_COUNT_CACHE_KEY);
+        if (!raw) {
+            sessionBrowserCountCache = {};
+            return sessionBrowserCountCache;
+        }
+
+        const parsed = JSON.parse(raw);
+        sessionBrowserCountCache = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_error) {
+        sessionBrowserCountCache = {};
+    }
+
+    return sessionBrowserCountCache;
+}
+
+function saveSessionBrowserCountCache() {
+    if (!sessionBrowserCountCache) {
+        return;
+    }
+
+    try {
+        sessionStorage.setItem(SESSION_BROWSER_COUNT_CACHE_KEY, JSON.stringify(sessionBrowserCountCache));
+    } catch (_error) {
+        // Ignore storage failures (private mode / quota)
+    }
+}
+
+function normalizeBrowserCountPath(path) {
+    return String(path || '').replace(/\\/g, '/').trim();
+}
+
+function buildSessionBrowserCountKey(scope, path) {
+    return `${scope}::${normalizeBrowserCountPath(path)}`;
+}
+
+function getSessionCachedBrowserCount(scope, path) {
+    const cache = loadSessionBrowserCountCache();
+    const key = buildSessionBrowserCountKey(scope, path);
+    const entry = cache[key];
+
+    if (!entry || !Number.isInteger(entry.count)) {
+        return null;
+    }
+
+    return entry.count;
+}
+
+function setSessionCachedBrowserCount(scope, path, count) {
+    if (!Number.isInteger(count) || count < 0) {
+        return;
+    }
+
+    const cache = loadSessionBrowserCountCache();
+    const key = buildSessionBrowserCountKey(scope, path);
+    cache[key] = {
+        count,
+        updated_at: Date.now()
+    };
+    sessionBrowserCountCache = cache;
+    saveSessionBrowserCountCache();
+}
+
+function buildSessionBrowserFolderCountKey(scope, path) {
+    return `folders::${scope}::${normalizeBrowserCountPath(path)}`;
+}
+
+function extractFolderCountSnapshot(folderData) {
+    if (!folderData || typeof folderData !== 'object') {
+        return null;
+    }
+
+    const snapshot = {};
+    const keys = ['item_count', 'folder_count', 'image_count', 'video_count', 'audio_count'];
+    keys.forEach(key => {
+        if (Number.isInteger(folderData[key])) {
+            snapshot[key] = folderData[key];
+        }
+    });
+
+    return Object.keys(snapshot).length > 0 ? snapshot : null;
+}
+
+function getSessionCachedFolderCount(scope, path) {
+    const cache = loadSessionBrowserCountCache();
+    const key = buildSessionBrowserFolderCountKey(scope, path);
+    const entry = cache[key];
+
+    if (!entry || typeof entry !== 'object') {
+        return null;
+    }
+
+    const snapshot = extractFolderCountSnapshot(entry);
+    return snapshot || null;
+}
+
+function setSessionCachedFolderCount(scope, path, folderData) {
+    const snapshot = extractFolderCountSnapshot(folderData);
+    if (!snapshot) {
+        return;
+    }
+
+    const cache = loadSessionBrowserCountCache();
+    const key = buildSessionBrowserFolderCountKey(scope, path);
+    cache[key] = {
+        ...snapshot,
+        updated_at: Date.now()
+    };
+    sessionBrowserCountCache = cache;
+    saveSessionBrowserCountCache();
+}
+
+function rememberSessionFolderCounts(scope, folders) {
+    (folders || []).forEach(folder => {
+        const folderPath = normalizeBrowserCountPath(folder?.path);
+        if (!folderPath) {
+            return;
+        }
+        setSessionCachedFolderCount(scope, folderPath, folder);
+    });
+}
+
+function mergeFolderCountsFromSession(scope, folders) {
+    return (folders || []).map(folder => {
+        const folderPath = normalizeBrowserCountPath(folder?.path);
+        if (!folderPath) {
+            return folder;
+        }
+
+        const cached = getSessionCachedFolderCount(scope, folderPath);
+        if (!cached) {
+            return folder;
+        }
+
+        return {
+            ...folder,
+            ...cached
+        };
+    });
+}
+
+function countImagesInFileList(files) {
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
+    const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'];
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+
+    return (files || []).filter(file => {
+        const filename = typeof file === 'string' ? file : (file?.filename || file?.path || '');
+        const ext = String(filename).toLowerCase().slice(String(filename).lastIndexOf('.'));
+        return imageExtensions.includes(ext) && !audioExtensions.includes(ext) && !videoExtensions.includes(ext);
+    }).length;
+}
+
+function countVideosInFileList(files) {
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+
+    return (files || []).filter(file => {
+        const filename = typeof file === 'string' ? file : (file?.filename || file?.path || '');
+        const ext = String(filename).toLowerCase().slice(String(filename).lastIndexOf('.'));
+        return videoExtensions.includes(ext);
+    }).length;
+}
+
 function openImageBrowser(mode) {
     console.log('openImageBrowser called with mode:', mode);
     imageBrowserMode = mode;
@@ -4116,6 +4475,7 @@ async function loadVideoBrowserFolder(folder, subpath) {
     const requestToken = ++videoBrowserRequestToken;
     currentVideoBrowserFolder = folder;
     currentVideoBrowserSubpath = subpath || '';
+    let quickRenderCompleted = false;
     
     // Update tab active state
     document.querySelectorAll('.video-browser-tab').forEach(tab => {
@@ -4126,6 +4486,7 @@ async function loadVideoBrowserFolder(folder, subpath) {
     });
 
     setLoadingOverlay('videoBrowserGrid', 'videoBrowserGridLoadingOverlay', true, 'Loading videos...');
+    setBrowserTopLoadingStatus('videoBrowserPath', 'videoBrowserPathLoadingStatus', true, 'Loading folder...');
 
     if (videoBrowserAbortController) {
         videoBrowserAbortController.abort();
@@ -4138,33 +4499,41 @@ async function loadVideoBrowserFolder(folder, subpath) {
         if (folder === 'output' && !subpath) {
             effectiveSubpath = 'videos';
         }
+        const resolvedSubpath = effectiveSubpath || subpath || '';
+        const countCacheScope = `modal-video:${folder}`;
+        const folderCountCacheScope = `modal-video-folders:${folder}`;
+        const cachedCount = getSessionCachedBrowserCount(countCacheScope, resolvedSubpath);
 
-        // Render path immediately, then refresh with direct-count once data loads.
-        renderVideoBrowserPath(folder, effectiveSubpath || subpath);
-        
-        // Fetch files from appropriate folder
-        const endpoint = folder === 'input' 
-            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}`
-            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}`;
-        
-        const response = await fetch(endpoint, { signal: videoBrowserAbortController.signal });
-        const data = await response.json();
+        // Render path immediately (using cached count when available), then progressively fill details.
+        renderVideoBrowserPath(folder, resolvedSubpath, cachedCount);
+
+        // Quick fetch: no recursive counts and no metadata join for output.
+        const quickEndpoint = folder === 'input'
+            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}&with_counts=0`
+            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}&with_counts=0&with_metadata=0`;
+
+        const quickResponse = await fetch(quickEndpoint, { signal: videoBrowserAbortController.signal });
+        const quickData = await quickResponse.json();
 
         if (requestToken !== videoBrowserRequestToken) {
             return;
         }
-        
-        if (!data.success && data.success !== undefined) {
-            throw new Error(data.error || 'Failed to load videos');
+
+        if (quickData.success === false) {
+            throw new Error(quickData.error || 'Failed to load videos');
         }
 
-        renderVideoBrowserPath(folder, effectiveSubpath || subpath, data.current_counts?.videos);
-        
+        const quickVideoCount = Number.isInteger(quickData.current_counts?.videos)
+            ? quickData.current_counts.videos
+            : countVideosInFileList(folder === 'input' ? (quickData.images || []) : (quickData.files || []));
+        setSessionCachedBrowserCount(countCacheScope, resolvedSubpath, quickVideoCount);
+        renderVideoBrowserPath(folder, resolvedSubpath, quickVideoCount);
+
         // Get folders and files from response
-        const folders = data.folders || [];
+        const folders = mergeFolderCountsFromSession(folderCountCacheScope, quickData.folders || []);
         // For input folder, browse_images returns image objects with {filename, path, mtime}
         // For output folder, browse returns file metadata objects
-        let files = folder === 'input' ? (data.images || []) : (data.files || []);
+        const files = folder === 'input' ? (quickData.images || []) : (quickData.files || []);
         
         // Filter to only show videos
         const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
@@ -4175,17 +4544,54 @@ async function loadVideoBrowserFolder(folder, subpath) {
             return videoExtensions.includes(ext);
         });
         
-        // Render folders and videos
-        renderVideoBrowserGrid(data.folders || [], videoFiles);
+        // Render folders and videos immediately.
+        renderVideoBrowserGrid(folders, videoFiles);
+        quickRenderCompleted = true;
+        setLoadingOverlay('videoBrowserGrid', 'videoBrowserGridLoadingOverlay', false);
+
+        // Background fetch: enrich folder counts and top count while thumbnails are already visible.
+        setBrowserTopLoadingStatus('videoBrowserPath', 'videoBrowserPathLoadingStatus', true, 'Loading details...');
+        const detailsEndpoint = folder === 'input'
+            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}&with_counts=1`
+            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}&with_counts=1&with_metadata=0`;
+
+        const detailsResponse = await fetch(detailsEndpoint, { signal: videoBrowserAbortController.signal });
+        const detailsData = await detailsResponse.json();
+
+        if (requestToken !== videoBrowserRequestToken) {
+            return;
+        }
+
+        if (detailsData.success === false) {
+            throw new Error(detailsData.error || 'Failed to load video details');
+        }
+
+        const detailsVideoCount = Number.isInteger(detailsData.current_counts?.videos)
+            ? detailsData.current_counts.videos
+            : countVideosInFileList(folder === 'input' ? (detailsData.images || []) : (detailsData.files || []));
+        setSessionCachedBrowserCount(countCacheScope, resolvedSubpath, detailsVideoCount);
+        renderVideoBrowserPath(folder, resolvedSubpath, detailsVideoCount);
+        const detailsFolders = detailsData.folders || [];
+        rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
+        const detailFiles = folder === 'input' ? (detailsData.images || []) : (detailsData.files || []);
+        const detailVideoFiles = detailFiles.filter(file => {
+            const filename = typeof file === 'string' ? file : (file.filename || file.path || '');
+            const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+            return videoExtensions.includes(ext);
+        });
+        renderVideoBrowserGrid(detailsFolders, detailVideoFiles);
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
         }
         console.error('Error loading video browser folder:', error);
-        showNotification('Error loading videos', 'Error', 'error');
+        if (!quickRenderCompleted) {
+            showNotification('Error loading videos', 'Error', 'error');
+        }
     } finally {
         if (requestToken === videoBrowserRequestToken) {
             setLoadingOverlay('videoBrowserGrid', 'videoBrowserGridLoadingOverlay', false);
+            setBrowserTopLoadingStatus('videoBrowserPath', 'videoBrowserPathLoadingStatus', false);
             videoBrowserAbortController = null;
         }
     }
@@ -4318,14 +4724,14 @@ function renderVideoBrowserGrid(folders, videos) {
                 <div style="position: relative; width: 100%; padding-top: 75%; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden;">
                     <img 
                         src="/api/thumbnail/${relativePath}"
-                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; background: var(--bg-secondary);"
                         loading="lazy"
                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
                     >
                     <video 
                         src="${videoUrl}" 
                         preload="none"
-                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none;"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; background: var(--bg-secondary); display: none;"
                         muted
                         playsinline
                         loop
@@ -4782,6 +5188,19 @@ function formatBrowserFolderLabel(folderName, folderData, fallbackItemCount = nu
     return `${folderName} (${summaryParts.join(', ')})`;
 }
 
+function shortenBrowserMediaTitle(title, maxLength = 56) {
+    const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+    if (!normalizedTitle) {
+        return 'Untitled';
+    }
+
+    if (normalizedTitle.length <= maxLength) {
+        return normalizedTitle;
+    }
+
+    return `${normalizedTitle.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
 function normalizeTtsReferenceAudio(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
@@ -4832,10 +5251,126 @@ function closeImageBrowser() {
     if (useBtn) useBtn.style.display = 'none';
 }
 
+function renderImageBrowserGridContent(folder, subpath, data) {
+    const grid = document.getElementById('imageBrowserGrid');
+    if (!grid) return;
+
+    const fragment = document.createDocumentFragment();
+
+    const folders = data.folders || [];
+    const files = folder === 'input' ? (data.images || []) : (data.files || []);
+
+    // Filter to only show images - exclude audio AND videos
+    const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'];
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
+    const imageFiles = files.filter(file => {
+        const filename = typeof file === 'string' ? file : (file.filename || file);
+        const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+        // Only include image files, exclude audio and video
+        return imageExtensions.includes(ext) && !audioExtensions.includes(ext) && !videoExtensions.includes(ext);
+    });
+
+    if (folders.length === 0 && imageFiles.length === 0) {
+        grid.innerHTML = '<p style="color: #888; grid-column: 1/-1; text-align: center;">No images or folders found</p>';
+        return;
+    }
+
+    // Add back button if not at root
+    // For output folder, don't show back button if we're at 'images' folder (our root)
+    const isAtRoot = folder === 'output' ? (subpath === 'images' || !subpath) : !subpath;
+    if (subpath && !isAtRoot) {
+        const parentPath = subpath.split(/[/\\]/).slice(0, -1).join('/');
+        // For output folder, if parent would be empty, go to 'images' instead
+        const effectiveParent = (folder === 'output' && !parentPath) ? 'images' : parentPath;
+
+        const backDiv = document.createElement('div');
+        backDiv.className = 'browser-folder-item';
+        backDiv.innerHTML = `
+            <div class="browser-folder-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </div>
+            <div class="browser-folder-name">..</div>
+        `;
+        backDiv.addEventListener('click', () => {
+            loadImageBrowserFolder(folder, effectiveParent);
+        });
+        fragment.appendChild(backDiv);
+    }
+
+    // Render folders
+    folders.forEach(folderItem => {
+        const fallbackImageCount = Number.isInteger(folderItem?.image_count) ? folderItem.image_count : null;
+        const folderLabel = formatBrowserFolderLabel(folderItem.name, folderItem, fallbackImageCount);
+        const div = document.createElement('div');
+        div.className = 'browser-folder-item';
+        div.innerHTML = `
+            <div class="browser-folder-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+            </div>
+            <div class="browser-folder-name">${escapeHtml(folderLabel)}</div>
+        `;
+        div.addEventListener('click', () => {
+            // Always navigate into folders
+            loadImageBrowserFolder(folder, folderItem.path);
+        });
+        fragment.appendChild(div);
+    });
+
+    // Render images (audio files filtered out)
+    imageFiles.forEach(file => {
+        // Handle both object format (with path) and simple string format
+        const filename = typeof file === 'string' ? file : (file.filename || file);
+        const filePath = typeof file === 'string' ? file : (file.path || file.filename);
+        const relativePath = typeof file === 'string' ? null : (file.relative_path || file.filename);
+
+        // For input images, encode path segments separately to preserve forward slashes
+        const imagePath = folder === 'input'
+            ? `/api/image/input/${filePath.split('/').map(s => encodeURIComponent(s)).join('/')}`
+            : `/outputs/${relativePath || filename}`;
+
+        // For output folder, use relativePath for copying; for input, use filePath
+        const filePathForSelection = folder === 'output' ? (relativePath || filename) : filePath;
+
+        const div = document.createElement('div');
+        div.className = 'browser-image-item';
+
+        const img = document.createElement('img');
+        img.src = imagePath;
+        img.alt = filename;
+        img.loading = 'lazy';
+        img.onerror = function() {
+            console.error(`Failed to load image: ${imagePath}`);
+            this.style.opacity = '0.3';
+            this.alt = 'Failed to load';
+        };
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'browser-image-name';
+        nameDiv.textContent = filename;
+
+        div.appendChild(img);
+        div.appendChild(nameDiv);
+
+        div.addEventListener('click', () => {
+            selectBrowsedImage(filePathForSelection, folder, imagePath);
+        });
+
+        fragment.appendChild(div);
+    });
+
+    grid.replaceChildren(fragment);
+}
+
 async function loadImageBrowserFolder(folder, subpath) {
     const requestToken = ++imageBrowserRequestToken;
     currentBrowserFolder = folder;
     currentBrowserSubpath = subpath || '';
+    let quickRenderCompleted = false;
     
     // Update tab active state
     document.querySelectorAll('.image-browser-tab').forEach(tab => {
@@ -4846,6 +5381,7 @@ async function loadImageBrowserFolder(folder, subpath) {
     });
 
     setLoadingOverlay('imageBrowserGrid', 'imageBrowserGridLoadingOverlay', true, 'Loading images...');
+    setBrowserTopLoadingStatus('imageBrowserPath', 'imageBrowserPathLoadingStatus', true, 'Loading folder...');
 
     if (imageBrowserAbortController) {
         imageBrowserAbortController.abort();
@@ -4863,144 +5399,81 @@ async function loadImageBrowserFolder(folder, subpath) {
                 currentBrowserSubpath = effectiveSubpath;
             }
         }
+        const resolvedSubpath = effectiveSubpath || subpath || '';
+        const countCacheScope = `modal-image:${folder}`;
+        const folderCountCacheScope = `modal-image-folders:${folder}`;
+        const cachedCount = getSessionCachedBrowserCount(countCacheScope, resolvedSubpath);
         
         // Update path display with breadcrumb (after adjusting effectiveSubpath)
-        renderImageBrowserPath(folder, effectiveSubpath || subpath);
-        
-        // Fetch images from appropriate folder
-        const endpoint = folder === 'input' 
-            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}`
-            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}`;
-        
-        const response = await fetch(endpoint, { signal: imageBrowserAbortController.signal });
-        const data = await response.json();
+        renderImageBrowserPath(folder, resolvedSubpath, cachedCount);
+
+        // Quick fetch for fast first paint.
+        const quickEndpoint = folder === 'input'
+            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}&with_counts=0`
+            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}&with_counts=0&with_metadata=0`;
+
+        const quickResponse = await fetch(quickEndpoint, { signal: imageBrowserAbortController.signal });
+        const quickData = await quickResponse.json();
 
         if (requestToken !== imageBrowserRequestToken) {
             return;
         }
 
-        renderImageBrowserPath(folder, effectiveSubpath || subpath, data.current_counts?.images);
-        
-        // Render folders and images
-        const grid = document.getElementById('imageBrowserGrid');
-        const fragment = document.createDocumentFragment();
-        
-        const folders = data.folders || [];
-        const files = folder === 'input' ? (data.images || []) : (data.files || []);
-        
-        // Filter to only show images - exclude audio AND videos
-        const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'];
-        const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
-        const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
-        const imageFiles = files.filter(file => {
-            const filename = typeof file === 'string' ? file : (file.filename || file);
-            const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
-            // Only include image files, exclude audio and video
-            return imageExtensions.includes(ext) && !audioExtensions.includes(ext) && !videoExtensions.includes(ext);
-        });
-        
-        if (folders.length === 0 && imageFiles.length === 0) {
-            grid.innerHTML = '<p style="color: #888; grid-column: 1/-1; text-align: center;">No images or folders found</p>';
+        if (quickData.success === false) {
+            throw new Error(quickData.error || 'Failed to load images');
+        }
+
+        const quickImageCount = Number.isInteger(quickData.current_counts?.images)
+            ? quickData.current_counts.images
+            : countImagesInFileList(folder === 'input' ? (quickData.images || []) : (quickData.files || []));
+        setSessionCachedBrowserCount(countCacheScope, resolvedSubpath, quickImageCount);
+        renderImageBrowserPath(folder, resolvedSubpath, quickImageCount);
+        const quickHydratedFolders = mergeFolderCountsFromSession(folderCountCacheScope, quickData.folders || []);
+        const quickRenderData = {
+            ...quickData,
+            folders: quickHydratedFolders
+        };
+        renderImageBrowserGridContent(folder, resolvedSubpath, quickRenderData);
+        quickRenderCompleted = true;
+        setLoadingOverlay('imageBrowserGrid', 'imageBrowserGridLoadingOverlay', false);
+
+        // Background fetch: update counts/labels while images are already visible.
+        setBrowserTopLoadingStatus('imageBrowserPath', 'imageBrowserPathLoadingStatus', true, 'Loading details...');
+        const detailsEndpoint = folder === 'input'
+            ? `/api/browse_images?folder=input&path=${encodeURIComponent(subpath)}&with_counts=1`
+            : `/api/browse?path=${encodeURIComponent(effectiveSubpath)}&with_counts=1&with_metadata=0`;
+
+        const detailsResponse = await fetch(detailsEndpoint, { signal: imageBrowserAbortController.signal });
+        const detailsData = await detailsResponse.json();
+
+        if (requestToken !== imageBrowserRequestToken) {
             return;
         }
-        
-        // Add back button if not at root
-        // For output folder, don't show back button if we're at 'images' folder (our root)
-        const isAtRoot = folder === 'output' ? (subpath === 'images' || !subpath) : !subpath;
-        if (subpath && !isAtRoot) {
-            const parentPath = subpath.split(/[/\\]/).slice(0, -1).join('/');
-            // For output folder, if parent would be empty, go to 'images' instead
-            const effectiveParent = (folder === 'output' && !parentPath) ? 'images' : parentPath;
-            
-            const backDiv = document.createElement('div');
-            backDiv.className = 'browser-folder-item';
-            backDiv.innerHTML = `
-                <div class="browser-folder-icon">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="15 18 9 12 15 6"></polyline>
-                    </svg>
-                </div>
-                <div class="browser-folder-name">..</div>
-            `;
-            backDiv.addEventListener('click', () => {
-                loadImageBrowserFolder(folder, effectiveParent);
-            });
-            fragment.appendChild(backDiv);
-        }
-        
-        // Render folders
-        folders.forEach(folderItem => {
-            const fallbackImageCount = Number.isInteger(folderItem?.image_count) ? folderItem.image_count : null;
-            const folderLabel = formatBrowserFolderLabel(folderItem.name, folderItem, fallbackImageCount);
-            const div = document.createElement('div');
-            div.className = 'browser-folder-item';
-            div.innerHTML = `
-                <div class="browser-folder-icon">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                </div>
-                <div class="browser-folder-name">${escapeHtml(folderLabel)}</div>
-            `;
-            div.addEventListener('click', () => {
-                // Always navigate into folders
-                loadImageBrowserFolder(folder, folderItem.path);
-            });
-            fragment.appendChild(div);
-        });
-        
-        // Render images (audio files filtered out)
-        imageFiles.forEach(file => {
-            // Handle both object format (with path) and simple string format
-            const filename = typeof file === 'string' ? file : (file.filename || file);
-            const filePath = typeof file === 'string' ? file : (file.path || file.filename);
-            const relativePath = typeof file === 'string' ? null : (file.relative_path || file.filename);
-            
-            // For input images, encode path segments separately to preserve forward slashes
-            const imagePath = folder === 'input' 
-                ? `/api/image/input/${filePath.split('/').map(s => encodeURIComponent(s)).join('/')}`
-                : `/outputs/${relativePath || filename}`;
-            
-            // For output folder, use relativePath for copying; for input, use filePath
-            const filePathForSelection = folder === 'output' ? (relativePath || filename) : filePath;
-            
-            const div = document.createElement('div');
-            div.className = 'browser-image-item';
-            
-            const img = document.createElement('img');
-            img.src = imagePath;
-            img.alt = filename;
-            img.loading = 'lazy';
-            img.onerror = function() {
-                console.error(`Failed to load image: ${imagePath}`);
-                this.style.opacity = '0.3';
-                this.alt = 'Failed to load';
-            };
-            
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'browser-image-name';
-            nameDiv.textContent = filename;
-            
-            div.appendChild(img);
-            div.appendChild(nameDiv);
-            
-            div.addEventListener('click', () => {
-                selectBrowsedImage(filePathForSelection, folder, imagePath);
-            });
-            
-            fragment.appendChild(div);
-        });
 
-        grid.replaceChildren(fragment);
+        if (detailsData.success === false) {
+            throw new Error(detailsData.error || 'Failed to load image details');
+        }
+
+        const detailsImageCount = Number.isInteger(detailsData.current_counts?.images)
+            ? detailsData.current_counts.images
+            : countImagesInFileList(folder === 'input' ? (detailsData.images || []) : (detailsData.files || []));
+        setSessionCachedBrowserCount(countCacheScope, resolvedSubpath, detailsImageCount);
+        renderImageBrowserPath(folder, resolvedSubpath, detailsImageCount);
+        const detailsFolders = detailsData.folders || [];
+        rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
+        renderImageBrowserGridContent(folder, resolvedSubpath, detailsData);
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
         }
         console.error('Error loading browser folder:', error);
-        showNotification('Error loading images', 'Error', 'error');
+        if (!quickRenderCompleted) {
+            showNotification('Error loading images', 'Error', 'error');
+        }
     } finally {
         if (requestToken === imageBrowserRequestToken) {
             setLoadingOverlay('imageBrowserGrid', 'imageBrowserGridLoadingOverlay', false);
+            setBrowserTopLoadingStatus('imageBrowserPath', 'imageBrowserPathLoadingStatus', false);
             imageBrowserAbortController = null;
         }
     }
@@ -5159,7 +5632,9 @@ async function selectBrowsedImage(filename, folder, imagePath) {
 // Folder Browsing
 async function browseFolder(path) {
     const requestToken = ++browseFolderRequestToken;
+    let quickRenderCompleted = false;
     setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', true, 'Loading folder...');
+    setBrowserTopLoadingStatus('breadcrumb', 'browserBreadcrumbLoadingStatus', true, 'Loading folder...');
 
     if (browseFolderAbortController) {
         browseFolderAbortController.abort();
@@ -5167,22 +5642,87 @@ async function browseFolder(path) {
     browseFolderAbortController = new AbortController();
 
     try {
-        // Always restrict to 'images' root folder
-        const response = await fetch(`/api/browse?path=${encodeURIComponent(path)}&root=images`, {
+        const normalizedPath = path || 'images';
+        const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
+        const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+        const imageBrowserCount = document.getElementById('imageBrowserCount');
+        const countCacheScope = 'main-images';
+        const folderCountCacheScope = 'main-images-folders';
+        const cachedCount = getSessionCachedBrowserCount(countCacheScope, normalizedPath);
+
+        if (Number.isInteger(cachedCount)) {
+            renderBreadcrumb(normalizedPath, cachedCount);
+            if (imageBrowserCount) {
+                imageBrowserCount.textContent = String(cachedCount);
+            }
+        }
+
+        // Quick fetch: render thumbnails first without recursive counts or metadata join.
+        const quickResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images&with_counts=0&with_metadata=0`, {
             signal: browseFolderAbortController.signal
         });
-        const data = await response.json();
+        const quickData = await quickResponse.json();
 
         if (requestToken !== browseFolderRequestToken) {
             return;
         }
+
+        if (quickData.success === false) {
+            throw new Error(quickData.error || 'Failed to load folder');
+        }
+
+        currentPath = quickData.current_path || normalizedPath;
+        const quickHydratedFolders = mergeFolderCountsFromSession(folderCountCacheScope, quickData.folders || []);
+        allItems = [...quickHydratedFolders, ...(quickData.files || [])];
+
+        // Filter images array to exclude videos (videos go to Video Browser tab)
+        images = (quickData.files || []).filter(file => {
+            if (!file.filename) return false;
+            const ext = file.filename.toLowerCase().slice(file.filename.lastIndexOf('.'));
+            return imageExtensions.includes(ext) && !videoExtensions.includes(ext);
+        });
+
+        const quickImageCount = Number.isInteger(quickData.current_counts?.images)
+            ? quickData.current_counts.images
+            : images.length;
+
+        selectedItems.clear();
+
+        renderBreadcrumb(currentPath, quickImageCount);
+        renderGallery(quickHydratedFolders, quickData.files || []);
+        updateSelectionButtons();
+
+        if (imageBrowserCount) {
+            imageBrowserCount.textContent = String(quickImageCount);
+        }
+        setSessionCachedBrowserCount(countCacheScope, currentPath || normalizedPath, quickImageCount);
+
+        browserLastLoadedPath = currentPath || 'images';
+        browserLastLoadedAt = Date.now();
+        quickRenderCompleted = true;
+        setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', false);
+
+        // Background details fetch: populate counts and metadata after initial thumbnails are visible.
+        setBrowserTopLoadingStatus('breadcrumb', 'browserBreadcrumbLoadingStatus', true, 'Loading details...');
+        const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images`, {
+            signal: browseFolderAbortController.signal
+        });
+        const data = await detailsResponse.json();
+
+        if (requestToken !== browseFolderRequestToken) {
+            return;
+        }
+
+        if (data.success === false) {
+            throw new Error(data.error || 'Failed to load folder details');
+        }
         
         currentPath = data.current_path;
-        allItems = [...data.folders, ...data.files];
+        const detailsFolders = data.folders || [];
+        rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
+        allItems = [...detailsFolders, ...data.files];
         
         // Filter images array to exclude videos (videos go to Video Browser tab)
-        const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
-        const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
         images = data.files.filter(file => {
             if (!file.filename) return false;
             const ext = file.filename.toLowerCase().slice(file.filename.lastIndexOf('.'));
@@ -5197,13 +5737,13 @@ async function browseFolder(path) {
         selectedItems.clear();
         
         renderBreadcrumb(currentPath, imageFileCount);
-        renderGallery(data.folders, data.files);
+        renderGallery(detailsFolders, data.files);
         updateSelectionButtons();
 
-        const imageBrowserCount = document.getElementById('imageBrowserCount');
         if (imageBrowserCount) {
             imageBrowserCount.textContent = String(imageFileCount);
         }
+        setSessionCachedBrowserCount(countCacheScope, currentPath || normalizedPath, imageFileCount);
 
         browserLastLoadedPath = currentPath || 'images';
         browserLastLoadedAt = Date.now();
@@ -5218,9 +5758,13 @@ async function browseFolder(path) {
             return;
         }
         console.error('Error browsing folder:', error);
+        if (!quickRenderCompleted) {
+            showNotification('Error loading folder', 'Error', 'error');
+        }
     } finally {
         if (requestToken === browseFolderRequestToken) {
             setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', false);
+            setBrowserTopLoadingStatus('breadcrumb', 'browserBreadcrumbLoadingStatus', false);
             browseFolderAbortController = null;
         }
     }
@@ -5306,9 +5850,26 @@ function renderGallery(folders, files) {
     
     // Render files (images only - videos go to Videos tab)
     files.forEach(file => {
-        const isSelected = selectedItems.has(file.relative_path);
-        const clickHandler = selectionMode ? `toggleItemSelection(event, '${file.relative_path}')` : `openImageModal('${file.id}')`;
-        const isVideo = file.filename && (file.filename.endsWith('.mp4') || file.filename.endsWith('.webm') || file.filename.endsWith('.mov'));
+        const filePathKey = file.relative_path || file.path || file.filename || '';
+        const escapedFilePathKey = escapeJsString(String(filePathKey));
+        const fileIdentifier = file.id || file.relative_path || file.path || file.filename || '';
+        const escapedIdentifier = escapeJsString(String(fileIdentifier));
+        const outputImagePath = file.relative_path || file.path || file.filename || '';
+        const isSelected = selectedItems.has(filePathKey);
+        const clickHandler = selectionMode ? `toggleItemSelection(event, '${escapedFilePathKey}')` : `openImageModal('${escapedIdentifier}')`;
+        const loweredFilename = (file.filename || '').toLowerCase();
+        const isVideo = loweredFilename.endsWith('.mp4') || loweredFilename.endsWith('.webm') || loweredFilename.endsWith('.mov') || loweredFilename.endsWith('.avi') || loweredFilename.endsWith('.mkv') || loweredFilename.endsWith('.m4v');
+        const fullTitle = (file.prompt || file.filename || '').toString();
+        const shortTitle = shortenBrowserMediaTitle(fullTitle || 'Untitled image');
+        const hasDimensions = Number.isFinite(file.width) && Number.isFinite(file.height);
+        const hasSteps = Number.isFinite(file.steps);
+        const badges = [];
+        if (hasDimensions) {
+            badges.push(`<span class="param-badge">${file.width}x${file.height}</span>`);
+        }
+        if (hasSteps) {
+            badges.push(`<span class="param-badge">${file.steps} steps</span>`);
+        }
         
         // Skip videos - they belong in the Videos tab
         if (isVideo) {
@@ -5318,16 +5879,13 @@ function renderGallery(folders, files) {
         // Render image
         html += `
             <div class="gallery-item ${isSelected ? 'selected' : ''} ${selectionMode ? 'selection-mode' : ''}" 
-                 data-path="${file.relative_path}" 
+                 data-path="${escapeHtml(filePathKey)}" 
                  data-type="file"
                  onclick="${clickHandler}">
-                <img src="/outputs/${file.relative_path}" alt="Generated Image" class="gallery-item-image">
+                <img src="/outputs/${outputImagePath}" alt="Generated Image" class="gallery-item-image">
                 <div class="gallery-item-info">
-                    <div class="gallery-item-prompt">${escapeHtml(file.prompt)}</div>
-                    <div class="gallery-item-meta">
-                        <span class="param-badge">${file.width}x${file.height}</span>
-                        <span class="param-badge">${file.steps} steps</span>
-                    </div>
+                    <div class="gallery-item-prompt gallery-item-media-title" title="${escapeHtml(fullTitle || 'Untitled image')}">${escapeHtml(shortTitle)}</div>
+                    ${badges.length > 0 ? `<div class="gallery-item-meta">${badges.join('')}</div>` : ''}
                 </div>
             </div>
         `;
@@ -5489,8 +6047,14 @@ async function deleteSelectedItems() {
 // Image Modal
 async function openImageModal(imageId) {
     try {
+        const idString = String(imageId);
         // Find the index of this image
-        currentImageIndex = images.findIndex(img => img.id === imageId);
+        currentImageIndex = images.findIndex(img => {
+            const candidates = [img.id, img.relative_path, img.path, img.filename]
+                .filter(value => value !== undefined && value !== null)
+                .map(value => String(value));
+            return candidates.includes(idString);
+        });
         if (currentImageIndex === -1) currentImageIndex = 0;
         
         showImageAtIndex(currentImageIndex);
@@ -7429,7 +7993,9 @@ function initializeVideoBrowser() {
 
 async function loadVideos(path) {
     const requestToken = ++videosRequestToken;
+    let quickRenderCompleted = false;
     setLoadingOverlay('videosGrid', 'videosGridLoadingOverlay', true, 'Loading videos...');
+    setBrowserTopLoadingStatus('videosBreadcrumb', 'videosBreadcrumbLoadingStatus', true, 'Loading folder...');
 
     if (videosAbortController) {
         videosAbortController.abort();
@@ -7437,38 +8003,98 @@ async function loadVideos(path) {
     videosAbortController = new AbortController();
 
     try {
-        // Always restrict to 'videos' root folder
-        const response = await fetch(`/api/browse?path=${encodeURIComponent(path || 'videos')}&root=videos`, {
+        const normalizedPath = path || 'videos';
+        const countCacheScope = 'main-videos';
+        const folderCountCacheScope = 'main-videos-folders';
+        const cachedCount = getSessionCachedBrowserCount(countCacheScope, normalizedPath);
+        const videoBrowserCount = document.getElementById('videoBrowserCount');
+
+        if (Number.isInteger(cachedCount)) {
+            renderVideosBreadcrumb(normalizedPath, cachedCount);
+            if (videoBrowserCount) {
+                videoBrowserCount.textContent = String(cachedCount);
+            }
+        }
+
+        // Quick fetch: show first thumbnails/cards ASAP.
+        const quickResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=videos&with_counts=0&with_metadata=0`, {
             signal: videosAbortController.signal
         });
-        const data = await response.json();
+        const quickData = await quickResponse.json();
 
         if (requestToken !== videosRequestToken) {
             return;
         }
+
+        if (quickData.success === false) {
+            throw new Error(quickData.error || 'Failed to load videos');
+        }
         
-        videosCurrentPath = data.current_path || '';
+        videosCurrentPath = quickData.current_path || '';
         
         // Filter to only show videos
         const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
-        const videoFiles = (data.files || []).filter(file => {
+        const videoFiles = (quickData.files || []).filter(file => {
             const filename = file.filename || '';
             const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
             return videoExtensions.includes(ext);
         });
 
-        const videoFileCount = Number.isInteger(data.current_counts?.videos)
-            ? data.current_counts.videos
+        const videoFileCount = Number.isInteger(quickData.current_counts?.videos)
+            ? quickData.current_counts.videos
             : videoFiles.length;
         
+        const quickHydratedFolders = mergeFolderCountsFromSession(folderCountCacheScope, quickData.folders || []);
         videosItems = videoFiles;
         renderVideosBreadcrumb(videosCurrentPath, videoFileCount);
-        renderVideosGrid(data.folders, videoFiles);
+        renderVideosGrid(quickHydratedFolders, videoFiles);
 
-        const videoBrowserCount = document.getElementById('videoBrowserCount');
         if (videoBrowserCount) {
             videoBrowserCount.textContent = String(videoFileCount);
         }
+        setSessionCachedBrowserCount(countCacheScope, videosCurrentPath || normalizedPath, videoFileCount);
+
+        videosLastLoadedPath = videosCurrentPath || 'videos';
+        videosLastLoadedAt = Date.now();
+        quickRenderCompleted = true;
+        setLoadingOverlay('videosGrid', 'videosGridLoadingOverlay', false);
+
+        // Background fetch: enrich metadata/counts while cards are already visible.
+        setBrowserTopLoadingStatus('videosBreadcrumb', 'videosBreadcrumbLoadingStatus', true, 'Loading details...');
+        const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=videos`, {
+            signal: videosAbortController.signal
+        });
+        const data = await detailsResponse.json();
+
+        if (requestToken !== videosRequestToken) {
+            return;
+        }
+
+        if (data.success === false) {
+            throw new Error(data.error || 'Failed to load video details');
+        }
+
+        videosCurrentPath = data.current_path || '';
+        const detailedVideoFiles = (data.files || []).filter(file => {
+            const filename = file.filename || '';
+            const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+            return videoExtensions.includes(ext);
+        });
+
+        const detailedVideoCount = Number.isInteger(data.current_counts?.videos)
+            ? data.current_counts.videos
+            : detailedVideoFiles.length;
+
+        const detailsFolders = data.folders || [];
+        rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
+        videosItems = detailedVideoFiles;
+        renderVideosBreadcrumb(videosCurrentPath, detailedVideoCount);
+        renderVideosGrid(detailsFolders, detailedVideoFiles);
+
+        if (videoBrowserCount) {
+            videoBrowserCount.textContent = String(detailedVideoCount);
+        }
+        setSessionCachedBrowserCount(countCacheScope, videosCurrentPath || normalizedPath, detailedVideoCount);
 
         videosLastLoadedPath = videosCurrentPath || 'videos';
         videosLastLoadedAt = Date.now();
@@ -7477,10 +8103,13 @@ async function loadVideos(path) {
             return;
         }
         console.error('Error loading videos:', error);
-        showNotification('Error loading videos', 'Error', 'error');
+        if (!quickRenderCompleted) {
+            showNotification('Error loading videos', 'Error', 'error');
+        }
     } finally {
         if (requestToken === videosRequestToken) {
             setLoadingOverlay('videosGrid', 'videosGridLoadingOverlay', false);
+            setBrowserTopLoadingStatus('videosBreadcrumb', 'videosBreadcrumbLoadingStatus', false);
             videosAbortController = null;
         }
     }
@@ -7563,11 +8192,13 @@ function renderVideosGrid(folders, videos) {
     
     // Render videos
     videos.forEach((video, index) => {
+        const fullTitle = (video.prompt || video.filename || '').toString();
+        const shortTitle = shortenBrowserMediaTitle(fullTitle || 'Untitled video');
         html += `
             <div class="gallery-item video-hover-preview" onclick="openVideoModal(${index})">
                 <div style="position: relative; width: 100%; height: 100%;">
-                    <img src="/api/thumbnail/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                    <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: cover; width: 100%; height: 100%; display: none;" playsinline muted loop preload="none"></video>
+                    <img src="/api/thumbnail/${video.relative_path}" class="gallery-item-image" style="object-fit: contain; width: 100%; height: 100%; background: var(--bg-secondary);" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: contain; width: 100%; height: 100%; background: var(--bg-secondary); display: none;" playsinline muted loop preload="none"></video>
                     <div class="video-card-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: opacity 0.15s ease;">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="white" opacity="0.8">
                             <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>
@@ -7576,7 +8207,7 @@ function renderVideosGrid(folders, videos) {
                     </div>
                 </div>
                 <div class="gallery-item-info">
-                    <div class="gallery-item-prompt">${escapeHtml(video.prompt || video.filename)}</div>
+                    <div class="gallery-item-prompt gallery-item-media-title" title="${escapeHtml(fullTitle || 'Untitled video')}">${escapeHtml(shortTitle)}</div>
                     <div class="gallery-item-meta">
                         <span class="param-badge">Video</span>
                         ${video.frames ? `<span class="param-badge">${video.frames} frames</span>` : ''}
@@ -9101,12 +9732,15 @@ async function submitChatTTS() {
         const activeTabId = activeTabEl ? activeTabEl.id : '';
         let sessionId = null;
         let filePrefix = 'chat_tts';
+        let sessionType = 'chat';
         if (activeTabId === 'autochatTab') {
             sessionId = (typeof currentAutoSession !== 'undefined') ? currentAutoSession?.session_id : null;
             filePrefix = 'autochat_tts';
+            sessionType = 'autochat';
         } else if (activeTabId === 'storyTab') {
             sessionId = currentStorySession?.session_id;
             filePrefix = 'story_tts';
+            sessionType = 'story';
         } else {
             sessionId = currentChatSession?.session_id;
         }
@@ -9130,7 +9764,8 @@ async function submitChatTTS() {
                 repetition_penalty: 2.0,
                 // Track which chat message this TTS belongs to
                 chat_message_id: messageId,
-                session_id: sessionId
+                session_id: sessionId,
+                session_type: sessionType
             })
         });
         
@@ -10150,6 +10785,40 @@ async function downloadMergedAudio(batchId) {
     }
 }
 
+// Media Blur Management Functions
+function initializeMediaBlurToggle() {
+    const blurMediaToggle = document.getElementById('blurMediaToggle');
+    const blurEnabled = true;
+
+    applyMediaBlurSetting(blurEnabled);
+
+    if (!blurMediaToggle) {
+        console.warn('Media blur toggle not found');
+        return;
+    }
+
+    blurMediaToggle.checked = blurEnabled;
+
+    blurMediaToggle.addEventListener('change', function() {
+        const enabled = this.checked;
+        applyMediaBlurSetting(enabled);
+
+        showNotification(
+            enabled ? 'All media is now blurred' : 'All media is now visible',
+            enabled ? 'Media Blur Enabled' : 'Media Blur Disabled',
+            'info',
+            2000
+        );
+    });
+}
+
+function applyMediaBlurSetting(enabled) {
+    if (!document.body) {
+        return;
+    }
+    document.body.classList.toggle('media-blur-enabled', enabled);
+}
+
 // Theme Management Functions
 function initializeThemeSelector() {
     const themeSelector = document.getElementById('themeSelector');
@@ -10435,12 +11104,14 @@ async function loadChatSessions() {
                     // Current session was deleted, clear it
                     console.log('[CHAT] Current session no longer exists, clearing');
                     currentChatSession = null;
+                    stopWholeChatAudioPlayback(false);
                     chatAutoScrollEnabled = true;
                     setChatScrollButtonVisibility(false);
                 }
             }
             
             renderChatSessions();
+            updateChatAudioControlsState();
             console.log(`[CHAT] Loaded ${chatSessions.length} chat sessions`);
         } else {
             console.error('[CHAT] Failed to load sessions:', data.error);
@@ -10588,6 +11259,9 @@ async function selectChatSession(sessionId, skipPollingResume = false) {
         console.log('[CHAT] Session data received:', data);
         
         if (data.success) {
+            if (currentChatSession && currentChatSession.session_id !== data.session.session_id) {
+                stopWholeChatAudioPlayback(false);
+            }
             currentChatSession = data.session;
             chatAutoScrollEnabled = true;
             setChatScrollButtonVisibility(false);
@@ -10766,6 +11440,629 @@ function scrollChatToBottom() {
     setChatScrollButtonVisibility(false);
 }
 
+function normalizeOutputAudioPath(path) {
+    if (!path) return '';
+    return String(path).replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function buildOutputAudioUrl(outputPath) {
+    const normalized = normalizeOutputAudioPath(outputPath);
+    if (!normalized) return '';
+    const encodedPath = normalized.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    return `/outputs/${encodedPath}`;
+}
+
+function getAudioMimeTypeFromPath(path) {
+    const normalized = normalizeOutputAudioPath(path).toLowerCase();
+    if (normalized.endsWith('.mp3')) return 'audio/mpeg';
+    if (normalized.endsWith('.ogg')) return 'audio/ogg';
+    if (normalized.endsWith('.flac')) return 'audio/flac';
+    if (normalized.endsWith('.m4a') || normalized.endsWith('.aac')) return 'audio/mp4';
+    return 'audio/wav';
+}
+
+function getConversationAudioSession(conversationType) {
+    if (conversationType === 'story') {
+        return (typeof currentStorySession !== 'undefined') ? currentStorySession : null;
+    }
+    if (conversationType === 'autochat') {
+        return (typeof currentAutoSession !== 'undefined') ? currentAutoSession : null;
+    }
+    return currentChatSession;
+}
+
+function getConversationAudioDisplayName(conversationType) {
+    if (conversationType === 'story') return 'Story';
+    if (conversationType === 'autochat') return 'Auto Chat';
+    return 'Chat';
+}
+
+function getConversationAudioContainerId(conversationType) {
+    if (conversationType === 'story') return 'storyMessages';
+    if (conversationType === 'autochat') return 'autochatMessages';
+    return 'chatMessages';
+}
+
+function getConversationAudioAutoplayToggleId(conversationType) {
+    if (conversationType === 'story') return 'storyAudioAutoplayToggle';
+    if (conversationType === 'autochat') return 'autochatAudioAutoplayToggle';
+    return 'chatAudioAutoplayToggle';
+}
+
+function getConversationAudioDownloadButtonId(conversationType) {
+    if (conversationType === 'story') return 'storyDownloadAllAudioBtn';
+    if (conversationType === 'autochat') return 'autochatDownloadAllAudioBtn';
+    return 'chatDownloadAllAudioBtn';
+}
+
+function getConversationAudioDownloadEndpoint(conversationType, sessionId) {
+    if (conversationType === 'story') {
+        return `/api/story/sessions/${encodeURIComponent(sessionId)}/audio/download`;
+    }
+    if (conversationType === 'autochat') {
+        return `/api/autochat/sessions/${encodeURIComponent(sessionId)}/audio/download`;
+    }
+    return `/api/chat/sessions/${encodeURIComponent(sessionId)}/audio/download`;
+}
+
+function getConversationAudioState(conversationType) {
+    return conversationAudioPlaybackStates[conversationType] || conversationAudioPlaybackStates.chat;
+}
+
+function getConversationAudioPlayers(conversationType) {
+    const container = document.getElementById(getConversationAudioContainerId(conversationType));
+    if (!container) return [];
+
+    return Array.from(container.querySelectorAll(`audio[data-conversation-audio="${conversationType}"]`))
+        .sort((a, b) => (parseInt(a.dataset.messageIndex || '0', 10) - parseInt(b.dataset.messageIndex || '0', 10)));
+}
+
+function getConversationAudioPlayerByMessageIndex(conversationType, messageIndex) {
+    const container = document.getElementById(getConversationAudioContainerId(conversationType));
+    if (!container) return null;
+
+    return container.querySelector(`audio[data-conversation-audio="${conversationType}"][data-message-index="${messageIndex}"]`);
+}
+
+function refreshConversationAudioQueue(conversationType) {
+    const state = getConversationAudioState(conversationType);
+    state.queue = getConversationAudioPlayers(conversationType)
+        .map(player => parseInt(player.dataset.messageIndex || '-1', 10))
+        .filter(index => index >= 0);
+}
+
+function initializeConversationAudioAutoplayHandlers() {
+    ['chat', 'story', 'autochat'].forEach(bindConversationAudioAutoplayHandlers);
+}
+
+function bindConversationAudioAutoplayHandlers(conversationType) {
+    const container = document.getElementById(getConversationAudioContainerId(conversationType));
+    if (!container || container.dataset.autoplayHandlersBound === 'true') {
+        return;
+    }
+
+    container.dataset.autoplayHandlersBound = 'true';
+
+    container.addEventListener('play', event => {
+        const player = event.target;
+        if (!(player instanceof HTMLAudioElement)) return;
+        if (player.dataset.conversationAudio !== conversationType) return;
+        handleConversationAudioPlay(conversationType, player);
+    }, true);
+
+    container.addEventListener('ended', event => {
+        const player = event.target;
+        if (!(player instanceof HTMLAudioElement)) return;
+        if (player.dataset.conversationAudio !== conversationType) return;
+        handleConversationAudioEnded(conversationType, player);
+    }, true);
+
+    container.addEventListener('pause', event => {
+        const player = event.target;
+        if (!(player instanceof HTMLAudioElement)) return;
+        if (player.dataset.conversationAudio !== conversationType) return;
+        handleConversationAudioPause(conversationType, player);
+    }, true);
+}
+
+function handleConversationAudioPlay(conversationType, player) {
+    const state = getConversationAudioState(conversationType);
+    if (!state.autoPlayEnabled) {
+        return;
+    }
+
+    const messageIndex = parseInt(player.dataset.messageIndex || '-1', 10);
+    if (messageIndex < 0) {
+        return;
+    }
+
+    refreshConversationAudioQueue(conversationType);
+    const position = state.queue.indexOf(messageIndex);
+    if (position < 0) {
+        return;
+    }
+
+    state.position = position;
+    state.activePlayer = player;
+    state.isPlaying = true;
+
+    const nextIndex = state.queue[state.position + 1];
+    if (nextIndex !== undefined) {
+        const nextPlayer = getConversationAudioPlayerByMessageIndex(conversationType, nextIndex);
+        if (nextPlayer) {
+            nextPlayer.preload = 'auto';
+        }
+    }
+
+    updateConversationAudioControlsState(conversationType);
+}
+
+async function handleConversationAudioEnded(conversationType, player) {
+    const state = getConversationAudioState(conversationType);
+    if (!state.autoPlayEnabled) {
+        state.activePlayer = null;
+        state.isPlaying = false;
+        state.queue = [];
+        state.position = -1;
+        updateConversationAudioControlsState(conversationType);
+        return;
+    }
+
+    const messageIndex = parseInt(player.dataset.messageIndex || '-1', 10);
+    if (messageIndex < 0) {
+        return;
+    }
+
+    refreshConversationAudioQueue(conversationType);
+    const currentPosition = state.queue.indexOf(messageIndex);
+    if (currentPosition < 0) {
+        state.activePlayer = null;
+        state.isPlaying = false;
+        state.queue = [];
+        state.position = -1;
+        updateConversationAudioControlsState(conversationType);
+        return;
+    }
+
+    state.position = currentPosition;
+    const nextIndex = state.queue[state.position + 1];
+    if (nextIndex === undefined) {
+        state.activePlayer = null;
+        state.isPlaying = false;
+        state.queue = [];
+        state.position = -1;
+        updateConversationAudioControlsState(conversationType);
+        return;
+    }
+
+    const nextPlayer = getConversationAudioPlayerByMessageIndex(conversationType, nextIndex);
+    if (!nextPlayer) {
+        state.activePlayer = null;
+        state.isPlaying = false;
+        state.queue = [];
+        state.position = -1;
+        updateConversationAudioControlsState(conversationType);
+        return;
+    }
+
+    state.position += 1;
+    state.activePlayer = nextPlayer;
+    state.isPlaying = true;
+    scrollConversationAudioPlayerIntoView(nextPlayer);
+
+    try {
+        await nextPlayer.play();
+
+        const upcomingIndex = state.queue[state.position + 1];
+        if (upcomingIndex !== undefined) {
+            const upcomingPlayer = getConversationAudioPlayerByMessageIndex(conversationType, upcomingIndex);
+            if (upcomingPlayer) {
+                upcomingPlayer.preload = 'auto';
+            }
+        }
+    } catch (error) {
+        console.warn(`[${conversationType.toUpperCase()} AUDIO] Failed to auto-play next clip`, error);
+        state.activePlayer = null;
+        state.isPlaying = false;
+        state.queue = [];
+        state.position = -1;
+    }
+
+    updateConversationAudioControlsState(conversationType);
+}
+
+function handleConversationAudioPause(conversationType, player) {
+    const state = getConversationAudioState(conversationType);
+    if (!state.autoPlayEnabled) {
+        return;
+    }
+
+    if (state.activePlayer !== player || player.ended) {
+        return;
+    }
+
+    state.activePlayer = null;
+    state.isPlaying = false;
+    state.queue = [];
+    state.position = -1;
+    updateConversationAudioControlsState(conversationType);
+}
+
+function scrollConversationAudioPlayerIntoView(player) {
+    const targetEl = player?.closest('.chat-message') || player?.closest('.chat-message-audio') || player;
+    if (!targetEl) return;
+
+    // Keep scrolling constrained to the message list so tab/header UI does not jump.
+    const messagesContainer = targetEl.closest('.chat-messages');
+    if (!messagesContainer) return;
+
+    const containerRect = messagesContainer.getBoundingClientRect();
+    const targetRect = targetEl.getBoundingClientRect();
+    const edgePadding = 12;
+
+    if (targetRect.top < containerRect.top + edgePadding) {
+        const delta = targetRect.top - containerRect.top - edgePadding;
+        messagesContainer.scrollBy({ top: delta, behavior: 'smooth' });
+        return;
+    }
+
+    if (targetRect.bottom > containerRect.bottom - edgePadding) {
+        const delta = targetRect.bottom - containerRect.bottom + edgePadding;
+        messagesContainer.scrollBy({ top: delta, behavior: 'smooth' });
+    }
+}
+
+function updateConversationAutoplayToggleState(conversationType) {
+    const state = getConversationAudioState(conversationType);
+    const toggle = document.getElementById(getConversationAudioAutoplayToggleId(conversationType));
+    if (!toggle) return;
+
+    const session = getConversationAudioSession(conversationType);
+    const hasSession = !!(session && session.session_id);
+    const displayName = getConversationAudioDisplayName(conversationType);
+    const labelElement = toggle.closest('.chat-audio-autoplay-toggle');
+
+    toggle.checked = !!state.autoPlayEnabled;
+    toggle.disabled = !hasSession;
+    if (labelElement) {
+        labelElement.classList.toggle('is-disabled', !hasSession);
+    }
+
+    const label = state.autoPlayEnabled
+        ? `Auto play is on for ${displayName.toLowerCase()} audio. Next clip will play automatically.`
+        : `Enable auto play for ${displayName.toLowerCase()} audio`;
+    toggle.title = label;
+    toggle.setAttribute('aria-label', label);
+}
+
+function updateConversationDownloadButtonIcon(conversationType) {
+    const state = getConversationAudioState(conversationType);
+    const button = document.getElementById(getConversationAudioDownloadButtonId(conversationType));
+    if (!button) return;
+
+    const displayName = getConversationAudioDisplayName(conversationType);
+    if (state.isDownloading) {
+        button.classList.add('is-busy');
+        button.innerHTML = CONVERSATION_BUSY_ICON;
+        const busyLabel = `Merging ${displayName.toLowerCase()} audio, please wait`;
+        button.title = busyLabel;
+        button.setAttribute('aria-label', busyLabel);
+    } else {
+        button.classList.remove('is-busy');
+        button.innerHTML = CONVERSATION_DOWNLOAD_ICON;
+        const idleLabel = `Merge and download all ${displayName.toLowerCase()} message audio`;
+        button.title = idleLabel;
+        button.setAttribute('aria-label', idleLabel);
+    }
+}
+
+function updateConversationAudioControlsState(conversationType) {
+    const state = getConversationAudioState(conversationType);
+    const downloadBtn = document.getElementById(getConversationAudioDownloadButtonId(conversationType));
+    const session = getConversationAudioSession(conversationType);
+    const hasSession = !!(session && session.session_id);
+    const hasAudio = getConversationAudioPlayers(conversationType).length > 0;
+
+    if (downloadBtn) {
+        downloadBtn.disabled = state.isDownloading || !hasSession || !hasAudio;
+    }
+
+    updateConversationAutoplayToggleState(conversationType);
+    updateConversationDownloadButtonIcon(conversationType);
+}
+
+function updateChatAudioControlsState() {
+    updateConversationAudioControlsState('chat');
+}
+
+function updateStoryAudioControlsState() {
+    updateConversationAudioControlsState('story');
+}
+
+function updateAutochatAudioControlsState() {
+    updateConversationAudioControlsState('autochat');
+}
+
+function stopConversationAudioPlayback(conversationType, options = {}) {
+    const { showStoppedNotice = false, showFinishedNotice = false, hard = true } = options;
+    const state = getConversationAudioState(conversationType);
+
+    if (state.activePlayer && hard) {
+        state.activePlayer.pause();
+        state.activePlayer.currentTime = 0;
+    }
+
+    state.activePlayer = null;
+    state.isPlaying = false;
+    state.queue = [];
+    state.position = -1;
+
+    updateConversationAudioControlsState(conversationType);
+
+    const displayName = getConversationAudioDisplayName(conversationType);
+    if (showFinishedNotice) {
+        showNotification(`Finished playing ${displayName.toLowerCase()} audio`, `${displayName} Audio`, 'success', 3000);
+    } else if (showStoppedNotice) {
+        showNotification(`Paused ${displayName.toLowerCase()} audio playback`, `${displayName} Audio`, 'info', 2500);
+    }
+}
+
+function stopWholeChatAudioPlayback(showStoppedNotice = false, showFinishedNotice = false) {
+    stopConversationAudioPlayback('chat', { showStoppedNotice, showFinishedNotice, hard: true });
+}
+
+function stopAllConversationAudioPlayback(showStoppedNotice = false) {
+    stopConversationAudioPlayback('chat', { showStoppedNotice, hard: true });
+    stopConversationAudioPlayback('story', { showStoppedNotice, hard: true });
+    stopConversationAudioPlayback('autochat', { showStoppedNotice, hard: true });
+}
+
+function setConversationAudioAutoPlay(conversationType, enabled) {
+    const session = getConversationAudioSession(conversationType);
+    const displayName = getConversationAudioDisplayName(conversationType);
+    const state = getConversationAudioState(conversationType);
+
+    if (!enabled) {
+        state.autoPlayEnabled = false;
+        state.activePlayer = null;
+        state.isPlaying = false;
+        state.queue = [];
+        state.position = -1;
+        showNotification(`${displayName} audio auto play disabled`, `${displayName} Audio`, 'info', 2500);
+        updateConversationAudioControlsState(conversationType);
+        return;
+    }
+
+    if (!session || !session.session_id) {
+        showNotification(`Please select a ${displayName.toLowerCase()} session first`, 'Info', 'warning', 3000);
+        state.autoPlayEnabled = false;
+        updateConversationAudioControlsState(conversationType);
+        return;
+    }
+
+    state.autoPlayEnabled = true;
+
+    const activePlayer = getConversationAudioPlayers(conversationType)
+        .find(player => !player.paused && !player.ended && player.currentTime > 0);
+    if (activePlayer) {
+        handleConversationAudioPlay(conversationType, activePlayer);
+    }
+
+    showNotification(`${displayName} audio auto play enabled`, `${displayName} Audio`, 'success', 2500);
+    updateConversationAudioControlsState(conversationType);
+}
+
+function setChatAudioAutoPlay(enabled) {
+    setConversationAudioAutoPlay('chat', enabled);
+}
+
+function setStoryAudioAutoPlay(enabled) {
+    setConversationAudioAutoPlay('story', enabled);
+}
+
+function setAutochatAudioAutoPlay(enabled) {
+    setConversationAudioAutoPlay('autochat', enabled);
+}
+
+function downloadMessageAudio(audioPath) {
+    const normalizedPath = normalizeOutputAudioPath(audioPath);
+    const audioUrl = buildOutputAudioUrl(normalizedPath);
+    if (!audioUrl) {
+        showNotification('Audio file path is invalid', 'Error', 'error', 3000);
+        return;
+    }
+
+    const downloadName = normalizedPath.split('/').pop() || 'message_audio.wav';
+    const link = document.createElement('a');
+    link.href = audioUrl;
+    link.download = downloadName;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function downloadChatMessageAudio(audioPath) {
+    downloadMessageAudio(audioPath);
+}
+
+async function downloadWholeConversationAudio(conversationType) {
+    const session = getConversationAudioSession(conversationType);
+    const displayName = getConversationAudioDisplayName(conversationType);
+    const state = getConversationAudioState(conversationType);
+
+    if (!session || !session.session_id) {
+        showNotification(`Please select a ${displayName.toLowerCase()} session first`, 'Info', 'warning', 3000);
+        return;
+    }
+
+    const players = getConversationAudioPlayers(conversationType);
+    if (players.length === 0) {
+        showNotification(`No message audio found in this ${displayName.toLowerCase()} session`, 'Info', 'warning', 3500);
+        return;
+    }
+
+    const endpoint = getConversationAudioDownloadEndpoint(conversationType, session.session_id);
+
+    try {
+        state.isDownloading = true;
+        updateConversationAudioControlsState(conversationType);
+        showNotification(`Preparing ${displayName.toLowerCase()} audio merge...`, `${displayName} Audio`, 'info', 3500);
+
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+            let errorMessage = `Failed to merge ${displayName.toLowerCase()} audio`;
+            try {
+                const errorData = await response.json();
+                if (errorData?.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch (_error) {
+                // Ignore JSON parse errors and keep fallback message.
+            }
+            throw new Error(errorMessage);
+        }
+
+        showNotification('Merge complete. Starting download...', `${displayName} Audio`, 'info', 2500);
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('content-disposition') || '';
+        let filename = `${conversationType}_audio_${Date.now()}.wav`;
+
+        const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+        const basicMatch = disposition.match(/filename="?([^";]+)"?/i);
+        if (utf8Match && utf8Match[1]) {
+            filename = decodeURIComponent(utf8Match[1]);
+        } else if (basicMatch && basicMatch[1]) {
+            filename = basicMatch[1];
+        }
+
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+
+        showNotification(`Merged ${displayName.toLowerCase()} audio download started`, 'Success', 'success', 4000);
+    } catch (error) {
+        console.error(`[${conversationType.toUpperCase()} AUDIO] Error downloading merged audio:`, error);
+        showNotification(error.message || `Failed to download merged ${displayName.toLowerCase()} audio`, 'Error', 'error', 4500);
+    } finally {
+        state.isDownloading = false;
+        updateConversationAudioControlsState(conversationType);
+    }
+}
+
+async function downloadWholeChatAudio() {
+    await downloadWholeConversationAudio('chat');
+}
+
+async function downloadWholeStoryAudio() {
+    await downloadWholeConversationAudio('story');
+}
+
+async function downloadWholeAutochatAudio() {
+    await downloadWholeConversationAudio('autochat');
+}
+
+function createConversationAudioElement(conversationType, audioPath, messageIndex) {
+    const normalizedPath = normalizeOutputAudioPath(audioPath);
+    const audioUrl = buildOutputAudioUrl(normalizedPath);
+    if (!audioUrl) {
+        return null;
+    }
+
+    const audioContainer = document.createElement('div');
+    audioContainer.className = 'chat-message-audio';
+
+    const audioHeader = document.createElement('div');
+    audioHeader.className = 'chat-message-audio-header';
+
+    const audioLabel = document.createElement('div');
+    audioLabel.className = 'chat-audio-label';
+    audioLabel.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <span>TTS Audio</span>
+    `;
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'chat-action-btn chat-audio-download-btn';
+    downloadBtn.title = 'Download this message audio';
+    downloadBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Download</span>
+    `;
+    downloadBtn.onclick = () => downloadMessageAudio(normalizedPath);
+
+    audioHeader.appendChild(audioLabel);
+    audioHeader.appendChild(downloadBtn);
+
+    const audioEl = document.createElement('audio');
+    audioEl.controls = true;
+    audioEl.preload = 'none';
+    audioEl.style.width = '100%';
+    audioEl.dataset.conversationAudio = conversationType;
+    audioEl.dataset.messageIndex = String(messageIndex);
+
+    const sourceEl = document.createElement('source');
+    sourceEl.src = audioUrl;
+    sourceEl.type = getAudioMimeTypeFromPath(normalizedPath);
+    audioEl.appendChild(sourceEl);
+    audioEl.appendChild(document.createTextNode('Your browser does not support the audio element.'));
+
+    audioContainer.appendChild(audioHeader);
+    audioContainer.appendChild(audioEl);
+    return audioContainer;
+}
+
+function buildConversationAudioHtml(conversationType, audioPath, messageIndex) {
+    const normalizedPath = normalizeOutputAudioPath(audioPath);
+    const audioUrl = buildOutputAudioUrl(normalizedPath);
+    if (!audioUrl) {
+        return '';
+    }
+
+    const encodedPath = encodeURIComponent(normalizedPath);
+    const audioMime = getAudioMimeTypeFromPath(normalizedPath);
+
+    return `
+        <div class="chat-message-audio">
+            <div class="chat-message-audio-header">
+                <div class="chat-audio-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    </svg>
+                    <span>TTS Audio</span>
+                </div>
+                <button class="chat-action-btn chat-audio-download-btn" title="Download this message audio" onclick="downloadMessageAudio(decodeURIComponent('${encodedPath}')); return false;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Download</span>
+                </button>
+            </div>
+            <audio controls preload="none" style="width: 100%;" data-conversation-audio="${conversationType}" data-message-index="${messageIndex}">
+                <source src="${audioUrl}" type="${audioMime}">
+                Your browser does not support the audio element.
+            </audio>
+        </div>
+    `;
+}
+
 async function renderChatMessages() {
     const messagesContainer = document.getElementById('chatMessages');
     if (!messagesContainer) return;
@@ -10787,6 +12084,8 @@ async function renderChatMessages() {
         if (contextBar) contextBar.style.width = '0%';
         const contextLabel = document.getElementById('chatContextLabel');
         if (contextLabel) contextLabel.textContent = '';
+        stopWholeChatAudioPlayback(false);
+        updateChatAudioControlsState();
         chatAutoScrollEnabled = true;
         setChatScrollButtonVisibility(false);
         return;
@@ -10818,7 +12117,7 @@ async function renderChatMessages() {
         const isLastAIMessage = message.role === 'assistant' && 
             index === currentChatSession.messages.length - 1;
         
-        const messageEl = createChatMessageElement(message, isLoading, isLastUserMessage, isLastAIMessage);
+        const messageEl = createChatMessageElement(message, index, isLoading, isLastUserMessage, isLastAIMessage);
         messagesContainer.appendChild(messageEl);
     });
 
@@ -10856,9 +12155,11 @@ async function renderChatMessages() {
     } else {
         setChatScrollButtonVisibility(true);
     }
+
+    updateChatAudioControlsState();
 }
 
-function createChatMessageElement(message, isLoading = false, isLastUserMessage = false, isLastAIMessage = false) {
+function createChatMessageElement(message, messageIndex = -1, isLoading = false, isLastUserMessage = false, isLastAIMessage = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${message.role}`;
     if (isLoading) messageDiv.classList.add('loading');
@@ -10921,23 +12222,10 @@ function createChatMessageElement(message, isLoading = false, isLastUserMessage 
     
     // Add audio player if message has TTS audio
     if (message.tts_audio) {
-        const audioContainer = document.createElement('div');
-        audioContainer.className = 'chat-message-audio';
-        audioContainer.style.cssText = 'margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);';
-        audioContainer.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                </svg>
-                <span style="font-size: 0.875rem; color: var(--text-muted);">TTS Audio</span>
-            </div>
-            <audio controls style="width: 100%;">
-                <source src="/outputs/${message.tts_audio}" type="audio/wav">
-                Your browser does not support the audio element.
-            </audio>
-        `;
-        wrapper.appendChild(audioContainer);
+        const audioContainer = createConversationAudioElement('chat', message.tts_audio, messageIndex);
+        if (audioContainer) {
+            wrapper.appendChild(audioContainer);
+        }
     }
     
     messageDiv.appendChild(avatar);
@@ -11607,7 +12895,7 @@ function startChatStreamingPolling(responseId) {
                         if (msgId && !existingIds.has(msgId)) {
                             console.log(`[CHAT] Adding missing message to DOM: ${msgId}`);
                             const isLoading = msg.role === 'assistant' && !msg.completed && !msg.content;
-                            const msgEl = createChatMessageElement(msg, isLoading);
+                            const msgEl = createChatMessageElement(msg, idx, isLoading);
                             messagesContainer.appendChild(msgEl);
                         }
                     });
@@ -11650,8 +12938,11 @@ function startChatStreamingPolling(responseId) {
                         );
                         
                         if (msg) {
+                            const messageIndex = currentChatSession.messages.findIndex(m =>
+                                m.response_id === responseId || m.message_id === responseId
+                            );
                             // Re-create the message element with buttons (isLoading = false)
-                            const newMessageEl = createChatMessageElement(msg, false);
+                            const newMessageEl = createChatMessageElement(msg, messageIndex, false);
                             messageEl.replaceWith(newMessageEl);
                             
                             console.log('[CHAT] Message element re-created with action buttons for:', responseId);

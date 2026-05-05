@@ -676,9 +676,150 @@ def save_chats(chats):
     except Exception as e:
         print(f"Error saving chats: {e}")
 
-def merge_tts_batch_for_chat(batch_id, chat_message_id, session_id):
-    """Merge TTS batch audio files and attach to chat message"""
+
+def resolve_audio_output_path(path_hint):
+    """Resolve an audio path that may be absolute or relative to OUTPUT_DIR."""
+    if not path_hint:
+        return None
+
+    file_path = Path(path_hint)
+    if file_path.is_absolute() and file_path.exists() and file_path.is_file():
+        return file_path
+
+    normalized_hint = str(path_hint).replace('\\', '/').lstrip('/')
+    candidate = OUTPUT_DIR / normalized_hint
+    if candidate.exists() and candidate.is_file():
+        return candidate
+
+    return None
+
+
+def _audio_merge_path_token(file_path):
+    """Create a stable path token for merge fingerprinting."""
     try:
+        return str(file_path.relative_to(OUTPUT_DIR)).replace('\\', '/')
+    except ValueError:
+        return str(file_path).replace('\\', '/')
+
+
+def build_audio_merge_fingerprint(input_files, silence_seconds=0.1, extra_key=''):
+    """Build a deterministic fingerprint for merged output reuse."""
+    hasher = hashlib.sha256()
+    hasher.update(f"silence:{silence_seconds:.3f}".encode('utf-8'))
+    if extra_key:
+        hasher.update(f"|{extra_key}".encode('utf-8'))
+
+    for file_path in input_files:
+        path_obj = Path(file_path)
+        hasher.update(_audio_merge_path_token(path_obj).encode('utf-8'))
+        try:
+            stat = path_obj.stat()
+            hasher.update(f"|{stat.st_size}|{stat.st_mtime_ns}".encode('utf-8'))
+        except OSError:
+            hasher.update(b"|missing")
+
+    return hasher.hexdigest()[:20]
+
+
+def ensure_merged_audio_file(input_files, output_dir, filename_prefix, silence_seconds=0.1, extra_key=''):
+    """Return an existing deterministic merge output when available, otherwise create it."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fingerprint = build_audio_merge_fingerprint(
+        input_files,
+        silence_seconds=silence_seconds,
+        extra_key=extra_key
+    )
+    output_path = output_dir / f"{filename_prefix}_{fingerprint}.wav"
+
+    if output_path.exists() and output_path.is_file() and output_path.stat().st_size > 0:
+        return output_path, True
+
+    merge_audio_files_with_ffmpeg(input_files, output_path, silence_seconds=silence_seconds)
+    return output_path, False
+
+
+def merge_audio_files_with_ffmpeg(input_files, output_path, silence_seconds=0.1):
+    """Merge audio files with a short silence gap between each file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    silence_path = OUTPUT_DIR / "audio" / f"silence_temp_{timestamp}.wav"
+
+    try:
+        # Create silence clip to insert between message audio segments.
+        silence_cmd = [
+            'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+            '-t', str(silence_seconds), '-y', str(silence_path)
+        ]
+        subprocess.run(silence_cmd, check=True, capture_output=True)
+
+        inputs = []
+        for index, file_path in enumerate(input_files):
+            inputs.extend(['-i', str(file_path)])
+            if index < len(input_files) - 1:
+                inputs.extend(['-i', str(silence_path)])
+
+        stream_count = len(input_files) + (len(input_files) - 1)
+        filter_str = ''.join([f'[{i}:a]' for i in range(stream_count)]) + f'concat=n={stream_count}:v=0:a=1[out]'
+
+        merge_cmd = ['ffmpeg'] + inputs + [
+            '-filter_complex', filter_str,
+            '-map', '[out]',
+            '-y', str(output_path)
+        ]
+        subprocess.run(merge_cmd, check=True, capture_output=True)
+    finally:
+        if silence_path.exists():
+            silence_path.unlink()
+
+def get_session_store(session_type):
+    """Return loader/saver/name-key helpers for supported conversation session types."""
+    normalized = (session_type or 'chat').lower()
+
+    if normalized == 'story':
+        return load_stories, save_stories, 'story_name', 'story'
+    if normalized == 'autochat':
+        return load_autochat, save_autochat, 'session_name', 'autochat'
+
+    return load_chats, save_chats, 'chat_name', 'chat'
+
+
+def attach_audio_to_session_message(session_type, session_id, message_id, relative_path, batch_id):
+    """Attach merged TTS audio metadata to a specific message in a session."""
+    if not session_id or not message_id:
+        return False
+
+    load_fn, save_fn, _, normalized_type = get_session_store(session_type)
+
+    with chat_lock:
+        sessions = load_fn()
+        updated = False
+
+        for session in sessions:
+            if session.get('session_id') != session_id:
+                continue
+
+            for message in session.get('messages', []):
+                msg_id = message.get('message_id') or message.get('response_id')
+                if msg_id == message_id:
+                    message['tts_audio'] = relative_path
+                    message['tts_batch_id'] = batch_id
+                    updated = True
+                    print(f"[MERGE] Attached {normalized_type} audio to message: {relative_path}")
+                    break
+            break
+
+        if updated:
+            save_fn(sessions)
+
+        return updated
+
+
+def merge_tts_batch_for_session(batch_id, message_id, session_id, session_type='chat'):
+    """Merge TTS batch audio files and attach to a message in any conversation type."""
+    try:
+        _, _, _, normalized_type = get_session_store(session_type)
         metadata = load_metadata()
         
         # Get all files for this batch
@@ -710,13 +851,8 @@ def merge_tts_batch_for_chat(batch_id, chat_message_id, session_id):
         # Collect valid file paths
         valid_files = []
         for file_entry in files_to_merge:
-            path_str = file_entry.get('path', '')
-            file_path = Path(path_str)
-            
-            if not file_path.is_absolute() and not file_path.exists():
-                file_path = OUTPUT_DIR / path_str if not file_path.exists() else file_path
-            
-            if not file_path.exists():
+            file_path = resolve_audio_output_path(file_entry.get('path', ''))
+            if not file_path:
                 continue
             
             valid_files.append(file_path)
@@ -724,67 +860,91 @@ def merge_tts_batch_for_chat(batch_id, chat_message_id, session_id):
         if not valid_files:
             return None
         
-        # Generate output filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"chat_merged_{batch_id[:8]}_{timestamp}.wav"
-        output_path = OUTPUT_DIR / "audio" / "chat_merged" / output_filename
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Use ffmpeg to merge files
-        silence_path = OUTPUT_DIR / "audio" / f"silence_temp_{timestamp}.wav"
-        
-        # Create silence
-        silence_cmd = [
-            'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-            '-t', '0.1', '-y', str(silence_path)
-        ]
-        subprocess.run(silence_cmd, check=True, capture_output=True)
-        
-        # Build input list
-        inputs = []
-        for i, file_path in enumerate(valid_files):
-            inputs.extend(['-i', str(file_path)])
-            if i < len(valid_files) - 1:
-                inputs.extend(['-i', str(silence_path)])
-        
-        # Merge
-        stream_count = len(valid_files) + (len(valid_files) - 1)
-        filter_str = ''.join([f'[{i}:a]' for i in range(stream_count)]) + f'concat=n={stream_count}:v=0:a=1[out]'
-        
-        merge_cmd = ['ffmpeg'] + inputs + [
-            '-filter_complex', filter_str,
-            '-map', '[out]',
-            '-y', str(output_path)
-        ]
-        
-        subprocess.run(merge_cmd, check=True, capture_output=True)
-        
-        # Cleanup
-        if silence_path.exists():
-            silence_path.unlink()
-        
-        # Update chat message
-        if session_id and chat_message_id:
-            with chat_lock:
-                sessions = load_chats()
-                for session in sessions:
-                    if session['session_id'] == session_id:
-                        for message in session.get('messages', []):
-                            msg_id = message.get('message_id') or message.get('response_id')
-                            if msg_id == chat_message_id:
-                                relative_path = str(output_path.relative_to(OUTPUT_DIR))
-                                message['tts_audio'] = relative_path
-                                message['tts_batch_id'] = batch_id
-                                print(f"[MERGE] Attached audio to message: {relative_path}")
-                                break
-                        break
-                save_chats(sessions)
-        
-        return str(output_path.relative_to(OUTPUT_DIR))
+        output_dir = OUTPUT_DIR / "audio" / f"{normalized_type}_merged"
+        output_prefix = f"{normalized_type}_merged_{str(batch_id)[:8]}"
+        output_path, reused_existing = ensure_merged_audio_file(
+            valid_files,
+            output_dir,
+            output_prefix,
+            extra_key=f"type:{normalized_type}|batch:{batch_id}"
+        )
+        if reused_existing:
+            print(f"[MERGE] Reusing existing merged file for batch {batch_id}: {output_path.name}")
+
+        relative_path = str(output_path.relative_to(OUTPUT_DIR))
+        attach_audio_to_session_message(normalized_type, session_id, message_id, relative_path, batch_id)
+
+        return relative_path
             
     except Exception as e:
         print(f"[MERGE] Error: {e}")
         return None
+
+
+def merge_tts_batch_for_chat(batch_id, chat_message_id, session_id):
+    """Backward-compatible wrapper for chat session merge/attach flow."""
+    return merge_tts_batch_for_session(batch_id, chat_message_id, session_id, session_type='chat')
+
+
+def merge_and_send_session_audio(session_type, session_id):
+    """Merge and return downloadable audio for any supported session type."""
+    if not FFMPEG_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'Audio merging requires ffmpeg to be installed on your system. Download from https://ffmpeg.org/download.html and add to PATH.'
+        }), 500
+
+    load_fn, _, name_field, normalized_type = get_session_store(session_type)
+    sessions = load_fn()
+    session_data = next((s for s in sessions if s.get('session_id') == session_id), None)
+    if not session_data:
+        return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+    audio_files = []
+    for message in session_data.get('messages', []):
+        tts_audio = message.get('tts_audio')
+        if not tts_audio:
+            continue
+
+        resolved_file = resolve_audio_output_path(tts_audio)
+        if resolved_file:
+            audio_files.append(resolved_file)
+
+    if not audio_files:
+        return jsonify({'success': False, 'error': f'No message audio found for this {normalized_type} session'}), 404
+
+    session_name = session_data.get(name_field) or f"{normalized_type}_{session_id[:8]}"
+    safe_session_name = ''.join(c if c.isalnum() or c in ('_', '-') else '_' for c in session_name).strip('_')
+    if not safe_session_name:
+        safe_session_name = f"{normalized_type}_{session_id[:8]}"
+    download_filename = f"{safe_session_name}_merged.wav"
+
+    output_dir = OUTPUT_DIR / 'audio' / f'{normalized_type}_merged'
+    output_prefix = f"{normalized_type}_session_{session_id[:8]}"
+
+    try:
+        output_path, reused_existing = ensure_merged_audio_file(
+            audio_files,
+            output_dir,
+            output_prefix,
+            extra_key=f"type:{normalized_type}|session:{session_id}"
+        )
+        if reused_existing:
+            print(f"[{normalized_type.upper()} AUDIO] Reusing existing merged session file: {output_path.name}")
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode('utf-8', errors='ignore') if isinstance(e.stderr, bytes) else str(e.stderr)
+        print(f"[{normalized_type.upper()} AUDIO] ffmpeg error: {stderr}")
+        return jsonify({'success': False, 'error': f'Failed to merge {normalized_type} audio'}), 500
+    except Exception as e:
+        print(f"[{normalized_type.upper()} AUDIO] Error merging session audio: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+    return send_file(
+        output_path,
+        mimetype='audio/wav',
+        as_attachment=True,
+        download_name=download_filename
+    )
 
 
 def load_stories():
@@ -1461,8 +1621,14 @@ def process_queue():
                     # Auto-merge audio if chat message tracking is enabled
                     if job.get('chat_message_id') and job.get('status') != 'failed' and FFMPEG_AVAILABLE:
                         try:
-                            print(f"[TTS] Auto-merging audio for chat message: {job.get('chat_message_id')}")
-                            merged_file = merge_tts_batch_for_chat(batch_id, job.get('chat_message_id'), job.get('session_id'))
+                            session_type = job.get('session_type', 'chat')
+                            print(f"[TTS] Auto-merging audio for {session_type} message: {job.get('chat_message_id')}")
+                            merged_file = merge_tts_batch_for_session(
+                                batch_id,
+                                job.get('chat_message_id'),
+                                job.get('session_id'),
+                                session_type=session_type
+                            )
                             if merged_file:
                                 print(f"[TTS] Successfully auto-merged to: {merged_file}")
                                 job['merged_audio'] = merged_file
@@ -2935,6 +3101,27 @@ def get_chat_session(session_id):
         if session_data['session_id'] == session_id:
             return jsonify({'success': True, 'session': session_data})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+
+@app.route('/api/chat/sessions/<session_id>/audio/download', methods=['GET'])
+@require_auth
+def download_chat_session_audio(session_id):
+    """Merge and download all message audio attached to a chat session."""
+    return merge_and_send_session_audio('chat', session_id)
+
+
+@app.route('/api/story/sessions/<session_id>/audio/download', methods=['GET'])
+@require_auth
+def download_story_session_audio(session_id):
+    """Merge and download all message audio attached to a story session."""
+    return merge_and_send_session_audio('story', session_id)
+
+
+@app.route('/api/autochat/sessions/<session_id>/audio/download', methods=['GET'])
+@require_auth
+def download_autochat_session_audio(session_id):
+    """Merge and download all message audio attached to an autochat session."""
+    return merge_and_send_session_audio('autochat', session_id)
 
 @app.route('/api/chat/sessions/<session_id>', methods=['PUT'])
 @require_auth
@@ -4446,6 +4633,9 @@ def add_tts_to_queue():
     # Chat message tracking (optional)
     chat_message_id = data.get('chat_message_id')
     session_id = data.get('session_id')
+    session_type = str(data.get('session_type', 'chat')).lower().strip()
+    if session_type not in {'chat', 'story', 'autochat'}:
+        session_type = 'chat'
     
     if not text:
         return jsonify({'success': False, 'error': 'Text is required'}), 400
@@ -4560,7 +4750,8 @@ def add_tts_to_queue():
             'emotion_description': emotion_description,
             # Chat message tracking
             'chat_message_id': chat_message_id,
-            'session_id': session_id
+            'session_id': session_id,
+            'session_type': session_type
         }
         
         with queue_lock:
@@ -4817,12 +5008,22 @@ def count_direct_subfolders(directory: Path) -> int:
     return sum(1 for child in directory.iterdir() if child.is_dir())
 
 
+def get_query_bool(name: str, default: bool = True) -> bool:
+    """Parse common boolean query-string values."""
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() not in {'0', 'false', 'no', 'off'}
+
+
 @app.route('/api/browse')
 @require_auth
 def browse_folder():
     """Browse files and folders in a directory"""
     subfolder = request.args.get('path', '')
     root_folder = request.args.get('root', '')  # Optional root folder restriction (e.g., 'images', 'videos')
+    with_counts = get_query_bool('with_counts', True)
+    with_metadata = get_query_bool('with_metadata', True)
     
     # If root folder is specified, ensure path stays within that root
     if root_folder:
@@ -4846,85 +5047,114 @@ def browse_folder():
 
     image_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}
     video_extensions = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'}
+    audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'}
 
-    current_counts = count_media_files(
-        current_dir,
-        image_extensions=image_extensions,
-        video_extensions=video_extensions,
-        recursive=False
-    )
+    current_counts = None
+    if with_counts:
+        current_counts = count_media_files(
+            current_dir,
+            image_extensions=image_extensions,
+            video_extensions=video_extensions,
+            recursive=False
+        )
     
     # Get folders
     folders = []
     for item in current_dir.iterdir():
         if item.is_dir():
             rel_path = str(item.relative_to(OUTPUT_DIR)).replace('\\', '/')
-            folder_counts = count_media_files(
-                item,
-                image_extensions=image_extensions,
-                video_extensions=video_extensions,
-                recursive=True
-            )
-            folder_item_count = folder_counts['images'] + folder_counts['videos']
-            folder_subfolder_count = count_direct_subfolders(item)
-            folders.append({
+            folder_entry = {
                 'name': item.name,
                 'path': rel_path,
-                'type': 'folder',
-                'image_count': folder_counts['images'],
-                'video_count': folder_counts['videos'],
-                'item_count': folder_item_count,
-                'folder_count': folder_subfolder_count
-            })
+                'type': 'folder'
+            }
+            if with_counts:
+                folder_counts = count_media_files(
+                    item,
+                    image_extensions=image_extensions,
+                    video_extensions=video_extensions,
+                    recursive=True
+                )
+                folder_item_count = folder_counts['images'] + folder_counts['videos']
+                folder_subfolder_count = count_direct_subfolders(item)
+                folder_entry.update({
+                    'image_count': folder_counts['images'],
+                    'video_count': folder_counts['videos'],
+                    'item_count': folder_item_count,
+                    'folder_count': folder_subfolder_count
+                })
+            folders.append(folder_entry)
     
-    # Get files with metadata (filter out audio files)
-    metadata = load_metadata()
-    audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'}
+    # Get files, optionally merged with metadata.
     files = []
-    for entry in metadata:
-        entry_path_str = entry['path']
-        entry_path = Path(entry_path_str)
-        
-        # Skip audio files in image browser
-        if entry_path.suffix.lower() in audio_extensions:
-            continue
-        
-        # Convert to absolute path for comparison
-        if entry_path.is_absolute():
-            entry_abs_path = entry_path
-        else:
-            # Path might start with "outputs" or "outputs\\" - handle both cases
-            entry_abs_path = OUTPUT_DIR / entry_path
-            if not entry_abs_path.exists():
-                # Try removing "outputs" prefix from the path
-                path_parts = entry_path.parts
-                if path_parts and path_parts[0].lower() == 'outputs':
-                    entry_path = Path(*path_parts[1:])
-                    entry_abs_path = OUTPUT_DIR / entry_path
-        
-        # Check if file is in current directory
-        if entry_abs_path.exists() and entry_abs_path.parent == current_dir:
-            entry['type'] = 'file'
-            # Store relative path without "outputs" prefix - use forward slashes for web
-            try:
-                entry['relative_path'] = str(entry_abs_path.relative_to(OUTPUT_DIR)).replace('\\', '/')
-            except ValueError:
-                entry['relative_path'] = str(entry_path).replace('\\', '/')
-            files.append(entry)
+    if with_metadata:
+        metadata = load_metadata()
+        for entry in metadata:
+            entry_path_str = entry['path']
+            entry_path = Path(entry_path_str)
+
+            # Skip audio files in image/video browsers
+            if entry_path.suffix.lower() in audio_extensions:
+                continue
+
+            # Convert to absolute path for comparison
+            if entry_path.is_absolute():
+                entry_abs_path = entry_path
+            else:
+                # Path might start with "outputs" or "outputs\\" - handle both cases
+                entry_abs_path = OUTPUT_DIR / entry_path
+                if not entry_abs_path.exists():
+                    # Try removing "outputs" prefix from the path
+                    path_parts = entry_path.parts
+                    if path_parts and path_parts[0].lower() == 'outputs':
+                        entry_path = Path(*path_parts[1:])
+                        entry_abs_path = OUTPUT_DIR / entry_path
+
+            # Check if file is in current directory
+            if entry_abs_path.exists() and entry_abs_path.parent == current_dir:
+                entry['type'] = 'file'
+                # Store relative path without "outputs" prefix - use forward slashes for web
+                try:
+                    entry['relative_path'] = str(entry_abs_path.relative_to(OUTPUT_DIR)).replace('\\', '/')
+                except ValueError:
+                    entry['relative_path'] = str(entry_path).replace('\\', '/')
+                files.append(entry)
+    else:
+        for item in current_dir.iterdir():
+            if not item.is_file():
+                continue
+
+            ext = item.suffix.lower()
+            if ext in audio_extensions:
+                continue
+
+            rel_path = str(item.relative_to(OUTPUT_DIR)).replace('\\', '/')
+            files.append({
+                'id': rel_path,
+                'filename': item.name,
+                'path': rel_path,
+                'relative_path': rel_path,
+                'type': 'file',
+                'timestamp': datetime.fromtimestamp(item.stat().st_mtime).isoformat()
+            })
     
     # Sort: folders first, then files by timestamp (newest first)
     folders.sort(key=lambda x: x['name'])
     files.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-    
-    return jsonify({
+
+    response_payload = {
         'current_path': subfolder,
         'folders': folders,
-        'files': files,
-        'current_counts': {
+        'files': files
+    }
+
+    if current_counts is not None:
+        response_payload['current_counts'] = {
             'images': current_counts['images'],
             'videos': current_counts['videos']
         }
-    })
+    
+    return jsonify(response_payload)
 
 
 @app.route('/api/folder', methods=['POST'])
@@ -5439,6 +5669,7 @@ def browse_images():
     """Browse images from input or output folders with subfolder support"""
     folder = request.args.get('folder', 'input')  # 'input' or 'output'
     subpath = request.args.get('path', '')  # Subfolder path
+    with_counts = get_query_bool('with_counts', True)
     
     try:
         if folder == 'input':
@@ -5455,35 +5686,41 @@ def browse_images():
             image_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}
             video_extensions = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'}
 
-            current_counts = count_media_files(
-                current_dir,
-                image_extensions=image_extensions,
-                video_extensions=video_extensions,
-                recursive=False
-            )
+            current_counts = None
+            if with_counts:
+                current_counts = count_media_files(
+                    current_dir,
+                    image_extensions=image_extensions,
+                    video_extensions=video_extensions,
+                    recursive=False
+                )
             
             # Get folders
             folders = []
             for item in current_dir.iterdir():
                 if item.is_dir():
-                    rel_path = str(item.relative_to(INPUT_DIR))
-                    folder_counts = count_media_files(
-                        item,
-                        image_extensions=image_extensions,
-                        video_extensions=video_extensions,
-                        recursive=True
-                    )
-                    folder_item_count = folder_counts['images'] + folder_counts['videos']
-                    folder_subfolder_count = count_direct_subfolders(item)
-                    folders.append({
+                    rel_path = str(item.relative_to(INPUT_DIR)).replace('\\', '/')
+                    folder_entry = {
                         'name': item.name,
                         'path': rel_path,
-                        'type': 'folder',
-                        'image_count': folder_counts['images'],
-                        'video_count': folder_counts['videos'],
-                        'item_count': folder_item_count,
-                        'folder_count': folder_subfolder_count
-                    })
+                        'type': 'folder'
+                    }
+                    if with_counts:
+                        folder_counts = count_media_files(
+                            item,
+                            image_extensions=image_extensions,
+                            video_extensions=video_extensions,
+                            recursive=True
+                        )
+                        folder_item_count = folder_counts['images'] + folder_counts['videos']
+                        folder_subfolder_count = count_direct_subfolders(item)
+                        folder_entry.update({
+                            'image_count': folder_counts['images'],
+                            'video_count': folder_counts['videos'],
+                            'item_count': folder_item_count,
+                            'folder_count': folder_subfolder_count
+                        })
+                    folders.append(folder_entry)
             
             # Get all image and video files
             allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.mp4', '.webm', '.mov', '.avi', '.mkv'}
@@ -5492,7 +5729,7 @@ def browse_images():
             for file in current_dir.iterdir():
                 if file.is_file() and file.suffix.lower() in allowed_extensions:
                     # Store relative path from input root
-                    rel_path = str(file.relative_to(INPUT_DIR))
+                    rel_path = str(file.relative_to(INPUT_DIR)).replace('\\', '/')
                     images.append({
                         'filename': file.name,
                         'path': rel_path,
@@ -5503,17 +5740,21 @@ def browse_images():
             folders.sort(key=lambda x: x['name'])
             images.sort(key=lambda x: x['mtime'], reverse=True)
             
-            return jsonify({
+            response_payload = {
                 'success': True, 
                 'images': images, 
                 'folders': folders,
                 'current_path': subpath,
-                'folder': 'input',
-                'current_counts': {
+                'folder': 'input'
+            }
+
+            if current_counts is not None:
+                response_payload['current_counts'] = {
                     'images': current_counts['images'],
                     'videos': current_counts['videos']
                 }
-            })
+
+            return jsonify(response_payload)
         else:
             # For output folder, use existing browse endpoint functionality
             return jsonify({'success': False, 'error': 'Use /api/browse for output folder'}), 400
@@ -6272,7 +6513,13 @@ def merge_audio_batch():
     try:
         data = request.json
         batch_id = data.get('batch_id')
-        sentence_indices = data.get('sentence_indices', [])  # Array of sentence indices
+        requested_indices = data.get('sentence_indices', [])  # Optional array of sentence indices
+        sentence_indices = []
+        for idx in requested_indices or []:
+            try:
+                sentence_indices.append(int(idx))
+            except (TypeError, ValueError):
+                continue
         
         if not batch_id:
             return jsonify({'success': False, 'error': 'batch_id is required'}), 400
@@ -6290,6 +6537,11 @@ def merge_audio_batch():
         sentence_groups = {}
         for file in batch_files:
             idx = file.get('sentence_index')
+            try:
+                idx = int(idx)
+            except (TypeError, ValueError):
+                continue
+
             if idx not in sentence_groups:
                 sentence_groups[idx] = []
             sentence_groups[idx].append(file)
@@ -6297,10 +6549,12 @@ def merge_audio_batch():
         # If no specific indices provided, use all
         if not sentence_indices:
             sentence_indices = sorted(sentence_groups.keys())
+
+        unique_sentence_indices = sorted(set(sentence_indices))
         
         # Get the latest version for each requested sentence_index
         files_to_merge = []
-        for idx in sorted(sentence_indices):
+        for idx in unique_sentence_indices:
             if idx in sentence_groups:
                 versions = sentence_groups[idx]
                 # Sort by version_number, newest first
@@ -6314,16 +6568,8 @@ def merge_audio_batch():
         # Collect valid file paths
         valid_files = []
         for file_entry in files_to_merge:
-            # Handle path - may be relative to project root or need OUTPUT_DIR
-            path_str = file_entry.get('path', '')
-            file_path = Path(path_str)
-            
-            # If path is not absolute and doesn't exist, try prepending OUTPUT_DIR
-            if not file_path.is_absolute() and not file_path.exists():
-                # Try with OUTPUT_DIR if not already correct
-                file_path = OUTPUT_DIR / path_str if not file_path.exists() else file_path
-            
-            if not file_path.exists():
+            file_path = resolve_audio_output_path(file_entry.get('path', ''))
+            if not file_path:
                 print(f"[AUDIO] Warning: File not found: {file_path}")
                 continue
             
@@ -6332,53 +6578,24 @@ def merge_audio_batch():
         if not valid_files:
             return jsonify({'success': False, 'error': 'No valid audio files found for merging'}), 404
         
-        # Generate output filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"merged_{batch_id}_{timestamp}.wav"
-        output_path = OUTPUT_DIR / "audio" / output_filename
-        
-        # Use ffmpeg to merge files with silence between them
+        # Merge using deterministic cache key so identical requests reuse existing files.
+        output_dir = OUTPUT_DIR / "audio" / "merged_batch"
+        output_prefix = f"merged_{str(batch_id)[:8]}"
+        indices_key = ','.join(str(idx) for idx in unique_sentence_indices)
+        using_all_sentences = len(unique_sentence_indices) == len(sentence_groups)
+
         try:
-            # Create a temporary file list for ffmpeg concat
-            concat_list_path = OUTPUT_DIR / "audio" / f"concat_list_{timestamp}.txt"
-            silence_path = OUTPUT_DIR / "audio" / f"silence_{timestamp}.wav"
-            
-            # Create 100ms silence file using ffmpeg
-            silence_cmd = [
-                'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-                '-t', '0.1', '-y', str(silence_path)
-            ]
-            subprocess.run(silence_cmd, check=True, capture_output=True)
-            
-            # Build ffmpeg filter_complex command to concatenate with silence
-            inputs = []
-            filter_parts = []
-            for i, file_path in enumerate(valid_files):
-                inputs.extend(['-i', str(file_path)])
-                if i > 0:
-                    inputs.extend(['-i', str(silence_path)])
-            
-            # Build filter complex string
-            stream_count = len(valid_files) + (len(valid_files) - 1)  # files + silences
-            filter_str = f"{''.join([f'[{i}:a]' for i in range(stream_count)])}concat=n={stream_count}:v=0:a=1[out]"
-            
-            # Run ffmpeg merge command
-            merge_cmd = ['ffmpeg'] + inputs + [
-                '-filter_complex', filter_str,
-                '-map', '[out]',
-                '-y', str(output_path)
-            ]
-            
-            result = subprocess.run(merge_cmd, check=True, capture_output=True, text=True)
-            
-            # Clean up temporary files
-            if concat_list_path.exists():
-                concat_list_path.unlink()
-            if silence_path.exists():
-                silence_path.unlink()
-            
-            print(f"[AUDIO] Merged {len(valid_files)} audio files into {output_filename}")
-            
+            output_path, reused_existing = ensure_merged_audio_file(
+                valid_files,
+                output_dir,
+                output_prefix,
+                extra_key=f"batch:{batch_id}|indices:{indices_key}"
+            )
+            if reused_existing:
+                print(f"[AUDIO] Reusing existing merged batch file: {output_path.name}")
+            else:
+                print(f"[AUDIO] Merged {len(valid_files)} audio files into {output_path.name}")
+
         except subprocess.CalledProcessError as e:
             print(f"[AUDIO] ffmpeg error: {e.stderr}")
             return jsonify({'success': False, 'error': f'ffmpeg error: {e.stderr}'}), 500
@@ -6388,12 +6605,14 @@ def merge_audio_batch():
             traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)}), 500
         
+        download_name_suffix = "all" if using_all_sentences else f"{len(unique_sentence_indices)}sentences"
+
         # Send the merged file
         return send_file(
             output_path,
             mimetype='audio/wav',
             as_attachment=True,
-            download_name=output_filename
+            download_name=f"merged_{batch_id}_{download_name_suffix}.wav"
         )
     
     except Exception as e:

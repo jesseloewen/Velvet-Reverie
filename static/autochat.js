@@ -212,6 +212,7 @@ async function loadAutoSessions() {
             // Store sessions globally for queue navigation
             window.autochatSessions = data.sessions;
             renderAutoSessionsList(data.sessions);
+            updateAutochatAudioControlsState();
         }
     } catch (error) {
         console.error('[AUTOCHAT] Error loading sessions:', error);
@@ -314,6 +315,9 @@ async function selectAutoSession(sessionId) {
         const data = await response.json();
         
         if (data.success) {
+            if (currentAutoSession && currentAutoSession.session_id !== data.session.session_id) {
+                stopConversationAudioPlayback('autochat', { hard: true });
+            }
             currentAutoSession = data.session;
             populateAutochatUI();
             autochatAutoScrollEnabled = true;
@@ -459,6 +463,8 @@ function renderAutoMessages() {
                 <p>Click "Start" to begin the autonomous conversation</p>
             </div>
         `;
+        stopConversationAudioPlayback('autochat', { hard: true });
+        updateAutochatAudioControlsState();
         autochatAutoScrollEnabled = true;
         setAutochatScrollButtonVisibility(false);
         return;
@@ -473,6 +479,7 @@ function renderAutoMessages() {
     
     // Update token display
     updateTokenDisplay();
+    updateAutochatAudioControlsState();
 }
 
 // Create message element
@@ -493,6 +500,7 @@ function createAutoMessageElement(msg, index) {
     
     const tokenCount = estimateTokenCount(msg.content || '');
     const timestamp = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const audioHtml = msg.tts_audio ? buildConversationAudioHtml('autochat', msg.tts_audio, index) : '';
     
     return `
         <div class="chat-message ${roleClass} autochat-message persona-${msg.persona} ${isLoading ? 'loading' : ''}" data-message-index="${index}" data-response-id="${msg.response_id || ''}">
@@ -509,6 +517,7 @@ function createAutoMessageElement(msg, index) {
                     </span>
                 </div>
                 <div class="chat-message-content">${isLoading ? '<div class="typing-indicator"><span></span><span></span><span></span></div>' : formatChatMessage(msg.content || '')}</div>
+                ${audioHtml}
                 ${!isLoading ? `
                     <div class="chat-message-actions">
                         <button class="chat-action-btn" onclick="copyAutochatMessage(${index}, this)" title="Copy">

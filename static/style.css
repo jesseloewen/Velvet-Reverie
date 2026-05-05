@@ -3,6 +3,7 @@
 /* Theme: Velvet (Default) */
 :root,
 [data-theme="velvet"] {
+    --mobile-keyboard-offset: 0px;
     --bg-primary: #1d0632;
     --bg-secondary: #412355;
     --bg-tertiary: #472061;
@@ -117,12 +118,27 @@ body {
     overscroll-behavior-y: none;
 }
 
+/* Privacy mode: blur all media elements while enabled */
+body img,
+body video {
+    transition: filter 0.5s ease;
+}
+
+body.media-blur-enabled img,
+body.media-blur-enabled video {
+    filter: blur(128px);
+}
+
 /* Allow body scroll on mobile when keyboard is open */
 @media (max-width: 768px) {
     body.keyboard-open {
         overflow: auto !important;
         -webkit-overflow-scrolling: touch;
         position: relative;
+    }
+
+    body.keyboard-open .content-wrapper {
+        scroll-padding-bottom: calc(1rem + var(--mobile-keyboard-offset, 0px));
     }
     
     body.keyboard-open .app-container {
@@ -1034,6 +1050,7 @@ body {
 .theme-selector {
     display: flex;
     align-items: center;
+    gap: 0.5rem;
 }
 
 .theme-dropdown {
@@ -1079,6 +1096,81 @@ body {
     background: var(--bg-secondary);
     color: var(--text-primary);
     padding: 0.5rem;
+}
+
+.media-blur-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.media-blur-toggle:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-hover);
+}
+
+.media-blur-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+}
+
+.media-blur-toggle-track {
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    position: relative;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.media-blur-toggle-track::after {
+    content: '';
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.media-blur-toggle-input:checked + .media-blur-toggle-track {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: var(--success);
+}
+
+.media-blur-toggle-input:checked + .media-blur-toggle-track::after {
+    transform: translateX(14px);
+    background: var(--success);
+}
+
+.media-blur-toggle-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.media-blur-toggle-input:checked ~ .media-blur-toggle-text {
+    color: var(--text-primary);
+}
+
+.media-blur-toggle-input:focus-visible + .media-blur-toggle-track {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
 }
 
 /* Hardware Monitor */
@@ -1165,6 +1257,15 @@ body {
 
 .tab-content.active {
     display: block;
+}
+
+#chatTab.tab-content.active,
+#storyTab.tab-content.active,
+#autochatTab.tab-content.active {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
 }
 
 .content-wrapper {
@@ -1687,8 +1788,9 @@ input[type="range"]:focus {
 .gallery-item-image {
     width: 100%;
     aspect-ratio: 1;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
+    background: var(--bg-secondary);
 }
 
 .gallery-item-info {
@@ -1758,6 +1860,26 @@ input[type="range"]:focus {
     color: #fff;
     font-size: 0.9rem;
     font-weight: 600;
+}
+
+.browser-top-loading-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.browser-top-loading-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    animation: spin 0.8s linear infinite;
 }
 
 /* Modal */
@@ -2762,9 +2884,19 @@ video:-ms-fullscreen {
     }
     
     .theme-dropdown {
-        width: 100%;
+        width: auto;
+        flex: 1 1 auto;
         padding: 0.5rem 1.5rem 0.5rem 0.5rem;
         font-size: 0.8125rem;
+    }
+
+    .media-blur-toggle {
+        padding: 0.3rem;
+        border-radius: 10px;
+    }
+
+    .media-blur-toggle-text {
+        display: none;
     }
     
     /* All icon buttons consistent sizing on mobile */
@@ -3729,8 +3861,9 @@ video:-ms-fullscreen {
 .gallery-item-image {
     width: 100%;
     aspect-ratio: 1 / 1;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
+    background: var(--bg-secondary);
 }
 
 .gallery-item-info { padding: 0.75rem; }
@@ -5620,7 +5753,9 @@ video:-ms-fullscreen {
 
 .chat-page-container {
     display: flex;
-    height: calc(100vh - 200px);
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
     gap: 0;
     position: relative;
 }
@@ -5635,6 +5770,7 @@ video:-ms-fullscreen {
     transition: all 0.3s ease;
     overflow: hidden;
     flex-shrink: 0;
+    min-height: 0;
 }
 
 .chat-sessions-sidebar.collapsed {
@@ -5772,6 +5908,8 @@ video:-ms-fullscreen {
     flex-direction: column;
     background: var(--bg-primary);
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     position: relative;
 }
 
@@ -5782,10 +5920,155 @@ video:-ms-fullscreen {
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    flex-shrink: 0;
+}
+
+.chat-model-selector {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+.chat-audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+}
+
+.chat-audio-autoplay-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+}
+
+.chat-audio-autoplay-toggle input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+}
+
+.chat-audio-autoplay-slider {
+    position: relative;
+    width: 34px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    transition: background 0.2s ease, border-color 0.2s ease;
+    flex: 0 0 auto;
+}
+
+.chat-audio-autoplay-slider::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.chat-audio-autoplay-toggle:hover .chat-audio-autoplay-slider {
+    border-color: var(--accent-primary);
+}
+
+.chat-audio-autoplay-toggle input[type="checkbox"]:checked + .chat-audio-autoplay-slider {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.chat-audio-autoplay-toggle input[type="checkbox"]:checked + .chat-audio-autoplay-slider::after {
+    transform: translateX(16px);
+    background: #ffffff;
+}
+
+.chat-audio-autoplay-toggle input[type="checkbox"]:focus-visible + .chat-audio-autoplay-slider {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+.chat-audio-autoplay-toggle.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.chat-audio-autoplay-toggle.is-disabled .chat-audio-autoplay-slider {
+    border-color: var(--border-color);
+}
+
+.chat-audio-autoplay-text {
+    line-height: 1;
+}
+
+.chat-audio-control-btn {
+    width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.chat-audio-control-btn svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.chat-audio-control-btn.is-busy svg {
+    animation: spin 1s linear infinite;
+}
+
+.chat-audio-control-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.chat-message-audio {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.chat-message-audio-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.chat-audio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.chat-audio-download-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
 }
 
 .chat-messages {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 1.5rem;
     display: flex;
@@ -5989,6 +6272,7 @@ video:-ms-fullscreen {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-shrink: 0;
 }
 
 .chat-context-track {
@@ -6313,6 +6597,7 @@ video:-ms-fullscreen {
     overflow: hidden;
     transition: all 0.3s ease;
     flex-shrink: 0;
+    min-height: 0;
 }
 
 .chat-params-sidebar.collapsed {
@@ -6414,13 +6699,15 @@ video:-ms-fullscreen {
 /* Mobile Responsive for Chat */
 @media (max-width: 768px) {
     .chat-page-container {
-        height: calc(100vh - 120px);
+        height: 100%;
+        min-height: 0;
     }
 
     .chat-sessions-sidebar,
     .chat-params-sidebar {
         position: fixed;
-        height: 100%;
+        height: 100vh;
+        height: 100dvh;
         z-index: 200;
         top: 0;
         width: 100%;
@@ -6482,8 +6769,22 @@ video:-ms-fullscreen {
         align-items: center;
         gap: 0.75rem;
     }
+
+    .chat-audio-controls {
+        margin-left: auto;
+        flex-wrap: nowrap;
+    }
+
+    .chat-audio-autoplay-text {
+        display: none;
+    }
+
+    .chat-audio-control-btn {
+        width: 2.1rem;
+        height: 2.1rem;
+    }
     
-    #chatModelSelector {
+    .chat-model-selector {
         font-size: 0.875rem;
         flex: 1;
         margin: 0 !important;
@@ -6867,4 +7168,13 @@ video:-ms-fullscreen {
 .browser-audio-name {
     font-weight: 500;
     margin-bottom: 0.25rem;
+}
+
+/* Keep folder labels fully readable while media card titles stay compact */
+.gallery-item-info .gallery-item-media-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+    word-break: normal;
 }

@@ -10,7 +10,7 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/velvet_icon.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="media-blur-enabled">
     <div class="app-container">
         <!-- Mobile Sidebar Backdrop -->
         <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
@@ -90,6 +90,11 @@
                             <option value="ocean">🌊 Ocean</option>
                             <option value="sunset">🌅 Sunset</option>
                         </select>
+                        <label class="media-blur-toggle" title="Blur all media on the page">
+                            <input type="checkbox" id="blurMediaToggle" class="media-blur-toggle-input" checked>
+                            <span class="media-blur-toggle-track" aria-hidden="true"></span>
+                            <span class="media-blur-toggle-text">Blur Media</span>
+                        </label>
                     </div>
                     <button class="btn-icon" id="unloadModelsBtn" title="Unload Models">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1698,9 +1703,23 @@
                                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                                     </svg>
                                 </button>
-                                <select id="storyModelSelector" class="form-control" style="flex: 1; margin: 0 1rem;" disabled>
+                                <select id="storyModelSelector" class="form-control chat-model-selector" disabled>
                                     <option value="">Loading models...</option>
                                 </select>
+                                <div class="chat-audio-controls">
+                                    <label class="chat-audio-autoplay-toggle" title="Automatically play the next story audio clip after each clip ends">
+                                        <input type="checkbox" id="storyAudioAutoplayToggle" onchange="setStoryAudioAutoPlay(this.checked);" aria-label="Enable auto play for story audio">
+                                        <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
+                                        <span class="chat-audio-autoplay-text">Auto Play</span>
+                                    </label>
+                                    <button class="btn btn-sm chat-audio-control-btn" id="storyDownloadAllAudioBtn" onclick="downloadWholeStoryAudio(); return false;" title="Merge and download all story message audio" aria-label="Merge and download all story message audio" disabled>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                    </button>
+                                </div>
                                 <button class="btn-icon" id="toggleStoryParamsBtn" title="Toggle Parameters">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <circle cx="12" cy="12" r="3"></circle>
@@ -2183,6 +2202,20 @@
                                 <div style="flex: 1; display: flex; align-items: center; gap: 1rem; margin: 0 1rem;">
                                     <span id="autochatSessionTitle" style="font-weight: 500; color: var(--text-primary);">Select a session</span>
                                     <span id="autochatTurnCounter" style="color: var(--text-muted); font-size: 0.875rem; display: none;"></span>
+                                </div>
+                                <div class="chat-audio-controls">
+                                    <label class="chat-audio-autoplay-toggle" title="Automatically play the next auto chat audio clip after each clip ends">
+                                        <input type="checkbox" id="autochatAudioAutoplayToggle" onchange="setAutochatAudioAutoPlay(this.checked);" aria-label="Enable auto play for auto chat audio">
+                                        <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
+                                        <span class="chat-audio-autoplay-text">Auto Play</span>
+                                    </label>
+                                    <button class="btn btn-sm chat-audio-control-btn" id="autochatDownloadAllAudioBtn" onclick="downloadWholeAutochatAudio(); return false;" title="Merge and download all autochat message audio" aria-label="Merge and download all autochat message audio" disabled>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                    </button>
                                 </div>
                                 <div class="autochat-controls" style="display: flex; gap: 0.5rem;">
                                     <button class="btn btn-sm" id="startAutochatBtn" disabled>
@@ -2739,9 +2772,23 @@
                                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                                     </svg>
                                 </button>
-                                <select id="chatModelSelector" class="form-control" style="flex: 1; margin: 0 1rem;" disabled>
+                                <select id="chatModelSelector" class="form-control chat-model-selector" disabled>
                                     <option value="">Loading models...</option>
                                 </select>
+                                <div class="chat-audio-controls">
+                                    <label class="chat-audio-autoplay-toggle" title="Automatically play the next chat audio clip after each clip ends">
+                                        <input type="checkbox" id="chatAudioAutoplayToggle" onchange="setChatAudioAutoPlay(this.checked);" aria-label="Enable auto play for chat audio">
+                                        <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
+                                        <span class="chat-audio-autoplay-text">Auto Play</span>
+                                    </label>
+                                    <button class="btn btn-sm chat-audio-control-btn" id="chatDownloadAllAudioBtn" onclick="downloadWholeChatAudio(); return false;" title="Merge and download all message audio in this chat" aria-label="Merge and download all message audio in this chat" disabled>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                    </button>
+                                </div>
                                 <button class="btn-icon" id="toggleChatParamsBtn" title="Toggle Parameters">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <circle cx="12" cy="12" r="3"></circle>
