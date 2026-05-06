@@ -23,6 +23,8 @@ let touchEndY = 0;
 let mouseActivityTimer = null;
 let isFullscreenActive = false;
 let fullscreenSource = null; // Track which tab opened fullscreen: 'viewer', 'browser', 'videos', etc.
+let fullscreenAutoFollowEnabled = false;
+let fullscreenLockedMediaKey = null;
 let revealFullscreenActive = false; // Track if reveal browser fullscreen is active
 let revealLinkedItems = []; // Reveal browser linked items
 let currentRevealIndex = 0; // Current reveal index
@@ -58,6 +60,8 @@ let browserLastLoadedPath = null;
 let browserLastLoadedAt = 0;
 let videosLastLoadedPath = null;
 let videosLastLoadedAt = 0;
+let videosPlayEnabled = false;
+let videosPlaybackObserver = null;
 
 // Fullscreen zoom state
 let zoomLevel = 1;
@@ -152,6 +156,80 @@ let hoverCompareRadius = 80; // Default radius in pixels
 
 // In-memory TTS reference audio (persists until page refresh)
 let lastUsedTtsReferenceAudio = '';
+
+function getMediaIdentityKey(item) {
+    if (!item) {
+        return '';
+    }
+    return String(item.id || item.relative_path || item.path || item.filename || '');
+}
+
+function getFullscreenSourceArray() {
+    if (fullscreenSource === 'viewer') {
+        return viewerAllFiles;
+    }
+    if (fullscreenSource === 'videos') {
+        return videosItems;
+    }
+    return images;
+}
+
+function getDefaultFullscreenAutoFollow(source) {
+    return source === 'viewer';
+}
+
+function syncFullscreenAutoFollowControl() {
+    const checkbox = document.getElementById('fullscreenAutoFollowCheckbox');
+    if (checkbox) {
+        checkbox.checked = fullscreenAutoFollowEnabled;
+    }
+}
+
+function syncFullscreenAfterDataRefresh(updatedSource) {
+    if (!isFullscreenActive) {
+        return;
+    }
+
+    if (updatedSource === 'viewer' && fullscreenSource !== 'viewer') {
+        return;
+    }
+    if (updatedSource === 'browser' && fullscreenSource !== 'browser') {
+        return;
+    }
+    if (updatedSource === 'videos' && fullscreenSource !== 'videos') {
+        return;
+    }
+
+    const sourceArray = getFullscreenSourceArray();
+    if (!Array.isArray(sourceArray) || sourceArray.length === 0) {
+        return;
+    }
+
+    if (fullscreenAutoFollowEnabled) {
+        currentImageIndex = 0;
+        showFullscreenImage(0);
+        return;
+    }
+
+    let targetIndex = -1;
+    if (fullscreenLockedMediaKey) {
+        targetIndex = sourceArray.findIndex(item => getMediaIdentityKey(item) === fullscreenLockedMediaKey);
+    }
+
+    if (targetIndex === -1 && currentImageData) {
+        const currentDataKey = getMediaIdentityKey(currentImageData);
+        if (currentDataKey) {
+            targetIndex = sourceArray.findIndex(item => getMediaIdentityKey(item) === currentDataKey);
+        }
+    }
+
+    if (targetIndex === -1) {
+        targetIndex = Math.min(Math.max(currentImageIndex, 0), sourceArray.length - 1);
+    }
+
+    currentImageIndex = targetIndex;
+    showFullscreenImage(targetIndex);
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -1263,6 +1341,24 @@ function initializeEventListeners() {
     if (fullscreenToggleBtn) {
         fullscreenToggleBtn.addEventListener('click', smartToggleInputView);
     }
+
+    const fullscreenAutoFollowCheckbox = document.getElementById('fullscreenAutoFollowCheckbox');
+    if (fullscreenAutoFollowCheckbox) {
+        fullscreenAutoFollowCheckbox.addEventListener('change', (e) => {
+            fullscreenAutoFollowEnabled = Boolean(e.target.checked);
+
+            if (!fullscreenAutoFollowEnabled && isFullscreenActive) {
+                const sourceArray = getFullscreenSourceArray();
+                const activeItem = sourceArray[currentImageIndex];
+                fullscreenLockedMediaKey = getMediaIdentityKey(activeItem);
+            }
+
+            if (isFullscreenActive && fullscreenSource) {
+                syncFullscreenAfterDataRefresh(fullscreenSource);
+            }
+        });
+    }
+    syncFullscreenAutoFollowControl();
     
     // Match sizes checkboxes
     const matchSizesCheckbox = document.getElementById('matchSizesCheckbox');
@@ -4759,7 +4855,7 @@ const MOBILE_PREVIEW_HOLD_MS = 180;
 let activeVideoPreviewCard = null;
 
 function startVideoHoverPreview(cardElement) {
-    if (!cardElement) return;
+    if (!cardElement || cardElement.dataset.alwaysPlay === 'true') return;
 
     if (activeVideoPreviewCard && activeVideoPreviewCard !== cardElement) {
         stopVideoHoverPreview(activeVideoPreviewCard);
@@ -4791,7 +4887,7 @@ function startVideoHoverPreview(cardElement) {
 }
 
 function stopVideoHoverPreview(cardElement) {
-    if (!cardElement) return;
+    if (!cardElement || cardElement.dataset.alwaysPlay === 'true') return;
 
     const imageElement = cardElement.querySelector('img');
     const videoElement = cardElement.querySelector('video');
@@ -4821,6 +4917,132 @@ function stopVideoHoverPreview(cardElement) {
 function stopActiveVideoPreview() {
     if (activeVideoPreviewCard) {
         stopVideoHoverPreview(activeVideoPreviewCard);
+    }
+}
+
+function setVideosGridPlaybackMode(enabled) {
+    videosPlayEnabled = Boolean(enabled);
+    localStorage.setItem('videosPlayEnabled', videosPlayEnabled ? 'true' : 'false');
+
+    const grid = document.getElementById('videosGrid');
+    if (!grid) return;
+
+    applyVideosGridPlaybackMode(grid);
+}
+
+function applyVideosGridPlaybackMode(gridElement) {
+    if (!gridElement) return;
+
+    if (videosPlayEnabled) {
+        activeVideoPreviewCard = null;
+    }
+
+    const previewCards = gridElement.querySelectorAll('.video-hover-preview');
+    previewCards.forEach(cardElement => {
+        cardElement.dataset.alwaysPlay = videosPlayEnabled ? 'true' : 'false';
+    });
+
+    if (!videosPlayEnabled) {
+        disposeVideosPlaybackObserver();
+        previewCards.forEach(cardElement => {
+            syncVideoCardPlayback(cardElement, false);
+        });
+        return;
+    }
+
+    observeVideosGridPlayback(gridElement);
+}
+
+function disposeVideosPlaybackObserver() {
+    if (videosPlaybackObserver) {
+        videosPlaybackObserver.disconnect();
+        videosPlaybackObserver = null;
+    }
+}
+
+function observeVideosGridPlayback(gridElement) {
+    disposeVideosPlaybackObserver();
+
+    if (!gridElement) return;
+
+    const previewCards = gridElement.querySelectorAll('.video-hover-preview');
+    if (previewCards.length === 0) return;
+
+    // Fallback for older browsers: keep previous behavior.
+    if (typeof IntersectionObserver !== 'function') {
+        previewCards.forEach(cardElement => {
+            syncVideoCardPlayback(cardElement, true);
+        });
+        return;
+    }
+
+    // Prime cards to thumbnails so off-screen entries do not load videos.
+    previewCards.forEach(cardElement => {
+        syncVideoCardPlayback(cardElement, false);
+    });
+
+    videosPlaybackObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            syncVideoCardPlayback(entry.target, entry.isIntersecting);
+        });
+    }, {
+        root: null,
+        rootMargin: '150px 0px',
+        threshold: 0.15
+    });
+
+    previewCards.forEach(cardElement => {
+        videosPlaybackObserver.observe(cardElement);
+    });
+}
+
+function syncVideoCardPlayback(cardElement, shouldPlay) {
+    if (!cardElement) return;
+
+    const imageElement = cardElement.querySelector('img');
+    const videoElement = cardElement.querySelector('video');
+    const overlayElement = cardElement.querySelector('.video-card-play-overlay');
+    if (!videoElement) return;
+
+    if (shouldPlay) {
+        if (imageElement) {
+            imageElement.style.display = 'none';
+        }
+
+        videoElement.style.display = 'block';
+        videoElement.loop = true;
+        videoElement.preload = 'metadata';
+        videoElement.autoplay = true;
+
+        if (overlayElement) {
+            overlayElement.style.opacity = '0';
+        }
+
+        const playPromise = videoElement.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {
+                // Ignore autoplay errors; user can still play in modal.
+            });
+        }
+
+        return;
+    }
+
+    videoElement.pause();
+    videoElement.currentTime = 0;
+    videoElement.preload = 'none';
+    videoElement.autoplay = false;
+
+    const hasThumbnail = imageElement && imageElement.naturalWidth > 0;
+    if (hasThumbnail) {
+        videoElement.style.display = 'none';
+        imageElement.style.display = 'block';
+    } else {
+        videoElement.style.display = 'block';
+    }
+
+    if (overlayElement) {
+        overlayElement.style.opacity = '1';
     }
 }
 
@@ -5748,10 +5970,8 @@ async function browseFolder(path) {
         browserLastLoadedPath = currentPath || 'images';
         browserLastLoadedAt = Date.now();
         
-        // If fullscreen viewer is active, jump to newest image (index 0)
-        if (isFullscreenActive && images.length > 0) {
-            currentImageIndex = 0;
-            showFullscreenImage(0);
+        if (isFullscreenActive) {
+            syncFullscreenAfterDataRefresh('browser');
         }
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -6606,6 +6826,14 @@ function openFullscreen() {
             fullscreenSource = 'viewer';
         }
     }
+
+    if (!fullscreenSource) {
+        fullscreenSource = 'browser';
+    }
+
+    fullscreenAutoFollowEnabled = getDefaultFullscreenAutoFollow(fullscreenSource);
+    fullscreenLockedMediaKey = '';
+    syncFullscreenAutoFollowControl();
     
     // Request browser fullscreen
     if (viewer.requestFullscreen) {
@@ -6663,6 +6891,9 @@ function closeFullscreen() {
     }
     
     fullscreenSource = null; // Clear fullscreen source
+    fullscreenAutoFollowEnabled = false;
+    fullscreenLockedMediaKey = '';
+    syncFullscreenAutoFollowControl();
     showingInputImage = false; // Reset input image toggle state
     showingVideoInputImage = false; // Reset video input toggle state
     
@@ -6698,10 +6929,9 @@ function closeFullscreen() {
 }
 
 function showFullscreenImage(index) {
-    console.log('showFullscreenImage called with index:', index, 'images.length:', images.length, 'fullscreenSource:', fullscreenSource);
+    const sourceArray = getFullscreenSourceArray();
+    console.log('showFullscreenImage called with index:', index, 'sourceArray.length:', sourceArray.length, 'fullscreenSource:', fullscreenSource);
     
-    // Use appropriate array based on fullscreen source
-    const sourceArray = (fullscreenSource === 'viewer') ? viewerAllFiles : images;
     if (sourceArray.length === 0) return;
     
     // Wrap around
@@ -6908,6 +7138,7 @@ function showFullscreenImage(index) {
     
     // Update current image data for input image toggle
     currentImageData = image;
+    fullscreenLockedMediaKey = getMediaIdentityKey(image);
     
     // Sync back to viewer tab if fullscreen was opened from viewer
     if (fullscreenSource === 'viewer') {
@@ -7989,6 +8220,18 @@ let currentVideoIndex = 0;
 function initializeVideoBrowser() {
     const refreshBtn = document.getElementById('videosRefreshBtn');
     if (refreshBtn) refreshBtn.addEventListener('click', () => loadVideos('videos'));
+
+    const playToggle = document.getElementById('videosPlayToggle');
+    if (playToggle) {
+        const savedPlaySetting = localStorage.getItem('videosPlayEnabled');
+        videosPlayEnabled = savedPlaySetting === 'true';
+        playToggle.checked = videosPlayEnabled;
+
+        playToggle.addEventListener('change', (event) => {
+            const shouldPlay = Boolean(event.target && event.target.checked);
+            setVideosGridPlaybackMode(shouldPlay);
+        });
+    }
 }
 
 async function loadVideos(path) {
@@ -8049,6 +8292,10 @@ async function loadVideos(path) {
         renderVideosBreadcrumb(videosCurrentPath, videoFileCount);
         renderVideosGrid(quickHydratedFolders, videoFiles);
 
+        if (isFullscreenActive) {
+            syncFullscreenAfterDataRefresh('videos');
+        }
+
         if (videoBrowserCount) {
             videoBrowserCount.textContent = String(videoFileCount);
         }
@@ -8090,6 +8337,10 @@ async function loadVideos(path) {
         videosItems = detailedVideoFiles;
         renderVideosBreadcrumb(videosCurrentPath, detailedVideoCount);
         renderVideosGrid(detailsFolders, detailedVideoFiles);
+
+        if (isFullscreenActive) {
+            syncFullscreenAfterDataRefresh('videos');
+        }
 
         if (videoBrowserCount) {
             videoBrowserCount.textContent = String(detailedVideoCount);
@@ -8221,9 +8472,11 @@ function renderVideosGrid(folders, videos) {
     if (html) {
         grid.innerHTML = html;
         bindVideoHoverPreviews(grid);
+        applyVideosGridPlaybackMode(grid);
         grid.style.display = 'grid';
         empty.style.display = 'none';
     } else {
+        disposeVideosPlaybackObserver();
         grid.style.display = 'none';
         empty.style.display = 'block';
     }
@@ -8873,8 +9126,7 @@ async function loadRecentGeneration() {
                 
                 // If fullscreen is active from viewer, sync it to show new generation
                 if (isFullscreenActive && fullscreenSource === 'viewer') {
-                    currentImageIndex = 0;
-                    showFullscreenImage(0);
+                    syncFullscreenAfterDataRefresh('viewer');
                 }
             } else {
                 // Try to maintain position after refresh

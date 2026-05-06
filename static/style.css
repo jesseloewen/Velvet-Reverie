@@ -2304,7 +2304,8 @@ input[type="range"]:focus {
     height: 48px;
 }
 
-/* Position match sizes and hover compare controls - left side on desktop */
+/* Position auto-follow/match/hover controls - left side on desktop */
+#fullscreenAutoFollowLabel,
 #fullscreenMatchSizesLabel,
 #fullscreenHoverCompareLabel {
     position: absolute;
@@ -2321,15 +2322,25 @@ input[type="range"]:focus {
     align-items: center;
 }
 
+/* Position auto-follow first in the stack */
+#fullscreenAutoFollowLabel {
+    top: 5rem;
+}
+
+/* Position match sizes below auto-follow */
+#fullscreenMatchSizesLabel {
+    top: 9rem;
+}
+
 /* Position hover compare below match sizes when both visible */
 #fullscreenHoverCompareLabel {
-    top: 9rem;
+    top: 13rem;
 }
 
 /* Position hover radius control - left side on desktop */
 #fullscreenHoverRadiusControl {
     position: absolute;
-    top: 13rem;
+    top: 17rem;
     left: 1.5rem;
     transform: none;
     pointer-events: auto;
@@ -3883,10 +3894,22 @@ video:-ms-fullscreen {
         width: 44px;
         height: 44px;
     }
+
+    /* Auto-follow - left side, below toggle */
+    #fullscreenAutoFollowLabel {
+        top: 7rem !important;
+        left: 0.75rem !important;
+        transform: none !important;
+        font-size: 0.9rem;
+        padding: 0.5rem 0.75rem;
+        max-width: calc(100vw - 6rem);
+        white-space: normal;
+        line-height: 1.4;
+    }
     
     /* Match Sizes - left side, well below toggle */
     #fullscreenMatchSizesLabel {
-        top: 10rem !important;
+        top: 12rem !important;
         left: 0.75rem !important;
         transform: none !important;
         font-size: 0.9rem;
@@ -3898,7 +3921,7 @@ video:-ms-fullscreen {
     
     /* Hover Compare - left side, well below match sizes */
     #fullscreenHoverCompareLabel {
-        top: 15rem !important;
+        top: 17rem !important;
         left: 0.75rem !important;
         transform: none !important;
         font-size: 0.9rem;
@@ -3910,7 +3933,7 @@ video:-ms-fullscreen {
     
     /* Hover Radius Control - left side, well below hover compare */
     #fullscreenHoverRadiusControl {
-        top: 20rem !important;
+        top: 22rem !important;
         left: 0.75rem !important;
         transform: none !important;
         max-width: calc(100vw - 6rem);

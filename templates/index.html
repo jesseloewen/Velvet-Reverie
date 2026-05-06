@@ -1587,6 +1587,11 @@
                         <div class="gallery-header">
                             <h2>Videos Browser <span id="videoBrowserCount" class="gallery-counter">0</span></h2>
                             <div class="gallery-toolbar">
+                                <label class="media-blur-toggle" title="Play all videos inline in the list">
+                                    <input type="checkbox" id="videosPlayToggle" class="media-blur-toggle-input">
+                                    <span class="media-blur-toggle-track" aria-hidden="true"></span>
+                                    <span class="media-blur-toggle-text">Play Videos</span>
+                                </label>
                                 <button class="btn btn-sm" id="videosRefreshBtn" title="Refresh">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <polyline points="23 4 23 10 17 10"></polyline>
@@ -3265,6 +3270,12 @@
                     <circle cx="12" cy="12" r="3"></circle>
                 </svg>
             </button>
+
+            <!-- Auto-follow newest generated media -->
+            <label class="fullscreen-control-label" id="fullscreenAutoFollowLabel" title="Follow newest generated media while fullscreen is open">
+                <input type="checkbox" id="fullscreenAutoFollowCheckbox" class="checkbox-input">
+                <span>Auto-follow</span>
+            </label>
             
             <!-- Match Sizes Toggle -->
             <label class="fullscreen-control-label" id="fullscreenMatchSizesLabel" style="display: none;" title="Match input/output sizes">
