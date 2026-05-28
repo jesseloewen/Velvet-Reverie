@@ -1717,6 +1717,18 @@
                                         <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
                                         <span class="chat-audio-autoplay-text">Auto Play</span>
                                     </label>
+                                    <div class="audio-speed-control" title="Audio playback speed (global)">
+                                        <span class="audio-speed-badge"></span>
+                                        <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
+                                            <option value="0.5">0.5x</option>
+                                            <option value="0.75">0.75x</option>
+                                            <option value="1">1x</option>
+                                            <option value="1.25">1.25x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="1.75">1.75x</option>
+                                            <option value="2">2x</option>
+                                        </select>
+                                    </div>
                                     <button class="btn btn-sm chat-audio-control-btn" id="storyDownloadAllAudioBtn" onclick="downloadWholeStoryAudio(); return false;" title="Merge and download all story message audio" aria-label="Merge and download all story message audio" disabled>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -2214,6 +2226,18 @@
                                         <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
                                         <span class="chat-audio-autoplay-text">Auto Play</span>
                                     </label>
+                                    <div class="audio-speed-control" title="Audio playback speed (global)">
+                                        <span class="audio-speed-badge"></span>
+                                        <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
+                                            <option value="0.5">0.5x</option>
+                                            <option value="0.75">0.75x</option>
+                                            <option value="1">1x</option>
+                                            <option value="1.25">1.25x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="1.75">1.75x</option>
+                                            <option value="2">2x</option>
+                                        </select>
+                                    </div>
                                     <button class="btn btn-sm chat-audio-control-btn" id="autochatDownloadAllAudioBtn" onclick="downloadWholeAutochatAudio(); return false;" title="Merge and download all autochat message audio" aria-label="Merge and download all autochat message audio" disabled>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -2786,6 +2810,18 @@
                                         <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
                                         <span class="chat-audio-autoplay-text">Auto Play</span>
                                     </label>
+                                    <div class="audio-speed-control" title="Audio playback speed (global)">
+                                        <span class="audio-speed-badge"></span>
+                                        <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
+                                            <option value="0.5">0.5x</option>
+                                            <option value="0.75">0.75x</option>
+                                            <option value="1">1x</option>
+                                            <option value="1.25">1.25x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="1.75">1.75x</option>
+                                            <option value="2">2x</option>
+                                        </select>
+                                    </div>
                                     <button class="btn btn-sm chat-audio-control-btn" id="chatDownloadAllAudioBtn" onclick="downloadWholeChatAudio(); return false;" title="Merge and download all message audio in this chat" aria-label="Merge and download all message audio in this chat" disabled>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -3525,8 +3561,22 @@
                         <circle cx="6" cy="18" r="3"></circle>
                         <circle cx="18" cy="16" r="3"></circle>
                     </svg>
-                    <div style="flex: 1; min-width: 0;">
-                        <div id="audioPreviewName" style="font-weight: 500; margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Now Playing</div>
+                                        <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.25rem;">
+                            <div id="audioPreviewName" style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">Now Playing</div>
+                            <div class="audio-speed-control" title="Audio playback speed (global)" style="flex-shrink: 0;">
+                                <span class="audio-speed-badge"></span>
+                                <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
+                                    <option value="0.5">0.5x</option>
+                                    <option value="0.75">0.75x</option>
+                                    <option value="1">1x</option>
+                                    <option value="1.25">1.25x</option>
+                                    <option value="1.5">1.5x</option>
+                                    <option value="1.75">1.75x</option>
+                                    <option value="2">2x</option>
+                                </select>
+                            </div>
+                        </div>
                         <audio id="audioPreviewPlayer" controls style="width: 100%; height: 32px;">
                             Your browser does not support the audio element.
                         </audio>

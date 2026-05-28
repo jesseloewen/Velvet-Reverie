@@ -6060,6 +6060,87 @@ video:-ms-fullscreen {
     cursor: not-allowed;
 }
 
+/* ─── Audio Speed Control ──────────────────────────────────────────────────── */
+.audio-speed-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.2rem 0.35rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.audio-speed-control:hover,
+.audio-speed-control:focus-within {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+
+.audio-speed-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+    letter-spacing: 0.02em;
+    min-width: 2rem;
+    text-align: center;
+    pointer-events: none;
+    user-select: none;
+}
+
+.audio-speed-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    width: 2.6rem;
+}
+
+.audio-speed-select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+/* Speed row inside TTS batch audio player */
+.audio-player-speed-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+.audio-player-speed-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.audio-player-speed-row .audio-speed-control {
+    /* slightly larger in the TTS player context */
+    padding: 0.25rem 0.5rem;
+}
+
+.audio-player-speed-row .audio-speed-badge {
+    font-size: 0.75rem;
+    min-width: 2.2rem;
+}
+
+.audio-player-speed-row .audio-speed-select {
+    font-size: 0.75rem;
+    width: 3rem;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 .chat-message-audio {
     margin-top: 0.75rem;
     padding: 0.75rem;
@@ -6793,7 +6874,7 @@ video:-ms-fullscreen {
         gap: 0.75rem;
     }
 
-    .chat-audio-controls {
+        .chat-audio-controls {
         margin-left: auto;
         flex-wrap: nowrap;
     }
@@ -6805,6 +6886,15 @@ video:-ms-fullscreen {
     .chat-audio-control-btn {
         width: 2.1rem;
         height: 2.1rem;
+    }
+
+    .audio-speed-badge {
+        display: none;
+    }
+
+    .audio-speed-select {
+        width: 3rem;
+        font-size: 0.68rem;
     }
     
     .chat-model-selector {

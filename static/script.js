@@ -1,5 +1,63 @@
 // Velvet Reverie - Web Interface JavaScript
 
+// ─── Global Audio Playback Speed ──────────────────────────────────────────────
+const AUDIO_SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+let globalAudioPlaybackSpeed = parseFloat(localStorage.getItem('audioPlaybackSpeed') || '1.0');
+if (!AUDIO_SPEED_OPTIONS.includes(globalAudioPlaybackSpeed)) globalAudioPlaybackSpeed = 1.0;
+
+/** Apply the stored speed to every live <audio> element and sync all UI widgets. */
+function setGlobalAudioPlaybackSpeed(speed) {
+    const parsed = parseFloat(speed);
+    if (!AUDIO_SPEED_OPTIONS.includes(parsed)) return;
+    globalAudioPlaybackSpeed = parsed;
+    localStorage.setItem('audioPlaybackSpeed', String(parsed));
+    document.querySelectorAll('audio').forEach(el => { el.playbackRate = parsed; });
+    document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = String(parsed); });
+    document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = parsed + 'x'; });
+    console.log('[Audio] Global playback speed set to', parsed + 'x');
+}
+
+/** Stamp the current global speed on a single audio element. */
+function applyGlobalAudioSpeed(audioEl) {
+    if (audioEl) audioEl.playbackRate = globalAudioPlaybackSpeed;
+}
+
+/** Sync all speed selector dropdowns and badges to the stored speed, and
+ *  watch for any new <audio> elements added to the DOM via MutationObserver. */
+function initializeAudioSpeedControls() {
+    // Set initial values on all existing widgets
+    const speedStr = String(globalAudioPlaybackSpeed);
+    document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = speedStr; });
+    document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = globalAudioPlaybackSpeed + 'x'; });
+
+    // Apply speed to any <audio> elements already in the DOM
+    document.querySelectorAll('audio').forEach(el => { el.playbackRate = globalAudioPlaybackSpeed; });
+
+    // Watch for new <audio> elements added dynamically (TTS batches, chat messages, etc.)
+    const observer = new MutationObserver(mutations => {
+        let needsWidgetSync = false;
+        mutations.forEach(mutation => {
+            mutation.addedNodes.forEach(node => {
+                if (node.nodeType !== 1) return;
+                // New audio elements
+                if (node.tagName === 'AUDIO') { applyGlobalAudioSpeed(node); }
+                node.querySelectorAll && node.querySelectorAll('audio').forEach(a => applyGlobalAudioSpeed(a));
+                // New speed widgets
+                if (node.classList && node.classList.contains('audio-speed-select')) needsWidgetSync = true;
+                if (node.classList && node.classList.contains('audio-speed-badge')) needsWidgetSync = true;
+                node.querySelectorAll && node.querySelectorAll('.audio-speed-select, .audio-speed-badge').forEach(() => { needsWidgetSync = true; });
+            });
+        });
+        if (needsWidgetSync) {
+            const s = String(globalAudioPlaybackSpeed);
+            document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = s; });
+            document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = globalAudioPlaybackSpeed + 'x'; });
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
 // Helper function to get video MIME type
 function getVideoMimeType(filename) {
     if (filename.endsWith('.mp4')) return 'video/mp4';
@@ -474,6 +532,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✓ TTS language controls initialized');
     } catch (e) { console.error('✗ TTS language controls failed:', e); }
     
+        // Initialize global audio playback speed UI
+    try {
+        initializeAudioSpeedControls();
+        console.log('✓ Audio speed controls initialized');
+    } catch (e) { console.error('✗ Audio speed controls failed:', e); }
+
     console.log('DOMContentLoaded - Initialization complete');
 });
 
@@ -5358,7 +5422,8 @@ function playAudioPreview(filename, folder, filePath) {
     audioPlayer.src = audioUrl;
     audioPreviewContainer.style.display = 'block';
     
-    // Play audio
+        // Apply global speed then play
+    applyGlobalAudioSpeed(audioPlayer);
     audioPlayer.play().catch(error => {
         console.error('Error playing audio:', error);
         showNotification('Error playing audio file', 'Playback Error', 'error');
@@ -10216,8 +10281,21 @@ function renderAudioBatch(batch) {
                     </div>
                 </div>
             </div>
-            <div class="audio-batch-content" id="batchContent_${batch.batch_id}">
+                        <div class="audio-batch-content" id="batchContent_${batch.batch_id}">
                 <div class="audio-player-section">
+                    <div class="audio-player-speed-row">
+                        <span class="audio-player-speed-label">Speed</span>
+                        <span class="audio-speed-badge"></span>
+                        <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed" title="Audio playback speed (global)">
+                            <option value="0.5">0.5x</option>
+                            <option value="0.75">0.75x</option>
+                            <option value="1">1x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                            <option value="1.75">1.75x</option>
+                            <option value="2">2x</option>
+                        </select>
+                    </div>
                     <audio id="audioPlayer_${batch.batch_id}" class="audio-player" controls ontimeupdate="updateCurrentPlaythroughTime('${batch.batch_id}')">
                         <source src="" type="audio/mpeg">
                         Your browser does not support the audio element.
@@ -10577,7 +10655,8 @@ function playNextSentence() {
         playNextSentence();
     };
     
-    // Play
+        // Apply global speed then play
+    applyGlobalAudioSpeed(audioPlayer);
     audioPlayer.play().catch(err => {
         console.error('Failed to play audio:', err);
         currentPlayingIndex++;
@@ -10906,8 +10985,9 @@ async function switchSentenceVersion(batchId, sentenceIndex, newFileId) {
                 // Update the current file and replay
                 currentPlayingBatch.files[playingIdx] = newFile;
                 const audioPath = newFile.relative_path || newFile.path;
-                audioPlayer.src = `/outputs/${audioPath}`;
+                                audioPlayer.src = `/outputs/${audioPath}`;
                 audioPlayer.load();
+                applyGlobalAudioSpeed(audioPlayer);
                 audioPlayer.play();
             }
         }
@@ -11902,7 +11982,8 @@ async function handleConversationAudioEnded(conversationType, player) {
     state.isPlaying = true;
     scrollConversationAudioPlayerIntoView(nextPlayer);
 
-    try {
+        try {
+        applyGlobalAudioSpeed(nextPlayer);
         await nextPlayer.play();
 
         const upcomingIndex = state.queue[state.position + 1];
@@ -12260,12 +12341,13 @@ function createConversationAudioElement(conversationType, audioPath, messageInde
     audioHeader.appendChild(audioLabel);
     audioHeader.appendChild(downloadBtn);
 
-    const audioEl = document.createElement('audio');
+        const audioEl = document.createElement('audio');
     audioEl.controls = true;
     audioEl.preload = 'none';
     audioEl.style.width = '100%';
     audioEl.dataset.conversationAudio = conversationType;
     audioEl.dataset.messageIndex = String(messageIndex);
+    applyGlobalAudioSpeed(audioEl);
 
     const sourceEl = document.createElement('source');
     sourceEl.src = audioUrl;
