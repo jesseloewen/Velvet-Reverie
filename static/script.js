@@ -1795,6 +1795,7 @@ function switchTab(tabName) {
         'single': 'singleTab',
         'batch': 'batchTab',
         'image-batch': 'imageBatchTab',
+        'pinterest': 'pinterestTab',
         'browser': 'browserTab',
         'reveal': 'revealTab',
         'video': 'videoTab',

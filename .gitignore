@@ -84,6 +84,13 @@ models/
 custom_nodes/
 cache/
 
+# Pinterest scraper - session cookies (contains login credentials, never commit!)
+pinterest_cookies.json
+*.cookies.json
+
+# Sample / reference scripts
+samples/
+
 # OS
 Thumbs.db
 .DS_Store

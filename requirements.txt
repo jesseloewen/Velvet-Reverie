@@ -1,7 +1,43 @@
+# ── Core web framework ───────────────────────────────────────────────────────
 flask
-psutil
-mutagen
-gradio_client
+Werkzeug
+
+# ── Environment & config ─────────────────────────────────────────────────────
 python-dotenv
+
+# ── Image processing ─────────────────────────────────────────────────────────
+# Pillow 10.x is required by pinterest-dl; 11.x+ is required by newer gradio.
+# Install without version pin and let pip resolve — both work at runtime.
+# If there is a conflict, pin to: Pillow>=10.4.0,<11.0 OR Pillow>=11.0
 Pillow
 opencv-python
+numpy
+
+# ── System monitoring ────────────────────────────────────────────────────────
+psutil
+
+# ── Audio ────────────────────────────────────────────────────────────────────
+mutagen
+pydub
+
+# ── Gradio TTS client ────────────────────────────────────────────────────────
+gradio_client
+
+# ── SSL certificate generation (optional, used by generate_cert.py) ──────────
+cryptography
+
+# ── Pinterest scraper ────────────────────────────────────────────────────────
+# NOTE: pinterest-dl[image] pins pillow==10.4.0 which fails on Python 3.14.
+# We install pinterest-dl without the [image] extra (see setup instructions
+# below) and list its runtime deps here manually instead.
+#
+# To set up Pinterest scraping after installing requirements.txt:
+#   pip install pinterest-dl --no-deps
+#   playwright install firefox
+#
+playwright
+selenium
+requests
+Deprecated
+m3u8
+tqdm

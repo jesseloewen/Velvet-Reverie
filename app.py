@@ -1,4 +1,4 @@
-﻿"""
+"""
 Velvet Reverie - Flask Web UI
 """
 
@@ -6732,6 +6732,142 @@ def get_hardware_stats():
             'error': str(e)
         }), 500
 
+
+
+# -- Pinterest Scraper Routes --
+
+try:
+    from pinterest_client import (
+        start_scrape_thread, get_job, list_jobs, cookies_status,
+        PINTEREST_COOKIES_PATH
+    )
+    PINTEREST_AVAILABLE = True
+except ImportError as _pinterest_err:
+    PINTEREST_AVAILABLE = False
+    print(f'[Pinterest] pinterest_client not available: {_pinterest_err}')
+
+
+def _safe_folder_name(text):
+    import re as _re
+    safe = _re.sub(r'[^\w\s\-]', '', str(text)).strip()
+    safe = _re.sub(r'[\s]+', '_', safe)
+    return safe[:60] or 'pinterest_download'
+
+
+@app.route('/api/pinterest/cookies-status', methods=['GET'])
+@require_auth
+def pinterest_cookies_status():
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Pinterest client not available'}), 503
+    status = cookies_status()
+    return jsonify({'success': True, **status})
+
+
+@app.route('/api/pinterest/scrape', methods=['POST'])
+@require_auth
+def pinterest_scrape():
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': False, 'error': 'pinterest-dl not installed. Run: py -m pip install pinterest-dl[image]'}), 503
+    data = request.json or {}
+    source_type = data.get('source_type', 'search').strip()
+    source = (data.get('source') or '').strip()
+    num = max(1, int(data.get('num', 30)))
+    folder_name = _safe_folder_name(data.get('folder_name') or source)
+    min_width = int(data.get('min_width', 512))
+    min_height = int(data.get('min_height', 512))
+    rename_label = (data.get('rename_label') or '').strip() or None
+    if not source:
+        return jsonify({'success': False, 'error': 'Source required'}), 400
+    if source_type not in ('search', 'url'):
+        return jsonify({'success': False, 'error': 'source_type must be search or url'}), 400
+    pinterest_dir = INPUT_DIR / 'pinterest' / folder_name
+    pinterest_dir.mkdir(parents=True, exist_ok=True)
+    job_id = str(uuid.uuid4())
+    start_scrape_thread(
+        job_id=job_id, source_type=source_type, source=source,
+        output_dir=str(pinterest_dir), num=num,
+        min_width=min_width, min_height=min_height, rename_label=rename_label,
+    )
+    return jsonify({'success': True, 'job_id': job_id,
+                    'folder': f'pinterest/{folder_name}', 'output_dir': str(pinterest_dir)})
+
+
+@app.route('/api/pinterest/job/<job_id>', methods=['GET'])
+@require_auth
+def pinterest_job_status(job_id):
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Pinterest client not available'}), 503
+    job = get_job(job_id)
+    if not job:
+        return jsonify({'success': False, 'error': 'Job not found'}), 404
+    return jsonify({'success': True, **job})
+
+
+@app.route('/api/pinterest/jobs', methods=['GET'])
+@require_auth
+def pinterest_list_jobs():
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Pinterest client not available'}), 503
+    jobs = list(reversed(list_jobs()))
+    return jsonify({'success': True, 'jobs': jobs})
+
+
+@app.route('/api/pinterest/queue-batch', methods=['POST'])
+@require_auth
+def pinterest_queue_batch():
+    data = request.json or {}
+    prompt = (data.get('prompt') or '').strip()
+    folder = (data.get('folder') or '').strip()
+    use_original_size = bool(data.get('use_original_size', True))
+    width = int(data.get('width', 1024))
+    height = int(data.get('height', 1024))
+    steps = int(data.get('steps', 4))
+    cfg = float(data.get('cfg', 1.0))
+    shift = float(data.get('shift', 3.0))
+    seed = data.get('seed')
+    file_prefix = (data.get('file_prefix') or 'pinterest').strip()
+    subfolder = (data.get('subfolder') or '').strip()
+    mcnl_lora = bool(data.get('mcnl_lora', False))
+    snofs_lora = bool(data.get('snofs_lora', False))
+    male_lora = bool(data.get('male_lora', False))
+    if not prompt:
+        return jsonify({'success': False, 'error': 'Prompt required'}), 400
+    if not folder:
+        return jsonify({'success': False, 'error': 'Folder required'}), 400
+    try:
+        current_dir = INPUT_DIR / folder
+        if not current_dir.exists() or not current_dir.is_dir():
+            return jsonify({'success': False, 'error': f'Folder not found: {folder}'}), 400
+        allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+        image_files = [f for f in current_dir.iterdir()
+                       if f.is_file() and f.suffix.lower() in allowed_extensions]
+        if not image_files:
+            return jsonify({'success': False, 'error': 'No images found in selected folder'}), 400
+        if not subfolder:
+            subfolder = folder.replace('\\\\', '/').strip('/')
+        queued_ids = []
+        with queue_lock:
+            for file in image_files:
+                rel_path = str(file.relative_to(INPUT_DIR))
+                job = {
+                    'id': str(uuid.uuid4()), 'prompt': prompt,
+                    'width': width, 'height': height, 'steps': steps,
+                    'cfg': cfg, 'shift': shift, 'seed': seed,
+                    'use_image': True, 'use_image_size': use_original_size,
+                    'image_filename': rel_path, 'file_prefix': file_prefix,
+                    'subfolder': subfolder, 'mcnl_lora': mcnl_lora,
+                    'snofs_lora': snofs_lora, 'male_lora': male_lora,
+                    'status': 'queued', 'added_at': datetime.now().isoformat()
+                }
+                generation_queue.insert(0, job)
+                queued_ids.append(job['id'])
+        save_queue_state()
+        return jsonify({'success': True, 'queued_count': len(queued_ids), 'job_ids': queued_ids})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# -- End Pinterest Routes --
 
 def ensure_dummy_image():
     """Create a dummy image if permanent\violet.webp doesn't exist"""

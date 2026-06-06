@@ -24,6 +24,7 @@ Flask-based web UI for image/video generation, AI chat, text-to-speech, with **p
 - 📊 **Batch generation** - CSV-based parameter templates with `[placeholder]` support
 - 🖼️ **Image browser** - Browse and organize images (separated from videos)
 - 🎛️ **LoRA controls** - Three toggle switches with keyword hints (MCNL, Snofs, Male)
+- 📌 **Pinterest pipeline** - Scrape images from Pinterest search or board URLs, then batch-queue them for AI image-to-image generation
 - ⌨️ **Keyboard shortcuts** - Ctrl+Enter to generate, fullscreen navigation
 - 📋 **Persistent queue** - Shared across users, survives restarts, shows count badge
 - 📁 **Folder management** - Create, browse, move, delete with breadcrumbs
@@ -98,21 +99,22 @@ python app.py  # Starts on http://localhost:4879
 
 ## Tabs Overview
 
-The interface has **14 tabs**:
+The interface has **15 tabs**:
 1. **Image**: Generate individual images with full parameter control
 2. **Text Batch**: Create multiple variations using CSV templates with parameter placeholders  
 3. **Image Batch**: Batch processing with folder selection and same-prompt AI editing
-4. **Video**: Convert static images into animated videos with NSFW mode option
-5. **Video Batch**: Batch convert folders of images to videos
-6. **Frame Edit**: Extract frames from video → AI process all frames → stitch back to video
-7. **Image Browser**: Browse, organize, and manage your generated images
-8. **Video Browser**: Browse and play generated videos
-9. **Viewer**: Image/video viewer (opens automatically from other tabs)
-10. **Chat**: Interactive AI chat with Ollama models (streaming responses)
-11. **Story**: Character-driven interactive storytelling with lorebook system
-12. **Auto Chat**: Autonomous dual AI persona conversations
-13. **TTS**: Text-to-speech batch generation with Gradio ChatterBox
-14. **Audio**: Browse and manage TTS-generated audio files
+4. **Pinterest**: Scrape images from Pinterest and queue them for AI generation (see [Pinterest Pipeline](#pinterest-pipeline))
+5. **Video**: Convert static images into animated videos with NSFW mode option
+6. **Video Batch**: Batch convert folders of images to videos
+7. **Frame Edit**: Extract frames from video → AI process all frames → stitch back to video
+8. **Image Browser**: Browse, organize, and manage your generated images
+9. **Video Browser**: Browse and play generated videos
+10. **Viewer**: Image/video viewer (opens automatically from other tabs)
+11. **Chat**: Interactive AI chat with Ollama models (streaming responses)
+12. **Story**: Character-driven interactive storytelling with lorebook system
+13. **Auto Chat**: Autonomous dual AI persona conversations
+14. **TTS**: Text-to-speech batch generation with Gradio ChatterBox
+15. **Audio**: Browse and manage TTS-generated audio files
 
 ## Mobile Optimization
 ### Desktop
@@ -240,6 +242,70 @@ The interface has **14 tabs**:
 6. Each sentence generates as a separate audio file
 7. View progress in queue sidebar (shows batch count)
 8. Results appear in **Audio Browser** tab
+
+### Pinterest Pipeline
+
+A two-step workflow that scrapes images from Pinterest and feeds them into the AI generation queue as image-to-image jobs.
+
+#### Prerequisites — Cookie Authentication
+
+Pinterest requires authentication for scraping. The app uses a saved-session cookie file instead of prompting for credentials on every run.
+
+1. **Install Pinterest dependencies** (one-time):
+   ```powershell
+   py setup_pinterest.py
+   ```
+   This installs `pinterest-dl`, `playwright`, `selenium`, and downloads the Firefox browser binary used for the login flow.
+
+2. **Generate your cookie file** by running the login helper:
+   ```powershell
+   # Email / password login
+   py setup_pinterest.py --login
+
+   # Google account login (opens Firefox, click "Continue with Google")
+   py setup_pinterest.py --login --google
+   ```
+   A Firefox window will open. Complete the sign-in (including any CAPTCHA or 2FA), then the window closes automatically and cookies are saved to `pinterest_cookies.json` (path configurable via `PINTEREST_COOKIES_PATH` in `.env`).
+
+3. **Verify cookies** in the Pinterest tab — the **Cookies Status** badge turns green when a valid session is detected (`_pinterest_sess` or `csrftoken` found).
+
+> ⚠️ `pinterest_cookies.json` contains your session credentials. It is listed in `.gitignore` and should **never** be committed.
+
+#### Step 1 — Scrape
+
+1. Navigate to the **Pinterest** tab
+2. Choose a **source type**:
+   - **Search query** — enter a keyword (e.g. `"fantasy art female warrior"`)
+   - **Board / Pin URL** — paste a full Pinterest URL
+3. Set the number of images to scrape (default: 20)
+4. Optionally set a custom **folder name** and **rename label**
+5. Optionally filter by minimum image dimensions (width / height)
+6. Click **"Scrape Pinterest"**
+7. Watch the live progress bar and log as images download
+8. When complete, the output folder path is shown under the progress bar
+
+Scraped images are saved to `input/pinterest/<folder_name>/`.
+
+#### Step 2 — Queue for Generation
+
+1. After a successful scrape the **"Queue for Generation"** button activates
+2. Enter a **prompt** to apply to every image
+3. Choose a **size mode**:
+   - **Use original size** — each image keeps its own dimensions
+   - **Custom size** — override width and height for all images
+4. Adjust generation parameters: steps, CFG scale, shift, seed, file prefix, subfolder
+5. Toggle **LoRA settings** (MCNL, Snofs, Male)
+6. Click **"Queue for Generation"**
+7. All scraped images are added to the queue as individual image-to-image jobs
+8. Track progress in the left sidebar queue panel
+
+#### Configuration
+
+| `.env` variable | Default | Description |
+|---|---|---|
+| `PINTEREST_COOKIES_PATH` | `pinterest_cookies.json` | Path to the Pinterest session cookies file |
+
+---
 
 ### Audio Browser
 
@@ -448,19 +514,24 @@ The interface has **14 tabs**:
 ## Project Structure
 
 ```
-├── app.py                      # Flask backend (5640 lines: auth, queue, hardware)
+├── app.py                      # Flask backend (auth, queue, hardware, all routes)
 ├── comfyui_client.py           # Python stdlib ComfyUI API wrapper (urllib, json)
 ├── ollama_client.py            # Python stdlib Ollama API wrapper (urllib, json)
 ├── gradio_tts_client.py        # Gradio ChatterBox TTS client
+├── pinterest_client.py         # Pinterest scraper module (pinterest-dl, playwright)
+├── setup_pinterest.py          # One-time Pinterest dependency installer + login helper
+├── pinterest_cookies.json      # Pinterest session cookies — GITIGNORED, never commit!
+├── samples/                    # Reference / scratch scripts — GITIGNORED
 ├── templates/
-│   ├── index.html              # 14-tab SPA main interface
+│   ├── index.html              # 15-tab SPA main interface
 │   └── login.html              # Password login page
 ├── static/
 │   ├── style.css               # Multi-theme system, mobile responsive
 │   ├── script.js               # Core UI logic, queue, hardware monitoring
 │   ├── story.js                # Story mode with lorebook
 │   ├── story_modals.js         # Story UI modals
-│   └── autochat.js             # Dual AI persona chat
+│   ├── autochat.js             # Dual AI persona chat
+│   └── pinterest.js            # Pinterest scrape + queue pipeline UI
 ├── outputs/                    # Generated content (gitignored)
 │   ├── images/                 # All image generations
 │   │   └── myFolder/           # User subfolders
@@ -483,8 +554,15 @@ The interface has **14 tabs**:
 
 ## API Endpoints
 
+### Pinterest Endpoints
+- `GET /api/pinterest/cookies-status` - Check if Pinterest cookies file exists and contains a valid session
+- `POST /api/pinterest/scrape` - Start a Pinterest scrape job (search query or board/pin URL)
+- `GET /api/pinterest/job/<job_id>` - Poll scrape job status, progress, and log lines
+- `GET /api/pinterest/jobs` - List all scrape jobs in the current session
+- `POST /api/pinterest/queue-batch` - Queue all images from a completed scrape as generation jobs
+
 ### Core Endpoints
-- `GET /` - Main web interface with 14 tabs
+- `GET /` - Main web interface with 15 tabs
 - `POST /api/queue` - Add image or video generation job to queue
 - `GET /api/queue` - Get queue status (queued, active, completed)
 - `DELETE /api/queue/<job_id>` - Remove queued or completed job

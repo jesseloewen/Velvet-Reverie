@@ -33,7 +33,8 @@
                         <div class="tab-group-header">Images</div>
                         <button class="tab-btn active" data-tab="single">Image</button>
                         <button class="tab-btn" data-tab="batch">Text Batch</button>
-                        <button class="tab-btn" data-tab="image-batch">Image Batch</button>
+                                                <button class="tab-btn" data-tab="image-batch">Image Batch</button>
+                        <button class="tab-btn" data-tab="pinterest">Pinterest</button>
                     </div>
                     
                     <div class="tab-group">
@@ -896,6 +897,281 @@
                         </div>
                     </div>
                 </section>
+
+                                <!-- Pinterest Tab -->
+                                <section class="tab-content" id="pinterestTab">
+                                    <div class="generation-panel">
+                                        <div class="batch-header" style="margin-bottom: 1.5rem;">
+                                            <h2 style="margin: 0 0 0.5rem 0;">Pinterest Scrape &amp; Generate</h2>
+                                            <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
+                                                Scrape images from Pinterest by search or URL, then queue them for AI generation.
+                                            </p>
+                                        </div>
+
+                                        <!-- Step 1: Pinterest Scraper Setup -->
+                                        <button class="collapsible-header active" data-target="ptScrapeSection">
+                                            <span>Step 1: Scrape from Pinterest</span>
+                                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="collapsible-content active" id="ptScrapeSection">
+
+                                            <!-- Cookies Status -->
+                                            <div class="form-group">
+                                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <circle cx="12" cy="12" r="10"></circle>
+                                                        <path d="M12 8v4m0 4h.01"></path>
+                                                    </svg>
+                                                    Authentication Status
+                                                </label>
+                                                <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border);">
+                                                    <span id="ptCookiesBadge" class="pt-badge pt-badge-warn">Checking…</span>
+                                                    <span id="ptCookiesDetail" style="font-size: 0.85rem; color: var(--text-muted); flex: 1;"></span>
+                                                    <button type="button" class="btn btn-sm" onclick="checkPinterestCookies(); return false;" title="Re-check cookies">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <polyline points="23 4 23 10 17 10"></polyline>
+                                                            <polyline points="1 20 1 14 7 14"></polyline>
+                                                            <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                                        </svg>
+                                                        Refresh
+                                                    </button>
+                                                </div>
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.35rem;">
+                                                    Set <code>PINTEREST_COOKIES_PATH</code> in your <code>.env</code> file to point to your Pinterest cookies JSON.
+                                                </small>
+                                            </div>
+
+                                            <!-- Source Type -->
+                                            <div class="form-group">
+                                                <label>Source Type</label>
+                                                <div style="display: flex; gap: 1.5rem;">
+                                                    <label class="checkbox-label">
+                                                        <input type="radio" name="ptSourceType" id="ptSourceSearch" value="search" checked class="checkbox-input">
+                                                        <span>Search Query</span>
+                                                    </label>
+                                                    <label class="checkbox-label">
+                                                        <input type="radio" name="ptSourceType" id="ptSourceUrl" value="url" class="checkbox-input">
+                                                        <span>Board / Pin URL</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <!-- Search Query (shown when search selected) -->
+                                            <div class="form-group" id="ptSearchGroup">
+                                                <label for="ptSearchQuery">Search Query</label>
+                                                <input
+                                                    type="text"
+                                                    id="ptSearchQuery"
+                                                    class="form-control"
+                                                    placeholder="e.g. watercolor portrait, fantasy landscape"
+                                                >
+                                            </div>
+
+                                            <!-- URL (shown when url selected) -->
+                                            <div class="form-group" id="ptUrlGroup" style="display: none;">
+                                                <label for="ptUrl">Pinterest URL</label>
+                                                <input
+                                                    type="url"
+                                                    id="ptUrl"
+                                                    class="form-control"
+                                                    placeholder="https://www.pinterest.com/search/pins/?q=…"
+                                                >
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                                    Board URL, search URL, or individual pin URL
+                                                </small>
+                                            </div>
+
+                                            <div class="parameters-grid">
+                                                <div class="form-group">
+                                                    <label for="ptNumImages">Number of Images</label>
+                                                    <input type="number" id="ptNumImages" value="30" min="1" max="500" class="form-control">
+                                                    <small style="color: var(--text-muted);">Max images to download</small>
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptFolderName">Save Folder Name <span style="font-weight: normal; color: var(--text-muted);">(optional)</span></label>
+                                                    <input type="text" id="ptFolderName" class="form-control" placeholder="Auto from query/URL">
+                                                    <small style="color: var(--text-muted);">Saved to input/pinterest/&lt;folder&gt;/</small>
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptRenameLabel">File Label <span style="font-weight: normal; color: var(--text-muted);">(optional)</span></label>
+                                                    <input type="text" id="ptRenameLabel" class="form-control" placeholder="Auto from query/URL">
+                                                    <small style="color: var(--text-muted);">Files saved as &quot;01. Label.jpg&quot;</small>
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptMinWidth">Min Width (px)</label>
+                                                    <input type="number" id="ptMinWidth" value="512" min="1" max="4096" class="form-control">
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptMinHeight">Min Height (px)</label>
+                                                    <input type="number" id="ptMinHeight" value="512" min="1" max="4096" class="form-control">
+                                                </div>
+                                            </div>
+
+                                            <!-- Scrape Button -->
+                                            <button type="button" class="btn btn-primary" id="ptScrapeBtn" style="width: 100%; margin-bottom: 1rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                                    <circle cx="11" cy="11" r="8"></circle>
+                                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                                </svg>
+                                                <span>Download Images</span>
+                                                <span id="ptScrapeIndicator" style="display: none; margin-left: 0.5rem; opacity: 0.7; font-size: 0.85rem;">⏳</span>
+                                            </button>
+
+                                            <!-- Progress -->
+                                            <div style="margin-bottom: 1rem;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                                                    <span style="font-size: 0.85rem; color: var(--text-muted);">Progress</span>
+                                                    <span id="ptProgressLabel" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+                                                </div>
+                                                <div class="hw-bar" style="height: 8px; border-radius: 4px;">
+                                                    <div id="ptProgressBar" class="hw-fill" style="width: 0%; transition: width 0.3s;"></div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Log -->
+                                            <div class="form-group">
+                                                <label>Scrape Log</label>
+                                                <pre id="ptScrapeLog" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.8rem; max-height: 160px; overflow-y: auto; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+                                            </div>
+
+                                            <!-- Scraped folder display -->
+                                            <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border); font-size: 0.875rem;">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                                </svg>
+                                                <span style="color: var(--text-muted);">Scraped folder:</span>
+                                                <span id="ptScrapedFolderDisplay" style="color: var(--text-muted);">None yet</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Step 2: Prompt + Queue -->
+                                        <button class="collapsible-header" data-target="ptGenerateSection">
+                                            <span>Step 2: Generate from Scraped Images</span>
+                                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="collapsible-content" id="ptGenerateSection">
+
+                                            <!-- Prompt -->
+                                            <div class="form-group">
+                                                <label for="ptPrompt">Prompt</label>
+                                                <div class="prompt-container">
+                                                    <textarea
+                                                        id="ptPrompt"
+                                                        rows="4"
+                                                        placeholder="Enter your prompt for all downloaded images…"
+                                                        class="form-control"
+                                                    ></textarea>
+                                                    <button class="btn btn-primary" id="ptQueueBatchBtn" disabled>
+                                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                                        </svg>
+                                                        <span>Queue Batch</span>
+                                                    </button>
+                                                </div>
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                                    Each scraped image will be queued as an image-to-image job using this prompt.
+                                                </small>
+                                            </div>
+
+                                            <!-- Parameters -->
+                                            <button class="collapsible-header" data-target="ptParameters">
+                                                <span>Parameters</span>
+                                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            </button>
+                                            <div class="collapsible-content active" id="ptParameters">
+
+                                                <!-- Size Mode -->
+                                                <div class="form-group" style="grid-column: 1 / -1; margin-bottom: 1rem;">
+                                                    <label>Image Size Mode</label>
+                                                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                                        <label class="checkbox-label">
+                                                            <input type="radio" name="ptSizeMode" id="ptUseOriginalSize" value="original" checked class="checkbox-input">
+                                                            <span>Use Original Image Size (for each image)</span>
+                                                        </label>
+                                                        <label class="checkbox-label">
+                                                            <input type="radio" name="ptSizeMode" id="ptUseCustomSize" value="custom" class="checkbox-input">
+                                                            <span>Use Custom Size (for all images)</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                <div class="parameters-grid">
+                                                    <div class="form-group" id="ptWidthGroup" style="opacity: 0.5;">
+                                                        <label for="ptWidth">Width</label>
+                                                        <input type="number" id="ptWidth" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
+                                                    </div>
+                                                    <div class="form-group" id="ptHeightGroup" style="opacity: 0.5;">
+                                                        <label for="ptHeight">Height</label>
+                                                        <input type="number" id="ptHeight" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="ptSteps">Steps</label>
+                                                        <input type="number" id="ptSteps" value="4" min="1" max="100" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="ptCfg">CFG Scale</label>
+                                                        <input type="number" id="ptCfg" value="1.0" min="0.1" max="20.0" step="0.1" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="ptShift">Shift</label>
+                                                        <input type="number" id="ptShift" value="3.0" min="0.0" max="10.0" step="0.1" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="ptSeed">Seed (optional)</label>
+                                                        <input type="number" id="ptSeed" placeholder="Random" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="ptFilePrefix">File Prefix</label>
+                                                        <input type="text" id="ptFilePrefix" placeholder="pinterest" class="form-control">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="ptSubfolder">Output Folder</label>
+                                                        <input type="text" id="ptSubfolder" placeholder="Leave empty for auto" class="form-control">
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- LoRA Settings -->
+                                            <button class="collapsible-header" data-target="ptLoraSettings">
+                                                <span>LoRA Settings</span>
+                                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            </button>
+                                            <div class="collapsible-content" id="ptLoraSettings">
+                                                <div class="form-group">
+                                                    <label class="checkbox-label">
+                                                        <input type="checkbox" id="ptMcnlLora" class="checkbox-input">
+                                                        <span>MCNL LoRA (Female)</span>
+                                                    </label>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label class="checkbox-label">
+                                                        <input type="checkbox" id="ptSnofsLora" class="checkbox-input">
+                                                        <span>Snofs LoRA (Female)</span>
+                                                    </label>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label class="checkbox-label">
+                                                        <input type="checkbox" id="ptMaleLora" class="checkbox-input">
+                                                        <span>Male LoRA</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </section>
 
                 <!-- Video Tab -->
                 <section class="tab-content" id="videoTab">
@@ -3827,5 +4103,6 @@
     <script src="{{ url_for('static', filename='story.js') }}"></script>
     <script src="{{ url_for('static', filename='story_modals.js') }}"></script>
     <script src="{{ url_for('static', filename='autochat.js') }}"></script>
+    <script src="{{ url_for('static', filename='pinterest.js') }}"></script>
 </body>
 </html>
