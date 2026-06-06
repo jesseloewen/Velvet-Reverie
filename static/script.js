@@ -532,11 +532,17 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✓ TTS language controls initialized');
     } catch (e) { console.error('✗ TTS language controls failed:', e); }
     
-        // Initialize global audio playback speed UI
+                // Initialize global audio playback speed UI
     try {
         initializeAudioSpeedControls();
         console.log('✓ Audio speed controls initialized');
     } catch (e) { console.error('✗ Audio speed controls failed:', e); }
+
+    // Initialize prompt history system
+    try {
+        initializePromptHistory();
+        console.log('✓ Prompt history initialized');
+    } catch (e) { console.error('✗ Prompt history failed:', e); }
 
     console.log('DOMContentLoaded - Initialization complete');
 });
@@ -3312,6 +3318,7 @@ async function generateImage() {
         showNotification('Please enter a prompt', 'Missing Prompt', 'warning');
         return;
     }
+    savePromptToHistory(prompt, 'image');
     
     // Check if image needs to be uploaded first
     const imageUpload = document.getElementById('imageUpload');
@@ -3580,6 +3587,7 @@ async function generateVideo() {
         showNotification('Please enter a motion prompt', 'Missing Prompt', 'warning');
         return;
     }
+    savePromptToHistory(prompt, 'video');
     
     // Check if image needs to be uploaded first
     const imageUpload = document.getElementById('videoImageUpload');
@@ -4078,6 +4086,7 @@ async function queueFrameEditBatch() {
         showNotification('Please enter a prompt', 'No Prompt', 'warning');
         return;
     }
+    savePromptToHistory(prompt, 'image');
     
     const steps = parseInt(document.getElementById('frameEditSteps')?.value || 4);
     const cfg = parseFloat(document.getElementById('frameEditCfg')?.value || 1.0);
@@ -7850,6 +7859,7 @@ async function queueImageBatchGeneration() {
         showNotification('Please enter a prompt', 'Missing Prompt', 'warning');
         return;
     }
+    savePromptToHistory(prompt, 'image');
     const folderPath = selectedImageBatchFolder || currentBrowserSubpath || '';
     const useOriginalSize = document.getElementById('imageBatchUseOriginalSize').checked;
     const width = parseInt(document.getElementById('imageBatchWidth').value);
@@ -7919,6 +7929,7 @@ async function queueVideoBatchGeneration() {
         showNotification('Please enter a motion prompt', 'Missing Prompt', 'warning');
         return;
     }
+    savePromptToHistory(prompt, 'video');
     
     const folderPath = selectedVideoBatchFolder || currentBrowserSubpath || '';
     if (!folderPath) {
@@ -8819,6 +8830,10 @@ async function queueBatchGeneration() {
     if (batchPreviewData.length === 0) {
         showNotification('No valid batch data to queue', 'Empty Batch', 'warning');
         return;
+    }
+    // Save each unique prompt from the batch preview to image history
+    if (Array.isArray(batchPreviewData)) {
+        batchPreviewData.forEach(item => { if (item.prompt) savePromptToHistory(item.prompt, 'image'); });
     }
     
     // Check if batch image needs to be uploaded first
@@ -12820,6 +12835,7 @@ async function sendChatMessage(messageText = null) {
         console.log('[CHAT] No message to send');
         return;
     }
+    savePromptToHistory(message, 'chat');
     
     const sessionId = currentChatSession.session_id;
     

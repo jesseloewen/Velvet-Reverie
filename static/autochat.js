@@ -675,6 +675,7 @@ async function sendManualMessage() {
     const persona = flipDisplay ? 'b' : 'a';
     
     if (!message) return;
+    savePromptToHistory(message, 'chat');
     
     try {
         const response = await fetch('/api/autochat/manual_message', {

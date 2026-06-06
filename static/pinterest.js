@@ -311,6 +311,7 @@ async function queuePinterestBatch() {
         showNotification('Enter a prompt before queueing', 'Error', 'error', 3000);
         return;
     }
+    savePromptToHistory(prompt, 'image');
     if (!pinterestScrapedFolder) {
         showNotification('No scraped folder available — run a scrape first', 'Error', 'error', 3000);
         return;

@@ -948,6 +948,7 @@ async function sendStoryMessage() {
     const message = input.value.trim();
     
     if (!message || !currentStorySession) return;
+    savePromptToHistory(message, 'chat');
     
     try {
         const response = await fetch('/api/story/message', {
