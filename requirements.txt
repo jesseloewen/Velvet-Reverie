@@ -43,3 +43,6 @@ m3u8
 tqdm
 # Perceptual hashing for duplicate image detection
 imagehash
+# YOLO object detection for content filtering (person / face detection)
+# yolo11n.pt is auto-downloaded on first use (~5 MB, cached in project root)
+ultralytics

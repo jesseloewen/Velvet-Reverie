@@ -74,8 +74,10 @@ logs/
 # Model files (optional - uncomment if you don't want to track models)
 # *.safetensors
 # *.ckpt
-# *.pt
 # *.pth
+
+# YOLO models - auto-downloaded on first use, do not commit
+models/yolo/
 
 # ComfyUI specific
 temp/

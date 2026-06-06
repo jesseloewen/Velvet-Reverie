@@ -7,6 +7,8 @@ let pinterestCurrentJobId = null;
 let pinterestPollTimer = null;
 let pinterestScrapedFolder = null;   // e.g. "pinterest/watercolor_art"
 let pinterestDedupeEnabled = false;  // mirrors #ptDedupeEnabled checkbox
+let pinterestRequirePerson = false;  // mirrors #ptRequirePerson checkbox
+let pinterestRequireFace   = false;  // mirrors #ptRequireFace checkbox
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 function initPinterest() {
@@ -62,9 +64,49 @@ function initPinterest() {
         });
     }
 
-    // Check cookies status and imagehash availability on load
+    // Content filter checkbox state tracking
+    const requirePersonCheck = document.getElementById('ptRequirePerson');
+    const requireFaceCheck   = document.getElementById('ptRequireFace');
+    if (requirePersonCheck) {
+        requirePersonCheck.addEventListener('change', () => {
+            pinterestRequirePerson = requirePersonCheck.checked;
+        });
+    }
+    if (requireFaceCheck) {
+        requireFaceCheck.addEventListener('change', () => {
+            pinterestRequireFace = requireFaceCheck.checked;
+        });
+    }
+
+    // Check cookies status, imagehash and YOLO availability on load
     checkPinterestCookies();
     _ptCheckDedupeAvailability();
+    _ptCheckYoloAvailability();
+}
+
+// ── YOLO availability check ──────────────────────────────────────────────────
+async function _ptCheckYoloAvailability() {
+    const badge = document.getElementById('ptYoloBadge');
+    if (!badge) return;
+    try {
+        const res = await fetch('/api/pinterest/yolo-available');
+        if (res.ok) {
+            const data = await res.json();
+            if (!data.available) {
+                badge.textContent = 'ultralytics not installed — content filter disabled';
+                badge.className = 'pt-badge pt-badge-warn';
+                badge.style.display = '';
+                const p = document.getElementById('ptRequirePerson');
+                const f = document.getElementById('ptRequireFace');
+                if (p) p.disabled = true;
+                if (f) f.disabled = true;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (_) {
+        // Suppress silently
+    }
 }
 
 // ── Dedup availability check ─────────────────────────────────────────────────
@@ -150,6 +192,8 @@ async function startPinterestScrape() {
     const label           = (document.getElementById('ptRenameLabel')?.value || '').trim() || null;
     const dedup           = document.getElementById('ptDedupeEnabled')?.checked || false;
     const dedupeBaseFolder= (document.getElementById('ptDedupeBaseFolder')?.value || '').trim() || null;
+    const requirePerson   = document.getElementById('ptRequirePerson')?.checked || false;
+    const requireFace     = document.getElementById('ptRequireFace')?.checked || false;
 
     // Update UI
     pinterestScrapedFolder = null;
@@ -157,6 +201,7 @@ async function startPinterestScrape() {
     _ptSetLog([]);
     _ptSetProgress(0, num);
     _ptSetDedupStats(null);
+    _ptSetContentStats(null);
     document.getElementById('ptQueueBatchBtn').disabled = true;
 
     try {
@@ -173,6 +218,8 @@ async function startPinterestScrape() {
                 rename_label: label,
                 dedup,
                 dedup_base_folder: dedupeBaseFolder,
+                require_person: requirePerson,
+                require_face: requireFace,
             }),
         });
         const data = await res.json();
@@ -214,16 +261,34 @@ async function _ptPoll() {
             _ptSetDedupStats(data.dupes_removed ?? null);
         }
 
+        // Update content filter stats whenever available
+        const noPerson = data.no_person_removed || 0;
+        const noFace   = data.no_face_removed   || 0;
+        if (noPerson > 0 || noFace > 0 || data.status === 'done') {
+            _ptSetContentStats(
+                (noPerson > 0 || noFace > 0) ? { noPerson, noFace } : null,
+                data.status === 'done'
+            );
+        }
+
         if (data.status === 'done') {
             clearInterval(pinterestPollTimer);
             _ptSetScrapeState('done');
-            const count   = data.downloaded || 0;
-            const removed = data.dupes_removed || 0;
-            const msg = removed > 0
-                ? `Downloaded ${count} unique image(s) · ${removed} duplicate(s) removed`
-                : `Downloaded ${count} image(s) from Pinterest`;
+            const count     = data.downloaded || 0;
+            const removed   = data.dupes_removed || 0;
+            const noPerson2 = data.no_person_removed || 0;
+            const noFace2   = data.no_face_removed   || 0;
+            const cfRemoved = noPerson2 + noFace2;
+            let msg = `Downloaded ${count} image(s) from Pinterest`;
+            if (removed > 0 || cfRemoved > 0) {
+                const parts = [];
+                if (removed > 0)   parts.push(`${removed} dupe(s) removed`);
+                if (cfRemoved > 0) parts.push(`${cfRemoved} filtered by content`);
+                msg = `${count} image(s) kept · ${parts.join(' · ')}`;
+            }
             showNotification(msg, 'Done', 'success', 4000);
             if (removed > 0) _ptSetDedupStats(removed);
+            if (noPerson2 > 0 || noFace2 > 0) _ptSetContentStats({ noPerson: noPerson2, noFace: noFace2 }, true);
             // Enable the queue button if we have images
             if (count > 0) {
                 document.getElementById('ptQueueBatchBtn').disabled = false;
@@ -359,6 +424,47 @@ function _ptSetDedupStats(removedCount) {
         el.querySelector('svg').setAttribute('stroke', '#22c55e');
     } else {
         text.textContent = `${removedCount} duplicate image(s) detected and removed.`;
+        el.style.background = 'rgba(239,68,68,0.08)';
+        el.style.borderColor = 'rgba(239,68,68,0.25)';
+        el.querySelector('svg').setAttribute('stroke', '#ef4444');
+    }
+    el.style.display = '';
+}
+
+function _ptSetContentStats(stats, isDone = false) {
+    const el   = document.getElementById('ptContentStats');
+    const text = document.getElementById('ptContentStatsText');
+    if (!el || !text) return;
+
+    // Check if any content filter is actually enabled
+    const personEnabled = document.getElementById('ptRequirePerson')?.checked;
+    const faceEnabled   = document.getElementById('ptRequireFace')?.checked;
+    if (!personEnabled && !faceEnabled) { el.style.display = 'none'; return; }
+
+    if (!stats) {
+        // Called with null — either reset or "ran clean" on done
+        if (!isDone) { el.style.display = 'none'; return; }
+        text.textContent = 'Content filter ran — all images passed.';
+        el.style.background = 'rgba(34,197,94,0.08)';
+        el.style.borderColor = 'rgba(34,197,94,0.3)';
+        el.querySelector('svg').setAttribute('stroke', '#22c55e');
+        el.style.display = '';
+        return;
+    }
+
+    const { noPerson = 0, noFace = 0 } = stats;
+    const total = noPerson + noFace;
+    if (total === 0) {
+        if (!isDone) { el.style.display = 'none'; return; }
+        text.textContent = 'Content filter ran — all images passed.';
+        el.style.background = 'rgba(34,197,94,0.08)';
+        el.style.borderColor = 'rgba(34,197,94,0.3)';
+        el.querySelector('svg').setAttribute('stroke', '#22c55e');
+    } else {
+        const parts = [];
+        if (noPerson > 0) parts.push(`${noPerson} had no person`);
+        if (noFace   > 0) parts.push(`${noFace} had no face`);
+        text.textContent = `Content filter removed ${total} image(s): ${parts.join(', ')}.`;
         el.style.background = 'rgba(239,68,68,0.08)';
         el.style.borderColor = 'rgba(239,68,68,0.25)';
         el.querySelector('svg').setAttribute('stroke', '#ef4444');

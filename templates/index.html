@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1049,6 +1049,31 @@
                                             </div>
 
 
+                                            <!-- Content Filter (YOLO person + face detection) -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 0.5rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                        Content Filter
+                                                    </span>
+                                                    <span id="ptYoloBadge" class="pt-badge pt-badge-warn" style="display:none;">ultralytics missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+                                                    Uses <strong>YOLO11n</strong> to detect people and <strong>OpenCV Haar cascade</strong>
+                                                    for faces. Images not meeting the selected criteria are removed.
+                                                </p>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptRequirePerson" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                                    <span>Remove images with no people</span>
+                                                </label>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptRequireFace" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"></circle><path d="M9.5 10.5c.5 1 1.5 1.5 2.5 1.5s2-.5 2.5-1.5"></path><line x1="9" y1="7.5" x2="9.01" y2="7.5"></line><line x1="15" y1="7.5" x2="15.01" y2="7.5"></line></svg>
+                                                    <span>Remove images with no visible faces</span>
+                                                </label>
+                                            </div>
+
                                             <!-- Scrape Button -->
                                             <button type="button" class="btn btn-primary" id="ptScrapeBtn" style="width: 100%; margin-bottom: 1rem;">
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
@@ -1076,6 +1101,12 @@
                                                 <span id="ptDedupStatsText"></span>
                                             </div>
 
+
+                                            <!-- Content Filter Stats -->
+                                            <div id="ptContentStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                <span id="ptContentStatsText"></span>
+                                            </div>
                                             <!-- Log -->
                                             <div class="form-group">
                                                 <label>Scrape Log</label>

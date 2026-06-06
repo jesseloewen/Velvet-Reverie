@@ -25,6 +25,7 @@ Flask-based web UI for image/video generation, AI chat, text-to-speech, with **p
 - 🖼️ **Image browser** - Browse and organize images (separated from videos)
 - 🎛️ **LoRA controls** - Three toggle switches with keyword hints (MCNL, Snofs, Male)
 - 📌 **Pinterest pipeline** - Scrape images from Pinterest search or board URLs, then batch-queue them for AI image-to-image generation
+- 🧠 **YOLO content filter** - Remove scraped images with no people or no faces using YOLOv11n + OpenCV Haar cascade detection
 - ⌨️ **Keyboard shortcuts** - Ctrl+Enter to generate, fullscreen navigation
 - 📋 **Persistent queue** - Shared across users, survives restarts, shows count badge
 - 📁 **Folder management** - Create, browse, move, delete with breadcrumbs
@@ -280,11 +281,18 @@ Pinterest requires authentication for scraping. The app uses a saved-session coo
 3. Set the number of images to scrape (default: 20)
 4. Optionally set a custom **folder name** and **rename label**
 5. Optionally filter by minimum image dimensions (width / height)
-6. Click **"Scrape Pinterest"**
-7. Watch the live progress bar and log as images download
-8. When complete, the output folder path is shown under the progress bar
+6. *(Optional)* Enable **Remove Duplicate Images** — uses pHash (imagehash) to compare every download against existing Pinterest folders and an optional reference collection. Extra rounds are fetched automatically until the requested count of unique images is collected.
+7. *(Optional)* Enable **Content Filter** options:
+   - **Remove images with no people** — uses YOLO11n (ultralytics) to detect whether at least one person is present; images with no person are deleted
+   - **Remove images with no visible faces** — uses OpenCV Haar cascade face detection; images with no detected face are deleted
+   - Both filters run after dedup in each download round. The stats banner shows how many images were removed by each filter.
+8. Click **"Download Images"**
+9. Watch the live progress bar, dedup stats banner, and content-filter stats banner as images download
+10. When complete, the output folder path is shown under the progress bar
 
 Scraped images are saved to `input/pinterest/<folder_name>/`.
+
+> **Note on YOLO model:** `yolo11n.pt` (~5 MB) is downloaded automatically from the Ultralytics GitHub release on the first run and cached in the project root. Subsequent runs load from cache instantly.
 
 #### Step 2 — Queue for Generation
 
@@ -304,6 +312,16 @@ Scraped images are saved to `input/pinterest/<folder_name>/`.
 | `.env` variable | Default | Description |
 |---|---|---|
 | `PINTEREST_COOKIES_PATH` | `pinterest_cookies.json` | Path to the Pinterest session cookies file |
+| `PINTEREST_DEDUP_BASE_FOLDER` | *(empty)* | Absolute path to an external reference image collection for dedup comparison |
+
+#### Content Filter Dependencies
+
+| Library | Purpose | Install |
+|---|---|---|
+| `ultralytics` | YOLO11n person detection | `py -m pip install ultralytics` |
+| `opencv-python` | Haar cascade face detection | Already in `requirements.txt` |
+
+Both are included in `requirements.txt`. If `ultralytics` is not installed, the **Content Filter** checkboxes are disabled with a warning badge in the UI (the rest of the Pinterest pipeline continues to work normally).
 
 ---
 
@@ -556,9 +574,11 @@ Scraped images are saved to `input/pinterest/<folder_name>/`.
 
 ### Pinterest Endpoints
 - `GET /api/pinterest/cookies-status` - Check if Pinterest cookies file exists and contains a valid session
-- `POST /api/pinterest/scrape` - Start a Pinterest scrape job (search query or board/pin URL)
-- `GET /api/pinterest/job/<job_id>` - Poll scrape job status, progress, and log lines
+- `POST /api/pinterest/scrape` - Start a Pinterest scrape job; accepts `dedup`, `dedup_base_folder`, `require_person`, `require_face`
+- `GET /api/pinterest/job/<job_id>` - Poll scrape job status, progress, log lines, `dupes_removed`, `no_person_removed`, `no_face_removed`
 - `GET /api/pinterest/jobs` - List all scrape jobs in the current session
+- `GET /api/pinterest/dedup-available` - Returns `{available: bool}` indicating whether `imagehash` is installed
+- `GET /api/pinterest/yolo-available` - Returns `{available: bool}` indicating whether `ultralytics` is installed
 - `POST /api/pinterest/queue-batch` - Queue all images from a completed scrape as generation jobs
 
 ### Core Endpoints

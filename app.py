@@ -1,4 +1,4 @@
-"""
+﻿"""
 Velvet Reverie - Flask Web UI
 """
 
@@ -6742,12 +6742,13 @@ try:
         start_scrape_thread, get_job, list_jobs, cookies_status,
         PINTEREST_COOKIES_PATH, PINTEREST_DEDUP_BASE_FOLDER,
         IMAGEHASH_AVAILABLE as PINTEREST_IMAGEHASH_AVAILABLE,
+        YOLO_AVAILABLE as PINTEREST_YOLO_AVAILABLE,
     )
     PINTEREST_AVAILABLE = True
 except ImportError as _pinterest_err:
     PINTEREST_AVAILABLE = False
     PINTEREST_IMAGEHASH_AVAILABLE = False
-    PINTEREST_DEDUP_BASE_FOLDER = ''
+    PINTEREST_YOLO_AVAILABLE = False
 
 def _safe_folder_name(text):
     import re as _re
@@ -6781,12 +6782,16 @@ def pinterest_scrape():
 
     dedup = bool(data.get('dedup', False))
     dedup_base_folder = (data.get('dedup_base_folder') or PINTEREST_DEDUP_BASE_FOLDER or '').strip()
+    require_person = bool(data.get('require_person', False))
+    require_face   = bool(data.get('require_face', False))
     if not source:
         return jsonify({'success': False, 'error': 'Source required'}), 400
     if source_type not in ('search', 'url'):
         return jsonify({'success': False, 'error': 'source_type must be search or url'}), 400
     if dedup and not PINTEREST_IMAGEHASH_AVAILABLE:
         return jsonify({'success': False, 'error': 'Dedup requires imagehash. Run: py -m pip install imagehash'}), 503
+    if require_person and not PINTEREST_YOLO_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Person filter requires ultralytics. Run: py -m pip install ultralytics'}), 503
     dedup_base_folders = []
     if dedup_base_folder:
         dedup_base_folders.append(dedup_base_folder)
@@ -6798,11 +6803,11 @@ def pinterest_scrape():
         output_dir=str(pinterest_dir), num=num,
         min_width=min_width, min_height=min_height, rename_label=rename_label,
         dedup=dedup, dedup_base_folders=dedup_base_folders or None,
+        require_person=require_person, require_face=require_face,
     )
     return jsonify({'success': True, 'job_id': job_id,
                     'folder': f'pinterest/{folder_name}', 'output_dir': str(pinterest_dir),
-                    'dedup': dedup})
-
+                    'dedup': dedup, 'require_person': require_person, 'require_face': require_face})
 
 @app.route('/api/pinterest/job/<job_id>', methods=['GET'])
 @require_auth
@@ -6830,6 +6835,15 @@ def pinterest_dedup_available():
     if not PINTEREST_AVAILABLE:
         return jsonify({'success': True, 'available': False, 'reason': 'Pinterest client not available'})
     return jsonify({'success': True, 'available': bool(PINTEREST_IMAGEHASH_AVAILABLE)})
+
+
+
+@app.route('/api/pinterest/yolo-available', methods=['GET'])
+@require_auth
+def pinterest_yolo_available():
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': True, 'available': False, 'reason': 'Pinterest client not available'})
+    return jsonify({'success': True, 'available': bool(PINTEREST_YOLO_AVAILABLE)})
 
 
 @app.route('/api/pinterest/queue-batch', methods=['POST'])
