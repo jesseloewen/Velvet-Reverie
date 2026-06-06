@@ -6,6 +6,7 @@
 let pinterestCurrentJobId = null;
 let pinterestPollTimer = null;
 let pinterestScrapedFolder = null;   // e.g. "pinterest/watercolor_art"
+let pinterestDedupeEnabled = false;  // mirrors #ptDedupeEnabled checkbox
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 function initPinterest() {
@@ -51,8 +52,48 @@ function initPinterest() {
         toggleSize();
     }
 
-    // Check cookies status on load
+    // Dedup checkbox toggle
+    const dedupeCheck = document.getElementById('ptDedupeEnabled');
+    const dedupeOpts  = document.getElementById('ptDedupeOptions');
+    if (dedupeCheck && dedupeOpts) {
+        dedupeCheck.addEventListener('change', () => {
+            pinterestDedupeEnabled = dedupeCheck.checked;
+            dedupeOpts.style.display = dedupeCheck.checked ? '' : 'none';
+        });
+    }
+
+    // Check cookies status and imagehash availability on load
     checkPinterestCookies();
+    _ptCheckDedupeAvailability();
+}
+
+// ── Dedup availability check ─────────────────────────────────────────────────
+async function _ptCheckDedupeAvailability() {
+    const badge = document.getElementById('ptDedupeBadge');
+    if (!badge) return;
+    try {
+        // Reuse the cookies-status endpoint — it returns from the same module
+        // that now exposes IMAGEHASH_AVAILABLE. Check via a scrape dry-run is
+        // overkill; instead we rely on the server responding 503 when dedup
+        // is requested without imagehash, and show the badge preemptively by
+        // asking if imagehash is available via the cookies-status response.
+        // For now, attempt a HEAD-style fetch to /api/pinterest/dedup-available.
+        const res = await fetch('/api/pinterest/dedup-available');
+        if (res.ok) {
+            const data = await res.json();
+            if (!data.available) {
+                badge.textContent = 'imagehash not installed — dedup disabled';
+                badge.className = 'pt-badge pt-badge-warn';
+                badge.style.display = '';
+                const check = document.getElementById('ptDedupeEnabled');
+                if (check) check.disabled = true;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (_) {
+        // Endpoint may not exist yet — suppress silently
+    }
 }
 
 // ── Cookies status ────────────────────────────────────────────────────────────
@@ -102,17 +143,20 @@ async function startPinterestScrape() {
         return;
     }
 
-    const num       = parseInt(document.getElementById('ptNumImages')?.value || '30');
-    const minWidth  = parseInt(document.getElementById('ptMinWidth')?.value  || '512');
-    const minHeight = parseInt(document.getElementById('ptMinHeight')?.value || '512');
-    const folderName= (document.getElementById('ptFolderName')?.value || '').trim() || null;
-    const label     = (document.getElementById('ptRenameLabel')?.value || '').trim() || null;
+    const num            = parseInt(document.getElementById('ptNumImages')?.value || '30');
+    const minWidth        = parseInt(document.getElementById('ptMinWidth')?.value  || '512');
+    const minHeight       = parseInt(document.getElementById('ptMinHeight')?.value || '512');
+    const folderName      = (document.getElementById('ptFolderName')?.value || '').trim() || null;
+    const label           = (document.getElementById('ptRenameLabel')?.value || '').trim() || null;
+    const dedup           = document.getElementById('ptDedupeEnabled')?.checked || false;
+    const dedupeBaseFolder= (document.getElementById('ptDedupeBaseFolder')?.value || '').trim() || null;
 
     // Update UI
     pinterestScrapedFolder = null;
     _ptSetScrapeState('running');
     _ptSetLog([]);
     _ptSetProgress(0, num);
+    _ptSetDedupStats(null);
     document.getElementById('ptQueueBatchBtn').disabled = true;
 
     try {
@@ -127,6 +171,8 @@ async function startPinterestScrape() {
                 min_width: minWidth,
                 min_height: minHeight,
                 rename_label: label,
+                dedup,
+                dedup_base_folder: dedupeBaseFolder,
             }),
         });
         const data = await res.json();
@@ -163,11 +209,21 @@ async function _ptPoll() {
         _ptSetLog(data.log || []);
         _ptSetProgress(data.downloaded || 0, data.num_requested || 0);
 
+        // Update dedup stats whenever available
+        if (data.dupes_removed > 0 || (data.status === 'done' && data.dupes_removed >= 0)) {
+            _ptSetDedupStats(data.dupes_removed ?? null);
+        }
+
         if (data.status === 'done') {
             clearInterval(pinterestPollTimer);
             _ptSetScrapeState('done');
-            const count = data.downloaded || 0;
-            showNotification(`Downloaded ${count} image(s) from Pinterest`, 'Done', 'success', 4000);
+            const count   = data.downloaded || 0;
+            const removed = data.dupes_removed || 0;
+            const msg = removed > 0
+                ? `Downloaded ${count} unique image(s) · ${removed} duplicate(s) removed`
+                : `Downloaded ${count} image(s) from Pinterest`;
+            showNotification(msg, 'Done', 'success', 4000);
+            if (removed > 0) _ptSetDedupStats(removed);
             // Enable the queue button if we have images
             if (count > 0) {
                 document.getElementById('ptQueueBatchBtn').disabled = false;
@@ -283,6 +339,31 @@ function _ptSetFolderDisplay(folder) {
         el.textContent = folder || 'None';
         el.style.color = folder ? 'var(--primary)' : 'var(--text-muted)';
     }
+}
+
+function _ptSetDedupStats(removedCount) {
+    const el   = document.getElementById('ptDedupStats');
+    const text = document.getElementById('ptDedupStatsText');
+    if (!el || !text) return;
+    if (removedCount === null || removedCount === undefined) {
+        el.style.display = 'none';
+        return;
+    }
+    if (removedCount === 0) {
+        // Only show if dedup was enabled, to confirm it ran clean
+        const dedupeCheck = document.getElementById('ptDedupeEnabled');
+        if (!dedupeCheck?.checked) { el.style.display = 'none'; return; }
+        text.textContent = 'Dedup ran — no duplicates found.';
+        el.style.background = 'rgba(34,197,94,0.08)';
+        el.style.borderColor = 'rgba(34,197,94,0.3)';
+        el.querySelector('svg').setAttribute('stroke', '#22c55e');
+    } else {
+        text.textContent = `${removedCount} duplicate image(s) detected and removed.`;
+        el.style.background = 'rgba(239,68,68,0.08)';
+        el.style.borderColor = 'rgba(239,68,68,0.25)';
+        el.querySelector('svg').setAttribute('stroke', '#ef4444');
+    }
+    el.style.display = '';
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────

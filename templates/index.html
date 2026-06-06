@@ -1012,6 +1012,42 @@
                                                     <input type="number" id="ptMinHeight" value="512" min="1" max="4096" class="form-control">
                                                 </div>
                                             </div>
+                                            <!-- Duplicate Detection -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 0.5rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                                        <input type="checkbox" id="ptDedupeEnabled" class="checkbox-input">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"></path></svg>
+                                                        <span>Remove Duplicate Images</span>
+                                                    </label>
+                                                    <span id="ptDedupeBadge" class="pt-badge pt-badge-warn" style="display:none;">imagehash missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.6rem 0;">
+                                                    Uses perceptual hashing (pHash) to compare each downloaded image against all
+                                                    existing Pinterest folders &amp; an optional base collection. Duplicates
+                                                    (Hamming distance &le; 4) are deleted and extra images are downloaded to
+                                                    meet your requested count.
+                                                </p>
+                                                <div id="ptDedupeOptions" style="display: none;">
+                                                    <div class="form-group" style="margin: 0;">
+                                                        <label for="ptDedupeBaseFolder" style="font-size: 0.8rem;">
+                                                            Base Folder <span style="font-weight:normal; color:var(--text-muted)">(optional — your large reference collection)</span>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            id="ptDedupeBaseFolder"
+                                                            class="form-control"
+                                                            placeholder="e.g. V:/Set01/input/media  or leave empty"
+                                                            style="font-size: 0.85rem;"
+                                                        >
+                                                        <small style="color: var(--text-muted);">
+                                                            Absolute path. All existing <code>input/pinterest/</code> subfolders are always included automatically.
+                                                            Set <code>PINTEREST_DEDUP_BASE_FOLDER</code> in <code>.env</code> to pre-fill this field.
+                                                        </small>
+                                                    </div>
+                                                </div>
+                                            </div>
+
 
                                             <!-- Scrape Button -->
                                             <button type="button" class="btn btn-primary" id="ptScrapeBtn" style="width: 100%; margin-bottom: 1rem;">
@@ -1032,6 +1068,12 @@
                                                 <div class="hw-bar" style="height: 8px; border-radius: 4px;">
                                                     <div id="ptProgressBar" class="hw-fill" style="width: 0%; transition: width 0.3s;"></div>
                                                 </div>
+                                            </div>
+
+                                            <!-- Dedup Stats -->
+                                            <div id="ptDedupStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                                <span id="ptDedupStatsText"></span>
                                             </div>
 
                                             <!-- Log -->

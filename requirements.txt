@@ -1,4 +1,4 @@
-# ── Core web framework ───────────────────────────────────────────────────────
+﻿# ── Core web framework ───────────────────────────────────────────────────────
 flask
 Werkzeug
 
@@ -41,3 +41,5 @@ requests
 Deprecated
 m3u8
 tqdm
+# Perceptual hashing for duplicate image detection
+imagehash

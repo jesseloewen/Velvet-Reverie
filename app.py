@@ -6736,16 +6736,18 @@ def get_hardware_stats():
 
 # -- Pinterest Scraper Routes --
 
+
 try:
     from pinterest_client import (
         start_scrape_thread, get_job, list_jobs, cookies_status,
-        PINTEREST_COOKIES_PATH
+        PINTEREST_COOKIES_PATH, PINTEREST_DEDUP_BASE_FOLDER,
+        IMAGEHASH_AVAILABLE as PINTEREST_IMAGEHASH_AVAILABLE,
     )
     PINTEREST_AVAILABLE = True
 except ImportError as _pinterest_err:
     PINTEREST_AVAILABLE = False
-    print(f'[Pinterest] pinterest_client not available: {_pinterest_err}')
-
+    PINTEREST_IMAGEHASH_AVAILABLE = False
+    PINTEREST_DEDUP_BASE_FOLDER = ''
 
 def _safe_folder_name(text):
     import re as _re
@@ -6776,10 +6778,18 @@ def pinterest_scrape():
     min_width = int(data.get('min_width', 512))
     min_height = int(data.get('min_height', 512))
     rename_label = (data.get('rename_label') or '').strip() or None
+
+    dedup = bool(data.get('dedup', False))
+    dedup_base_folder = (data.get('dedup_base_folder') or PINTEREST_DEDUP_BASE_FOLDER or '').strip()
     if not source:
         return jsonify({'success': False, 'error': 'Source required'}), 400
     if source_type not in ('search', 'url'):
         return jsonify({'success': False, 'error': 'source_type must be search or url'}), 400
+    if dedup and not PINTEREST_IMAGEHASH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Dedup requires imagehash. Run: py -m pip install imagehash'}), 503
+    dedup_base_folders = []
+    if dedup_base_folder:
+        dedup_base_folders.append(dedup_base_folder)
     pinterest_dir = INPUT_DIR / 'pinterest' / folder_name
     pinterest_dir.mkdir(parents=True, exist_ok=True)
     job_id = str(uuid.uuid4())
@@ -6787,9 +6797,11 @@ def pinterest_scrape():
         job_id=job_id, source_type=source_type, source=source,
         output_dir=str(pinterest_dir), num=num,
         min_width=min_width, min_height=min_height, rename_label=rename_label,
+        dedup=dedup, dedup_base_folders=dedup_base_folders or None,
     )
     return jsonify({'success': True, 'job_id': job_id,
-                    'folder': f'pinterest/{folder_name}', 'output_dir': str(pinterest_dir)})
+                    'folder': f'pinterest/{folder_name}', 'output_dir': str(pinterest_dir),
+                    'dedup': dedup})
 
 
 @app.route('/api/pinterest/job/<job_id>', methods=['GET'])
@@ -6810,6 +6822,14 @@ def pinterest_list_jobs():
         return jsonify({'success': False, 'error': 'Pinterest client not available'}), 503
     jobs = list(reversed(list_jobs()))
     return jsonify({'success': True, 'jobs': jobs})
+
+
+@app.route('/api/pinterest/dedup-available', methods=['GET'])
+@require_auth
+def pinterest_dedup_available():
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': True, 'available': False, 'reason': 'Pinterest client not available'})
+    return jsonify({'success': True, 'available': bool(PINTEREST_IMAGEHASH_AVAILABLE)})
 
 
 @app.route('/api/pinterest/queue-batch', methods=['POST'])
