@@ -1,4 +1,4 @@
-﻿"""
+"""
 pinterest_client.py - Pinterest scraper for Velvet Reverie.
 
 Downloads images from a Pinterest board/pin URL or search query.
@@ -13,6 +13,7 @@ Dependencies:
 import os
 import re
 import json
+import time
 import threading
 from pathlib import Path
 from dotenv import load_dotenv
@@ -290,7 +291,15 @@ def _load_cookies_path() -> str | None:
 
 
 def _build_api(verbose: bool = False):
-    """Build a PinterestDL API instance, injecting cookies when available."""
+    """Build a PinterestDL API instance, injecting cookies when available.
+
+    Tuned for resilience against Pinterest's empty-response / rate-limit
+    behaviour:
+      - timeout=15   : generous per-request timeout (Pinterest can be slow)
+      - max_retries=5: each batch retried up to 5× with exponential back-off
+      - retry_delay=2: initial back-off; doubles each attempt
+                       (2 s → 4 s → 8 s → 16 s → 32 s before giving up)
+    """
     try:
         from pinterest_dl import PinterestDL
     except ImportError:
@@ -300,7 +309,13 @@ def _build_api(verbose: bool = False):
         )
 
     cookies_path = _load_cookies_path()
-    api = PinterestDL.with_api(timeout=5, verbose=verbose, ensure_alt=False)
+    api = PinterestDL.with_api(
+        timeout=15,
+        verbose=verbose,
+        ensure_alt=False,
+        max_retries=5,
+        retry_delay=2.0,
+    )
     if cookies_path:
         api = api.with_cookies_path(cookies_path)
     return api, cookies_path is not None
@@ -509,17 +524,18 @@ def run_scrape(
     Execute scrape in a background thread.
     Updates job dict in-place; caller can poll get_job(job_id).
 
-    When dedup=True the function:
-      1. Downloads a batch of images.
-      2. Runs perceptual-hash dedup against base_folders + all existing
-         pinterest subfolders + images already kept in this run.
-      3. Deletes duplicates from disk.
-      4. Repeats until `num` unique images have been collected or Pinterest
-         has no more results to give.
+    Strategy
+    --------
+    pinterest-dl's search() / scrape() each create a fresh Api object and
+    fresh BookmarkManager on every call, so they always start from page 1.
+    Making multiple calls therefore returns the same images every time —
+    pHash dedup would kill all of them as duplicates, creating an infinite
+    zero-keeper loop.
 
-    When require_person=True or require_face=True, content filtering
-    (YOLO person detection + OpenCV face detection) is applied after dedup
-    in each round, removing images that don't meet the criteria.
+    The correct approach is a SINGLE large API call asking for an overshoot
+    batch (num + headroom for expected filter losses), then running dedup
+    and content filtering locally on what came back.  No Pinterest re-calls
+    are made after the initial download — all filtering happens on disk.
     """
     job = _create_job(job_id, source, num, output_dir)
 
@@ -537,213 +553,141 @@ def run_scrape(
             if require_face:
                 filters.append("require face")
             _log(job, f"Content filter: {', '.join(filters)}")
-        _log(job, f"Target: {num} unique images → {output_dir}")
 
-        cache_path = str(out_path / ".scrape_cache.json")
-
-        # Decide which engines are active
         use_dedup = dedup and IMAGEHASH_AVAILABLE and PIL_AVAILABLE
         use_cf    = (require_person or require_face) and YOLO_AVAILABLE
-        use_loop  = use_dedup or use_cf
 
         if dedup and not use_dedup:
             _log(job, "WARNING: imagehash/Pillow unavailable — dedup disabled")
         if (require_person or require_face) and not YOLO_AVAILABLE:
             _log(job, "WARNING: ultralytics not installed — content filter disabled")
 
-        if not use_loop:
-            # ── Simple path: one download, no filtering loop ──────────────
-            if source_type == "search":
-                images = api.search_and_download(
-                    query=source,
-                    output_dir=output_dir,
-                    num=num,
-                    min_resolution=(min_width, min_height),
-                    cache_path=cache_path,
-                    caption="none",
-                    delay=delay,
-                )
-            else:
-                images = api.scrape_and_download(
-                    url=source,
-                    output_dir=output_dir,
-                    num=num,
-                    min_resolution=(min_width, min_height),
-                    cache_path=cache_path,
-                    caption="none",
-                    delay=delay,
-                )
-            images = images or []
-            job["downloaded"] = len(images)
-            _log(job, f"Downloaded {len(images)} image(s)")
-
+        # ── Overshoot calculation ─────────────────────────────────────────
+        # Ask Pinterest for more than `num` to leave room for images that
+        # will be discarded by dedup / content filtering.
+        #   • +50 % headroom when only one filter is active
+        #   • +100 % (2×) when both filters are active (losses compound)
+        # Minimum overshoot is always at least `num` + 10 images.
+        if use_dedup and use_cf:
+            fetch_n = max(num * 2, num + 20)
+        elif use_dedup or use_cf:
+            fetch_n = max(int(num * 1.5), num + 10)
         else:
-            # ── Loop path: keep fetching until num images pass all filters ──
-            #
-            # Handles dedup, content filter, or both together.
-            # Content-filtered images count exactly like duplicates — they
-            # are removed and the loop continues fetching more from Pinterest
-            # until the requested count is satisfied or results run out.
-            #
-            # The .scrape_cache.json is deleted before every round so
-            # pinterest-dl fetches fresh URLs rather than skipping everything
-            # it already saw.  We enforce uniqueness ourselves via pHash.
+            fetch_n = num
 
-            # Build pHash base registry from external + sibling folders
+        _log(job, f"Fetching {fetch_n} image(s) from Pinterest (target after filtering: {num})…")
+
+        cache_file = out_path / ".scrape_cache.json"
+
+        # ── Single Pinterest API call ─────────────────────────────────────
+        if source_type == "search":
+            all_images = api.search_and_download(
+                query=source,
+                output_dir=output_dir,
+                num=fetch_n,
+                min_resolution=(min_width, min_height),
+                cache_path=str(cache_file),
+                caption="none",
+                delay=delay,
+            ) or []
+        else:
+            all_images = api.scrape_and_download(
+                url=source,
+                output_dir=output_dir,
+                num=fetch_n,
+                min_resolution=(min_width, min_height),
+                cache_path=str(cache_file),
+                caption="none",
+                delay=delay,
+            ) or []
+
+        raw_count = len(all_images)
+        _log(job, f"Pinterest returned {raw_count} image(s)")
+        job["downloaded"] = raw_count
+        job["progress"]   = raw_count
+
+        if raw_count == 0:
+            _log(job, "No images returned — check your URL/query and cookies.")
+            job["status"]   = "done"
+            job["progress"] = num
+            _log(job, "Done.")
+
+            # Clean up cache
+            if cache_file.exists():
+                cache_file.unlink()
+            return
+
+        # Build the set of paths that were actually downloaded
+        all_paths = {
+            Path(m.local_path)
+            for m in all_images
+            if m.local_path and Path(m.local_path).exists()
+        }
+
+        # ── Step 1: pHash dedup ───────────────────────────────────────────
+        total_dedup_removed = 0
+        if use_dedup and all_paths:
+            _log(job, "Running duplicate detection…")
+
+            # Build base registry from external + sibling folders
             extra_base: list[Path] = []
-            if use_dedup:
-                if dedup_base_folders:
-                    for bf in dedup_base_folders:
-                        p = Path(bf)
-                        if p.exists():
-                            extra_base.append(p)
-                pinterest_root = out_path.parent
-                if pinterest_root.exists():
-                    for sibling in pinterest_root.iterdir():
-                        if sibling.is_dir() and sibling != out_path:
-                            extra_base.append(sibling)
-
-            total_dedup_removed = 0   # cumulative pHash duplicates removed
-            total_cf_removed    = 0   # cumulative content-filter removals
-            unique_kept         = 0
-            round_num           = 0
-            max_rounds          = 15  # safety cap
+            if dedup_base_folders:
+                for bf in dedup_base_folders:
+                    p = Path(bf)
+                    if p.exists():
+                        extra_base.append(p)
+            pinterest_root = out_path.parent
+            if pinterest_root.exists():
+                for sibling in pinterest_root.iterdir():
+                    if sibling.is_dir() and sibling != out_path:
+                        extra_base.append(sibling)
 
             persistent_base = _build_hash_registry(
                 extra_base, log_fn=lambda m: _log(job, m)
-            ) if use_dedup else {}
+            )
 
-            # Pre-count/pre-hash files already in the output folder from a
-            # previous partial run so they are never re-processed
-            existing_files = [
-                fp for fp in out_path.iterdir()
-                if fp.is_file() and fp.suffix.lower() in _IMAGE_EXTS
-            ]
-            if existing_files:
-                if use_dedup:
-                    _log(job, f"Pre-hashing {len(existing_files)} existing file(s)…")
-                    for fp in existing_files:
-                        h = _get_image_hash(fp)
-                        if h is not None:
-                            h_str = str(h)
-                            if h_str not in persistent_base:
-                                persistent_base[h_str] = []
-                            persistent_base[h_str].append(str(fp))
-                else:
-                    _log(job, f"Found {len(existing_files)} existing file(s) in output folder.")
-                unique_kept = len(existing_files)
+            ds = _dedup_paths(
+                image_paths=all_paths,
+                registry=persistent_base,
+                threshold=DEDUP_THRESHOLD,
+                log_fn=lambda m: _log(job, m),
+            )
+            total_dedup_removed    = ds["removed"]
+            job["dupes_removed"]   = total_dedup_removed
+            _log(job, f"Dedup: {ds['scanned']} scanned, "
+                      f"{total_dedup_removed} removed, {ds['kept']} kept")
 
-            while unique_kept < num and round_num < max_rounds:
-                round_num  += 1
-                still_need  = num - unique_kept
-                # Overshoot fetch to compensate for expected dedup + CF losses.
-                # After round 1 the total removals give a good estimate of the
-                # loss rate; before round 1 use a small head-start of 5.
-                total_all_removed = total_dedup_removed + total_cf_removed
-                fetch_n = still_need + max(total_all_removed, 5)
-                _log(job, f"Round {round_num}: need {still_need} more image(s), "
-                          f"requesting {fetch_n} from Pinterest…")
+        # ── Step 2: content filter ────────────────────────────────────────
+        total_cf_removed = 0
+        if use_cf:
+            surviving = {fp for fp in all_paths if fp.exists()}
+            if surviving:
+                _log(job, f"Running content filter on {len(surviving)} image(s)…")
+                cf = _filter_by_content(
+                    surviving,
+                    require_person=require_person,
+                    require_face=require_face,
+                    log_fn=lambda m: _log(job, m),
+                )
+                job["no_person_removed"] = cf["no_person_removed"]
+                job["no_face_removed"]   = cf["no_face_removed"]
+                total_cf_removed = cf["no_person_removed"] + cf["no_face_removed"]
+                _log(job, f"Content filter: {total_cf_removed} removed "
+                          f"(no person: {cf['no_person_removed']}, "
+                          f"no face: {cf['no_face_removed']}), "
+                          f"{cf['kept']} kept")
 
-                # Clear scrape cache so Pinterest returns fresh results
-                cache_file = out_path / ".scrape_cache.json"
-                if cache_file.exists():
-                    cache_file.unlink()
-                    _log(job, f"  Cache cleared for round {round_num}")
+        # Final count of what survived all filters
+        final_paths = [fp for fp in all_paths if fp.exists()]
+        kept_count = len(final_paths)
+        job["downloaded"] = kept_count
+        job["progress"]   = num
+        _log(job, f"After filtering: {kept_count}/{raw_count} image(s) kept "
+                  f"(-{total_dedup_removed} dupes, -{total_cf_removed} cf)")
 
-                if source_type == "search":
-                    new_images = api.search_and_download(
-                        query=source,
-                        output_dir=output_dir,
-                        num=fetch_n,
-                        min_resolution=(min_width, min_height),
-                        cache_path=str(cache_file),
-                        caption="none",
-                        delay=delay,
-                    ) or []
-                else:
-                    new_images = api.scrape_and_download(
-                        url=source,
-                        output_dir=output_dir,
-                        num=fetch_n,
-                        min_resolution=(min_width, min_height),
-                        cache_path=str(cache_file),
-                        caption="none",
-                        delay=delay,
-                    ) or []
-
-                if not new_images:
-                    _log(job, f"Round {round_num}: Pinterest returned no more images")
-                    break
-
-                new_paths = {
-                    Path(m.local_path)
-                    for m in new_images
-                    if m.local_path and Path(m.local_path).exists()
-                }
-                _log(job, f"Round {round_num}: {len(new_paths)} image(s) fetched")
-
-                # ── Step 1: pHash dedup ───────────────────────────────────
-                round_dedup_removed = 0
-                if use_dedup and new_paths:
-                    ds = _dedup_paths(
-                        image_paths=new_paths,
-                        registry=persistent_base,
-                        threshold=DEDUP_THRESHOLD,
-                        log_fn=lambda m: _log(job, m),
-                    )
-                    round_dedup_removed  = ds["removed"]
-                    total_dedup_removed += round_dedup_removed
-                    job["dupes_removed"] = total_dedup_removed
-                    if round_dedup_removed:
-                        _log(job, f"  Dedup removed {round_dedup_removed} duplicate(s)")
-
-                # ── Step 2: content filter ────────────────────────────────
-                # Run on whatever survived dedup this round.
-                # Removed images are NOT counted toward unique_kept so the
-                # while-loop condition keeps the search going.
-                round_cf_removed = 0
-                if use_cf:
-                    surviving = {fp for fp in new_paths if fp.exists()}
-                    if surviving:
-                        cf = _filter_by_content(
-                            surviving,
-                            require_person=require_person,
-                            require_face=require_face,
-                            log_fn=lambda m: _log(job, m),
-                        )
-                        job["no_person_removed"] += cf["no_person_removed"]
-                        job["no_face_removed"]   += cf["no_face_removed"]
-                        round_cf_removed  = cf["no_person_removed"] + cf["no_face_removed"]
-                        total_cf_removed += round_cf_removed
-                        if round_cf_removed:
-                            _log(job, f"  Content filter removed {round_cf_removed} "
-                                      f"(no person: {cf['no_person_removed']}, "
-                                      f"no face: {cf['no_face_removed']})")
-
-                # Count only images that physically survived both passes
-                round_kept   = sum(1 for fp in new_paths if fp.exists())
-                unique_kept += round_kept
-
-                job["downloaded"] = unique_kept
-                job["progress"]   = unique_kept
-                _log(job, f"Round {round_num}: +{round_kept} kept "
-                          f"({unique_kept}/{num} total | "
-                          f"-{round_dedup_removed} dupe, -{round_cf_removed} cf)")
-
-                if round_kept == 0:
-                    _log(job, "Round produced zero keepers — "
-                              "Pinterest may have no more fresh results.")
-                    break
-
-            job["downloaded"] = unique_kept
-            _log(job, f"Loop done: {unique_kept} image(s) kept across "
-                      f"{round_num} round(s) "
-                      f"(-{total_dedup_removed} dupes, -{total_cf_removed} cf)")
-
-            # Clean up scrape cache
-            final_cache = out_path / ".scrape_cache.json"
-            if final_cache.exists():
-                final_cache.unlink()
+        # Clean up cache
+        if cache_file.exists():
+            cache_file.unlink()
 
         # ── Rename files ───────────────────────────────────────────────────
         # Collect whatever images are actually on disk now
