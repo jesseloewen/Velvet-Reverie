@@ -453,6 +453,9 @@ function ptOpenInImageBatch() {
     selectedImageBatchFolder = subpath;
     const display = document.getElementById('imageBatchFolderDisplay');
     if (display) display.textContent = subpath;
+    // Auto-fill output folder to match the pinterest folder name
+    const outFolder = document.getElementById('imageBatchSubfolder');
+    if (outFolder) outFolder.value = folderName;
     switchTab('image-batch');
     showNotification('Folder "' + folderName + '" loaded in Image Batch', 'Image Batch', 'success', 3000);
 }
@@ -471,6 +474,9 @@ function ptOpenInVideoBatch() {
     selectedVideoBatchFolder = subpath;
     const display = document.getElementById('videoBatchFolderDisplay');
     if (display) display.textContent = subpath;
+    // Auto-fill output folder to match the pinterest folder name
+    const outFolder = document.getElementById('videoBatchSubfolder');
+    if (outFolder) outFolder.value = folderName;
     switchTab('video-batch');
     showNotification('Folder "' + folderName + '" loaded in Video Batch', 'Video Batch', 'success', 3000);
 }
