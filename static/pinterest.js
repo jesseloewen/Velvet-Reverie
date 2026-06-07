@@ -76,6 +76,7 @@ function initPinterest() {
     _ptCheckDedupeAvailability();
     _ptCheckYoloAvailability();
     ptRefreshFolders();
+    ptRefreshBatchFolders();
 }
 
 // ── YOLO availability check ──────────────────────────────────────────────────
@@ -404,6 +405,75 @@ function _ptSetContentStats(stats, isDone = false) {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', initPinterest);
+
+// ── Open in Batch ────────────────────────────────────────────────────────────
+/**
+ * Populate the "Open in Batch" folder dropdown — reuses the same API endpoint
+ * as the Process section but targets a separate <select> element.
+ */
+async function ptRefreshBatchFolders() {
+    const sel = document.getElementById('ptBatchFolder');
+    if (!sel) return;
+    try {
+        const res = await fetch('/api/pinterest/list-folders');
+        if (!res.ok) return;
+        const data = await res.json();
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">&mdash; choose a folder &mdash;</option>';
+        (data.folders || []).forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f;
+            opt.textContent = f;
+            if (f === prev) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        if (!data.folders || data.folders.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.disabled = true;
+            opt.textContent = 'No folders found in input/pinterest/';
+            sel.appendChild(opt);
+        }
+    } catch (_) { /* Suppress silently */ }
+}
+
+/**
+ * Set the selected folder on the Image Batch tab and switch to it.
+ * Pinterest folders live at input/pinterest/<name>, so the subpath is
+ * "pinterest/<name>" (matching how the image browser sets selectedImageBatchFolder).
+ */
+function ptOpenInImageBatch() {
+    const folderName = document.getElementById('ptBatchFolder')?.value || '';
+    if (!folderName) {
+        showNotification('Select a folder first', 'Error', 'error', 3000);
+        return;
+    }
+    const subpath = 'pinterest/' + folderName;
+    // Set the Image Batch selected folder (global defined in script.js)
+    selectedImageBatchFolder = subpath;
+    const display = document.getElementById('imageBatchFolderDisplay');
+    if (display) display.textContent = subpath;
+    switchTab('image-batch');
+    showNotification('Folder "' + folderName + '" loaded in Image Batch', 'Image Batch', 'success', 3000);
+}
+
+/**
+ * Set the selected folder on the Video Batch tab and switch to it.
+ */
+function ptOpenInVideoBatch() {
+    const folderName = document.getElementById('ptBatchFolder')?.value || '';
+    if (!folderName) {
+        showNotification('Select a folder first', 'Error', 'error', 3000);
+        return;
+    }
+    const subpath = 'pinterest/' + folderName;
+    // Set the Video Batch selected folder (global defined in script.js)
+    selectedVideoBatchFolder = subpath;
+    const display = document.getElementById('videoBatchFolderDisplay');
+    if (display) display.textContent = subpath;
+    switchTab('video-batch');
+    showNotification('Folder "' + folderName + '" loaded in Video Batch', 'Video Batch', 'success', 3000);
+}
 
 // ── Folder list ───────────────────────────────────────────────────────────────
 async function ptRefreshFolders() {
