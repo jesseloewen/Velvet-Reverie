@@ -6,6 +6,7 @@ from flask import Flask, render_template, request, jsonify, send_file, send_from
 from comfyui_client import ComfyUIClient
 from ollama_client import OllamaClient
 from gradio_tts_client import GradioTTSClient
+from media_index import MediaIndex
 import os
 import json
 import time
@@ -131,6 +132,10 @@ DATA_DIR.mkdir(exist_ok=True)
 THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 TTS_AUDIO_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Smart media index (built once from metadata.json, then kept in sync) ──────
+# Replaces per-request full-JSON scans with O(1) directory lookups.
+media_index = MediaIndex(METADATA_FILE, OUTPUT_DIR)
 
 # Global queue and status
 generation_queue = []
@@ -413,19 +418,31 @@ def cleanup_staged_input_files(staged_files):
 
 
 def load_metadata():
-    """Load image metadata from file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
-    if METADATA_FILE.exists():
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return []
+    """
+    Return all metadata entries from the in-memory index.
+    The index is built once from disk at startup and kept in sync on every
+    write, so this call is O(n) copy with zero disk I/O.
+    """
+    return media_index.get_all()
 
 
 def save_metadata(metadata):
-    """Save image metadata to file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
+    """
+    Persist the metadata list to disk AND synchronise the in-memory index.
+
+    Callers that built the list themselves (e.g. TTS batch) pass it in;
+    the index is rebuilt from that list so it stays consistent.
+    We write the file only when the index is dirty (state changed since last
+    save) or when the caller explicitly supplies a new list.
+    """
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    # Re-index from the supplied list so the index matches exactly what is
+    # being persisted.  This handles callers that mutate the list directly
+    # (e.g. delete_metadata_entry which filters entries out of the list).
+    media_index.rebuild_from_list(metadata)
     with open(METADATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2)
+    media_index.mark_clean()
 
 
 # ===== Video Thumbnail Generation =====
@@ -638,21 +655,25 @@ def get_unique_filename(target_path: Path) -> Path:
 
 
 def update_metadata_path(old_path: str, new_path: str):
-    """Update metadata when a file is moved"""
-    metadata = load_metadata()
-    for entry in metadata:
-        if entry.get('path') == old_path:
-            entry['path'] = new_path
-            entry['filename'] = os.path.basename(new_path)
-            break
-    save_metadata(metadata)
+    """Update metadata when a file is moved – index-first, then persist."""
+    # Update the index in O(1); only write JSON if the entry was actually found.
+    if media_index.update_path(old_path, new_path):
+        _flush_index_to_disk()
 
 
 def delete_metadata_entry(file_path: str):
-    """Remove metadata entry when file is deleted"""
-    metadata = load_metadata()
-    metadata = [entry for entry in metadata if entry.get('path') != file_path]
-    save_metadata(metadata)
+    """Remove metadata entry when file is deleted – index-first, then persist."""
+    if media_index.remove_by_path(file_path):
+        _flush_index_to_disk()
+
+
+def _flush_index_to_disk():
+    """Write the current index state to metadata.json without a full rebuild."""
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    entries = media_index.get_all()
+    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(entries, f, indent=2)
+    media_index.mark_clean()
 
 
 def load_chats():
@@ -1130,8 +1151,10 @@ def add_metadata_entry(image_path, prompt, width, height, steps, seed, file_pref
         entry["max_chars"] = chunk_size if chunk_size is not None else 300
         entry["silence_ms"] = 100  # Not used in Gradio API, but keep for compatibility
     
-    metadata.append(entry)
-    save_metadata(metadata)
+        # Push into the index first (O(1), no disk I/O)
+    media_index.add(entry)
+    # Persist to disk asynchronously so callers are not blocked by the write
+    _flush_index_to_disk()
     return entry
 
 
@@ -2908,6 +2931,10 @@ Session name:"""
 
 
 # Load persisted queue state before starting queue processor
+# ── Build the media index before anything else reads metadata ──────────────────
+print("Building media index...")
+media_index.rebuild()
+
 print("Loading queue state...")
 loaded_queue, loaded_completed, loaded_active = load_queue_state()
 generation_queue = loaded_queue
@@ -5085,40 +5112,18 @@ def browse_folder():
                 })
             folders.append(folder_entry)
     
-    # Get files, optionally merged with metadata.
+        # Get files – use the in-memory index for an O(1) directory lookup.
     files = []
     if with_metadata:
-        metadata = load_metadata()
-        for entry in metadata:
-            entry_path_str = entry['path']
-            entry_path = Path(entry_path_str)
-
+        # Index lookup: instant – no disk I/O, no full-JSON scan.
+        raw_entries = media_index.get_files_in_dir(current_dir)
+        for entry in raw_entries:
             # Skip audio files in image/video browsers
-            if entry_path.suffix.lower() in audio_extensions:
+            rel = entry.get('relative_path', entry.get('path', ''))
+            ext = Path(rel).suffix.lower()
+            if ext in audio_extensions:
                 continue
-
-            # Convert to absolute path for comparison
-            if entry_path.is_absolute():
-                entry_abs_path = entry_path
-            else:
-                # Path might start with "outputs" or "outputs\\" - handle both cases
-                entry_abs_path = OUTPUT_DIR / entry_path
-                if not entry_abs_path.exists():
-                    # Try removing "outputs" prefix from the path
-                    path_parts = entry_path.parts
-                    if path_parts and path_parts[0].lower() == 'outputs':
-                        entry_path = Path(*path_parts[1:])
-                        entry_abs_path = OUTPUT_DIR / entry_path
-
-            # Check if file is in current directory
-            if entry_abs_path.exists() and entry_abs_path.parent == current_dir:
-                entry['type'] = 'file'
-                # Store relative path without "outputs" prefix - use forward slashes for web
-                try:
-                    entry['relative_path'] = str(entry_abs_path.relative_to(OUTPUT_DIR)).replace('\\', '/')
-                except ValueError:
-                    entry['relative_path'] = str(entry_path).replace('\\', '/')
-                files.append(entry)
+            files.append(entry)
     else:
         for item in current_dir.iterdir():
             if not item.is_file():

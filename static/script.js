@@ -5954,8 +5954,8 @@ async function browseFolder(path) {
             }
         }
 
-        // Quick fetch: render thumbnails first without recursive counts or metadata join.
-        const quickResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images&with_counts=0&with_metadata=0`, {
+                // Quick fetch: include metadata (prompts) immediately; skip slow folder counts.
+        const quickResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images&with_counts=0&with_metadata=1`, {
             signal: browseFolderAbortController.signal
         });
         const quickData = await quickResponse.json();
@@ -5999,9 +5999,9 @@ async function browseFolder(path) {
         quickRenderCompleted = true;
         setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', false);
 
-        // Background details fetch: populate counts and metadata after initial thumbnails are visible.
+                                        // Background details fetch: populate folder counts only (metadata already shown in first pass).
         setBrowserTopLoadingStatus('breadcrumb', 'browserBreadcrumbLoadingStatus', true, 'Loading details...');
-        const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images`, {
+        const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images&with_metadata=0`, {
             signal: browseFolderAbortController.signal
         });
         const data = await detailsResponse.json();
@@ -8336,8 +8336,8 @@ async function loadVideos(path) {
             }
         }
 
-        // Quick fetch: show first thumbnails/cards ASAP.
-        const quickResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=videos&with_counts=0&with_metadata=0`, {
+                // Quick fetch: include metadata (prompts) immediately; skip slow folder counts.
+        const quickResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=videos&with_counts=0&with_metadata=1`, {
             signal: videosAbortController.signal
         });
         const quickData = await quickResponse.json();
@@ -8383,9 +8383,9 @@ async function loadVideos(path) {
         quickRenderCompleted = true;
         setLoadingOverlay('videosGrid', 'videosGridLoadingOverlay', false);
 
-        // Background fetch: enrich metadata/counts while cards are already visible.
+                                        // Background fetch: populate folder counts only (metadata already shown in first pass).
         setBrowserTopLoadingStatus('videosBreadcrumb', 'videosBreadcrumbLoadingStatus', true, 'Loading details...');
-        const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=videos`, {
+        const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=videos&with_metadata=0`, {
             signal: videosAbortController.signal
         });
         const data = await detailsResponse.json();
