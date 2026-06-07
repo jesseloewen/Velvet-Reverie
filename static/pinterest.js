@@ -1,14 +1,17 @@
 /**
- * pinterest.js – Pinterest scrape + queue-batch logic for Velvet Reverie.
+ * pinterest.js – Pinterest download + folder processing logic for Velvet Reverie.
  */
 
 // ── State ────────────────────────────────────────────────────────────────────
+// Download section
 let pinterestCurrentJobId = null;
 let pinterestPollTimer = null;
-let pinterestScrapedFolder = null;   // e.g. "pinterest/watercolor_art"
-let pinterestDedupeEnabled = false;  // mirrors #ptDedupeEnabled checkbox
-let pinterestRequirePerson = false;  // mirrors #ptRequirePerson checkbox
-let pinterestRequireFace   = false;  // mirrors #ptRequireFace checkbox
+let pinterestDedupeEnabled = false;
+let pinterestRequirePerson = false;
+let pinterestRequireFace   = false;
+// Process section
+let ptProcessJobId     = null;
+let ptProcessPollTimer = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 function initPinterest() {
@@ -31,28 +34,6 @@ function initPinterest() {
     // Scrape button
     const scrapeBtn = document.getElementById('ptScrapeBtn');
     if (scrapeBtn) scrapeBtn.addEventListener('click', startPinterestScrape);
-
-    // Queue batch button
-    const queueBtn = document.getElementById('ptQueueBatchBtn');
-    if (queueBtn) queueBtn.addEventListener('click', queuePinterestBatch);
-
-    // Size mode radios
-    const origSize   = document.getElementById('ptUseOriginalSize');
-    const customSize = document.getElementById('ptUseCustomSize');
-    const wGroup     = document.getElementById('ptWidthGroup');
-    const hGroup     = document.getElementById('ptHeightGroup');
-    if (origSize && customSize) {
-        const toggleSize = () => {
-            const custom = customSize.checked;
-            wGroup.querySelector('input').disabled = !custom;
-            hGroup.querySelector('input').disabled = !custom;
-            wGroup.style.opacity = custom ? '1' : '0.5';
-            hGroup.style.opacity = custom ? '1' : '0.5';
-        };
-        origSize.addEventListener('change', toggleSize);
-        customSize.addEventListener('change', toggleSize);
-        toggleSize();
-    }
 
     // Dedup checkbox toggle
     const dedupeCheck = document.getElementById('ptDedupeEnabled');
@@ -78,64 +59,91 @@ function initPinterest() {
         });
     }
 
+    // Process folder section
+    const processBtn = document.getElementById('ptProcessBtn');
+    if (processBtn) processBtn.addEventListener('click', startPtProcessFolder);
+
+    const procDedupeCheck = document.getElementById('ptProcDedupeEnabled');
+    const procDedupeOpts  = document.getElementById('ptProcDedupeOptions');
+    if (procDedupeCheck && procDedupeOpts) {
+        procDedupeCheck.addEventListener('change', () => {
+            procDedupeOpts.style.display = procDedupeCheck.checked ? '' : 'none';
+        });
+    }
+
     // Check cookies status, imagehash and YOLO availability on load
     checkPinterestCookies();
     _ptCheckDedupeAvailability();
     _ptCheckYoloAvailability();
+    ptRefreshFolders();
 }
 
 // ── YOLO availability check ──────────────────────────────────────────────────
 async function _ptCheckYoloAvailability() {
-    const badge = document.getElementById('ptYoloBadge');
-    if (!badge) return;
     try {
         const res = await fetch('/api/pinterest/yolo-available');
-        if (res.ok) {
-            const data = await res.json();
-            if (!data.available) {
+        if (!res.ok) return;
+        const data = await res.json();
+        const unavailable = !data.available;
+        // Download section badge
+        const badge = document.getElementById('ptYoloBadge');
+        if (badge) {
+            if (unavailable) {
                 badge.textContent = 'ultralytics not installed — content filter disabled';
                 badge.className = 'pt-badge pt-badge-warn';
                 badge.style.display = '';
-                const p = document.getElementById('ptRequirePerson');
-                const f = document.getElementById('ptRequireFace');
-                if (p) p.disabled = true;
-                if (f) f.disabled = true;
-            } else {
-                badge.style.display = 'none';
-            }
+                ['ptRequirePerson', 'ptRequireFace'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.disabled = true;
+                });
+            } else { badge.style.display = 'none'; }
         }
-    } catch (_) {
-        // Suppress silently
-    }
+        // Process section badge
+        const procBadge = document.getElementById('ptProcYoloBadge');
+        if (procBadge) {
+            if (unavailable) {
+                procBadge.textContent = 'ultralytics not installed — content filter disabled';
+                procBadge.className = 'pt-badge pt-badge-warn';
+                procBadge.style.display = '';
+                ['ptProcRequirePerson', 'ptProcRequireFace'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.disabled = true;
+                });
+            } else { procBadge.style.display = 'none'; }
+        }
+    } catch (_) { /* Suppress silently */ }
 }
 
 // ── Dedup availability check ─────────────────────────────────────────────────
 async function _ptCheckDedupeAvailability() {
-    const badge = document.getElementById('ptDedupeBadge');
-    if (!badge) return;
     try {
-        // Reuse the cookies-status endpoint — it returns from the same module
-        // that now exposes IMAGEHASH_AVAILABLE. Check via a scrape dry-run is
-        // overkill; instead we rely on the server responding 503 when dedup
-        // is requested without imagehash, and show the badge preemptively by
-        // asking if imagehash is available via the cookies-status response.
-        // For now, attempt a HEAD-style fetch to /api/pinterest/dedup-available.
         const res = await fetch('/api/pinterest/dedup-available');
-        if (res.ok) {
-            const data = await res.json();
-            if (!data.available) {
+        if (!res.ok) return;
+        const data = await res.json();
+        const unavailable = !data.available;
+        // Download section badge
+        const badge = document.getElementById('ptDedupeBadge');
+        if (badge) {
+            if (unavailable) {
                 badge.textContent = 'imagehash not installed — dedup disabled';
                 badge.className = 'pt-badge pt-badge-warn';
                 badge.style.display = '';
                 const check = document.getElementById('ptDedupeEnabled');
                 if (check) check.disabled = true;
-            } else {
-                badge.style.display = 'none';
-            }
+            } else { badge.style.display = 'none'; }
         }
-    } catch (_) {
-        // Endpoint may not exist yet — suppress silently
-    }
+        // Process section badge
+        const procBadge = document.getElementById('ptProcDedupeBadge');
+        if (procBadge) {
+            if (unavailable) {
+                procBadge.textContent = 'imagehash not installed — dedup disabled';
+                procBadge.className = 'pt-badge pt-badge-warn';
+                procBadge.style.display = '';
+                const check2 = document.getElementById('ptProcDedupeEnabled');
+                if (check2) check2.disabled = true;
+            } else { procBadge.style.display = 'none'; }
+        }
+    } catch (_) { /* Suppress silently */ }
 }
 
 // ── Cookies status ────────────────────────────────────────────────────────────
@@ -196,13 +204,11 @@ async function startPinterestScrape() {
     const requireFace     = document.getElementById('ptRequireFace')?.checked || false;
 
     // Update UI
-    pinterestScrapedFolder = null;
     _ptSetScrapeState('running');
     _ptSetLog([]);
     _ptSetProgress(0, num);
     _ptSetDedupStats(null);
     _ptSetContentStats(null);
-    document.getElementById('ptQueueBatchBtn').disabled = true;
 
     try {
         const res = await fetch('/api/pinterest/scrape', {
@@ -229,7 +235,6 @@ async function startPinterestScrape() {
             return;
         }
         pinterestCurrentJobId = data.job_id;
-        pinterestScrapedFolder = data.folder;
         _ptStartPolling();
     } catch (e) {
         _ptSetScrapeState('error');
@@ -289,11 +294,6 @@ async function _ptPoll() {
             showNotification(msg, 'Done', 'success', 4000);
             if (removed > 0) _ptSetDedupStats(removed);
             if (noPerson2 > 0 || noFace2 > 0) _ptSetContentStats({ noPerson: noPerson2, noFace: noFace2 }, true);
-            // Enable the queue button if we have images
-            if (count > 0) {
-                document.getElementById('ptQueueBatchBtn').disabled = false;
-                _ptSetFolderDisplay(pinterestScrapedFolder);
-            }
         } else if (data.status === 'error') {
             clearInterval(pinterestPollTimer);
             _ptSetScrapeState('error');
@@ -301,69 +301,6 @@ async function _ptPoll() {
         }
     } catch (e) {
         // network blip — keep polling
-    }
-}
-
-// ── Queue batch ───────────────────────────────────────────────────────────────
-async function queuePinterestBatch() {
-    const prompt = (document.getElementById('ptPrompt')?.value || '').trim();
-    if (!prompt) {
-        showNotification('Enter a prompt before queueing', 'Error', 'error', 3000);
-        return;
-    }
-    savePromptToHistory(prompt, 'image');
-    if (!pinterestScrapedFolder) {
-        showNotification('No scraped folder available — run a scrape first', 'Error', 'error', 3000);
-        return;
-    }
-
-    const useOriginal = document.getElementById('ptUseOriginalSize')?.checked ?? true;
-    const width       = parseInt(document.getElementById('ptWidth')?.value  || '1024');
-    const height      = parseInt(document.getElementById('ptHeight')?.value || '1024');
-    const steps       = parseInt(document.getElementById('ptSteps')?.value  || '4');
-    const cfg         = parseFloat(document.getElementById('ptCfg')?.value  || '1.0');
-    const shift       = parseFloat(document.getElementById('ptShift')?.value|| '3.0');
-    const seed        = document.getElementById('ptSeed')?.value || null;
-    const filePrefix  = (document.getElementById('ptFilePrefix')?.value || 'pinterest').trim();
-    const subfolder   = (document.getElementById('ptSubfolder')?.value || '').trim();
-    const mcnlLora    = document.getElementById('ptMcnlLora')?.checked  || false;
-    const snofsLora   = document.getElementById('ptSnofsLora')?.checked || false;
-    const maleLora    = document.getElementById('ptMaleLora')?.checked  || false;
-
-    const btn = document.getElementById('ptQueueBatchBtn');
-    btn.disabled = true;
-    btn.querySelector('span').textContent = 'Queueing…';
-
-    try {
-        const res = await fetch('/api/pinterest/queue-batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                prompt,
-                folder: pinterestScrapedFolder,
-                use_original_size: useOriginal,
-                width, height, steps, cfg, shift,
-                seed: seed ? parseInt(seed) : null,
-                file_prefix: filePrefix,
-                subfolder,
-                mcnl_lora: mcnlLora,
-                snofs_lora: snofsLora,
-                male_lora: maleLora,
-            }),
-        });
-        const data = await res.json();
-        if (data.success) {
-            showNotification(`Queued ${data.queued_count} image(s) for generation`, 'Queued', 'success', 4000);
-            btn.querySelector('span').textContent = `Queued ${data.queued_count}`;
-        } else {
-            showNotification(data.error, 'Error', 'error', 5000);
-            btn.querySelector('span').textContent = 'Queue Batch';
-            btn.disabled = false;
-        }
-    } catch (e) {
-        showNotification('Request failed: ' + e.message, 'Error', 'error', 5000);
-        btn.querySelector('span').textContent = 'Queue Batch';
-        btn.disabled = false;
     }
 }
 
@@ -397,14 +334,6 @@ function _ptSetLog(lines) {
     if (!el) return;
     el.textContent = lines.join('\n');
     el.scrollTop = el.scrollHeight;
-}
-
-function _ptSetFolderDisplay(folder) {
-    const el = document.getElementById('ptScrapedFolderDisplay');
-    if (el) {
-        el.textContent = folder || 'None';
-        el.style.color = folder ? 'var(--primary)' : 'var(--text-muted)';
-    }
 }
 
 function _ptSetDedupStats(removedCount) {
@@ -475,3 +404,200 @@ function _ptSetContentStats(stats, isDone = false) {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', initPinterest);
+
+// ── Folder list ───────────────────────────────────────────────────────────────
+async function ptRefreshFolders() {
+    const sel = document.getElementById('ptProcessFolder');
+    if (!sel) return;
+    try {
+        const res = await fetch('/api/pinterest/list-folders');
+        if (!res.ok) return;
+        const data = await res.json();
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">— choose a folder —</option>';
+        (data.folders || []).forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f;
+            opt.textContent = f;
+            if (f === prev) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        if (!data.folders || data.folders.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.disabled = true;
+            opt.textContent = 'No folders found in input/pinterest/';
+            sel.appendChild(opt);
+        }
+    } catch (_) { /* Suppress silently */ }
+}
+
+// ── Process existing folder ────────────────────────────────────────────────
+async function startPtProcessFolder() {
+    const folderName = document.getElementById('ptProcessFolder')?.value || '';
+    if (!folderName) {
+        showNotification('Select a folder first', 'Error', 'error', 3000);
+        return;
+    }
+    const dedup         = document.getElementById('ptProcDedupeEnabled')?.checked || false;
+    const dedupeBase    = (document.getElementById('ptProcDedupeBaseFolder')?.value || '').trim();
+    const requirePerson = document.getElementById('ptProcRequirePerson')?.checked || false;
+    const requireFace   = document.getElementById('ptProcRequireFace')?.checked || false;
+
+    if (!dedup && !requirePerson && !requireFace) {
+        showNotification('Enable at least one operation (dedup or content filter)', 'Error', 'error', 3000);
+        return;
+    }
+
+    _ptSetProcessState('running');
+    _ptSetProcessLog([]);
+    _ptSetProcessProgress(0, 0);
+    _ptSetProcessStats(null, null);
+
+    try {
+        const res = await fetch('/api/pinterest/process-folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                folder_name: folderName,
+                dedup,
+                dedup_base_folder: dedupeBase || null,
+                require_person: requirePerson,
+                require_face: requireFace,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            _ptSetProcessState('idle');
+            showNotification(data.error, 'Error', 'error', 5000);
+            return;
+        }
+        ptProcessJobId = data.job_id;
+        _ptStartProcessPolling();
+    } catch (e) {
+        _ptSetProcessState('idle');
+        showNotification('Request failed: ' + e.message, 'Error', 'error', 5000);
+    }
+}
+
+function _ptStartProcessPolling() {
+    if (ptProcessPollTimer) clearInterval(ptProcessPollTimer);
+    ptProcessPollTimer = setInterval(_ptProcessPoll, 1500);
+}
+
+async function _ptProcessPoll() {
+    if (!ptProcessJobId) { clearInterval(ptProcessPollTimer); return; }
+    try {
+        const res  = await fetch(`/api/pinterest/job/${ptProcessJobId}`);
+        const data = await res.json();
+        if (!data.success) return;
+
+        _ptSetProcessLog(data.log || []);
+        _ptSetProcessProgress(data.progress || 0, data.num_requested || 0);
+
+        if (data.status === 'done') {
+            clearInterval(ptProcessPollTimer);
+            _ptSetProcessState('idle');
+            const kept     = data.downloaded ?? 0;
+            const dupes    = data.dupes_removed || 0;
+            const noPerson = data.no_person_removed || 0;
+            const noFace   = data.no_face_removed || 0;
+            const cfTotal  = noPerson + noFace;
+            _ptSetProcessStats(dupes, { noPerson, noFace });
+            const parts = [];
+            if (dupes > 0)   parts.push(`${dupes} dupe(s) removed`);
+            if (cfTotal > 0) parts.push(`${cfTotal} filtered by content`);
+            const msg = parts.length
+                ? `${kept} image(s) kept · ${parts.join(' · ')}`
+                : `Done — ${kept} image(s) remain in folder`;
+            showNotification(msg, 'Done', 'success', 4000);
+        } else if (data.status === 'error') {
+            clearInterval(ptProcessPollTimer);
+            _ptSetProcessState('idle');
+            showNotification('Processing failed: ' + (data.error || 'unknown error'), 'Error', 'error', 6000);
+        }
+    } catch (_) { /* network blip — keep polling */ }
+}
+
+// ── Process section UI helpers ─────────────────────────────────────────────
+function _ptSetProcessState(state) {
+    const btn       = document.getElementById('ptProcessBtn');
+    const indicator = document.getElementById('ptProcessIndicator');
+    if (!btn) return;
+    if (state === 'running') {
+        btn.disabled = true;
+        btn.querySelector('span').textContent = 'Processing…';
+        if (indicator) indicator.style.display = '';
+    } else {
+        btn.disabled = false;
+        btn.querySelector('span').textContent = 'Run Processing';
+        if (indicator) indicator.style.display = 'none';
+    }
+}
+
+function _ptSetProcessProgress(done, total) {
+    const bar   = document.getElementById('ptProcessProgressBar');
+    const label = document.getElementById('ptProcessProgressLabel');
+    if (!bar) return;
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    bar.style.width = pct + '%';
+    if (label) label.textContent = total > 0 ? `${done} / ${total}` : '';
+}
+
+function _ptSetProcessLog(lines) {
+    const el = document.getElementById('ptProcessLog');
+    if (!el) return;
+    el.textContent = lines.join('\n');
+    el.scrollTop = el.scrollHeight;
+}
+
+function _ptSetProcessStats(dupesRemoved, cfStats) {
+    // Dedup stat box
+    const dedupEl   = document.getElementById('ptProcessDedupStats');
+    const dedupText = document.getElementById('ptProcessDedupStatsText');
+    if (dedupEl && dedupText) {
+        if (dupesRemoved === null || dupesRemoved === undefined) {
+            dedupEl.style.display = 'none';
+        } else if (dupesRemoved === 0) {
+            dedupText.textContent = 'Dedup ran — no duplicates found.';
+            dedupEl.style.background = 'rgba(34,197,94,0.08)';
+            dedupEl.style.borderColor = 'rgba(34,197,94,0.3)';
+            dedupEl.querySelector('svg').setAttribute('stroke', '#22c55e');
+            dedupEl.style.display = '';
+        } else {
+            dedupText.textContent = `${dupesRemoved} duplicate image(s) detected and removed.`;
+            dedupEl.style.background = 'rgba(239,68,68,0.08)';
+            dedupEl.style.borderColor = 'rgba(239,68,68,0.25)';
+            dedupEl.querySelector('svg').setAttribute('stroke', '#ef4444');
+            dedupEl.style.display = '';
+        }
+    }
+    // Content filter stat box
+    const cfEl   = document.getElementById('ptProcessContentStats');
+    const cfText = document.getElementById('ptProcessContentStatsText');
+    if (cfEl && cfText) {
+        const personEnabled = document.getElementById('ptProcRequirePerson')?.checked;
+        const faceEnabled   = document.getElementById('ptProcRequireFace')?.checked;
+        if (!cfStats || (!personEnabled && !faceEnabled)) {
+            cfEl.style.display = 'none';
+        } else {
+            const { noPerson = 0, noFace = 0 } = cfStats;
+            const total = noPerson + noFace;
+            if (total === 0) {
+                cfText.textContent = 'Content filter ran — all images passed.';
+                cfEl.style.background = 'rgba(34,197,94,0.08)';
+                cfEl.style.borderColor = 'rgba(34,197,94,0.3)';
+                cfEl.querySelector('svg').setAttribute('stroke', '#22c55e');
+            } else {
+                const parts = [];
+                if (noPerson > 0) parts.push(`${noPerson} had no person`);
+                if (noFace   > 0) parts.push(`${noFace} had no face`);
+                cfText.textContent = `Content filter removed ${total} image(s): ${parts.join(', ')}.`;
+                cfEl.style.background = 'rgba(239,68,68,0.08)';
+                cfEl.style.borderColor = 'rgba(239,68,68,0.25)';
+                cfEl.querySelector('svg').setAttribute('stroke', '#ef4444');
+            }
+            cfEl.style.display = '';
+        }
+    }
+}

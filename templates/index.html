@@ -902,15 +902,14 @@
                                 <section class="tab-content" id="pinterestTab">
                                     <div class="generation-panel">
                                         <div class="batch-header" style="margin-bottom: 1.5rem;">
-                                            <h2 style="margin: 0 0 0.5rem 0;">Pinterest Scrape &amp; Generate</h2>
+                                                                                        <h2 style="margin: 0 0 0.5rem 0;">Pinterest Downloader</h2>
                                             <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
-                                                Scrape images from Pinterest by search or URL, then queue them for AI generation.
+                                                Download images from Pinterest by search query or URL.
                                             </p>
                                         </div>
 
-                                        <!-- Step 1: Pinterest Scraper Setup -->
-                                        <button class="collapsible-header active" data-target="ptScrapeSection">
-                                            <span>Step 1: Scrape from Pinterest</span>
+                                                                                <button class="collapsible-header active" data-target="ptScrapeSection">
+                                            <span>Download from Pinterest</span>
                                             <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                 <polyline points="6 9 12 15 18 9"></polyline>
                                             </svg>
@@ -1107,140 +1106,136 @@
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                                                 <span id="ptContentStatsText"></span>
                                             </div>
-                                            <!-- Log -->
+                                                                                        <!-- Log -->
                                             <div class="form-group">
                                                 <label>Scrape Log</label>
                                                 <pre id="ptScrapeLog" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.8rem; max-height: 160px; overflow-y: auto; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
                                             </div>
 
-                                            <!-- Scraped folder display -->
-                                            <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border); font-size: 0.875rem;">
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                                                </svg>
-                                                <span style="color: var(--text-muted);">Scraped folder:</span>
-                                                <span id="ptScrapedFolderDisplay" style="color: var(--text-muted);">None yet</span>
-                                            </div>
                                         </div>
 
-                                        <!-- Step 2: Prompt + Queue -->
-                                        <button class="collapsible-header" data-target="ptGenerateSection">
-                                            <span>Step 2: Generate from Scraped Images</span>
+                                        <!-- Process Existing Folder -->
+                                        <button class="collapsible-header" data-target="ptProcessSection">
+                                            <span>Process Existing Folder</span>
                                             <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                 <polyline points="6 9 12 15 18 9"></polyline>
                                             </svg>
                                         </button>
-                                        <div class="collapsible-content" id="ptGenerateSection">
+                                        <div class="collapsible-content" id="ptProcessSection">
 
-                                            <!-- Prompt -->
+                                            <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1rem 0;">
+                                                Run duplicate removal and content filtering on an already-downloaded Pinterest folder — no new download required.
+                                            </p>
+
+                                            <!-- Folder selector -->
                                             <div class="form-group">
-                                                <label for="ptPrompt">Prompt</label>
-                                                <div class="prompt-container">
-                                                    <textarea
-                                                        id="ptPrompt"
-                                                        rows="4"
-                                                        placeholder="Enter your prompt for all downloaded images…"
-                                                        class="form-control"
-                                                    ></textarea>
-                                                    <button class="btn btn-primary" id="ptQueueBatchBtn" disabled>
-                                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                                <label for="ptProcessFolder">Select Folder</label>
+                                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                    <select id="ptProcessFolder" class="form-control" style="flex: 1;">
+                                                        <option value="">— choose a folder —</option>
+                                                    </select>
+                                                    <button type="button" class="btn btn-sm" id="ptRefreshFoldersBtn" title="Refresh folder list" onclick="ptRefreshFolders(); return false;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <polyline points="23 4 23 10 17 10"></polyline>
+                                                            <polyline points="1 20 1 14 7 14"></polyline>
+                                                            <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
                                                         </svg>
-                                                        <span>Queue Batch</span>
+                                                        Refresh
                                                     </button>
                                                 </div>
-                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
-                                                    Each scraped image will be queued as an image-to-image job using this prompt.
-                                                </small>
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">Folders inside <code>input/pinterest/</code></small>
                                             </div>
 
-                                            <!-- Parameters -->
-                                            <button class="collapsible-header" data-target="ptParameters">
-                                                <span>Parameters</span>
-                                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <polyline points="6 9 12 15 18 9"></polyline>
-                                                </svg>
-                                            </button>
-                                            <div class="collapsible-content active" id="ptParameters">
-
-                                                <!-- Size Mode -->
-                                                <div class="form-group" style="grid-column: 1 / -1; margin-bottom: 1rem;">
-                                                    <label>Image Size Mode</label>
-                                                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                                                        <label class="checkbox-label">
-                                                            <input type="radio" name="ptSizeMode" id="ptUseOriginalSize" value="original" checked class="checkbox-input">
-                                                            <span>Use Original Image Size (for each image)</span>
+                                            <!-- Dedup -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 0.5rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                                        <input type="checkbox" id="ptProcDedupeEnabled" class="checkbox-input">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"></path></svg>
+                                                        <span>Remove Duplicate Images</span>
+                                                    </label>
+                                                    <span id="ptProcDedupeBadge" class="pt-badge pt-badge-warn" style="display:none;">imagehash missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.5rem 0;">
+                                                    Compares images in the selected folder against all other Pinterest folders using perceptual hashing. Duplicates are permanently deleted.
+                                                </p>
+                                                <div id="ptProcDedupeOptions" style="display: none;">
+                                                    <div class="form-group" style="margin: 0;">
+                                                        <label for="ptProcDedupeBaseFolder" style="font-size: 0.8rem;">
+                                                            Base Folder <span style="font-weight:normal; color:var(--text-muted);">(optional)</span>
                                                         </label>
-                                                        <label class="checkbox-label">
-                                                            <input type="radio" name="ptSizeMode" id="ptUseCustomSize" value="custom" class="checkbox-input">
-                                                            <span>Use Custom Size (for all images)</span>
-                                                        </label>
-                                                    </div>
-                                                </div>
-
-                                                <div class="parameters-grid">
-                                                    <div class="form-group" id="ptWidthGroup" style="opacity: 0.5;">
-                                                        <label for="ptWidth">Width</label>
-                                                        <input type="number" id="ptWidth" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
-                                                    </div>
-                                                    <div class="form-group" id="ptHeightGroup" style="opacity: 0.5;">
-                                                        <label for="ptHeight">Height</label>
-                                                        <input type="number" id="ptHeight" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="ptSteps">Steps</label>
-                                                        <input type="number" id="ptSteps" value="4" min="1" max="100" class="form-control">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="ptCfg">CFG Scale</label>
-                                                        <input type="number" id="ptCfg" value="1.0" min="0.1" max="20.0" step="0.1" class="form-control">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="ptShift">Shift</label>
-                                                        <input type="number" id="ptShift" value="3.0" min="0.0" max="10.0" step="0.1" class="form-control">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="ptSeed">Seed (optional)</label>
-                                                        <input type="number" id="ptSeed" placeholder="Random" class="form-control">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="ptFilePrefix">File Prefix</label>
-                                                        <input type="text" id="ptFilePrefix" placeholder="pinterest" class="form-control">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="ptSubfolder">Output Folder</label>
-                                                        <input type="text" id="ptSubfolder" placeholder="Leave empty for auto" class="form-control">
+                                                        <input
+                                                            type="text"
+                                                            id="ptProcDedupeBaseFolder"
+                                                            class="form-control"
+                                                            placeholder="e.g. V:/Set01/input/media  or leave empty"
+                                                            style="font-size: 0.85rem;"
+                                                        >
+                                                        <small style="color: var(--text-muted);">Absolute path to an extra reference collection. All other <code>input/pinterest/</code> subfolders are always included automatically.</small>
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            <!-- LoRA Settings -->
-                                            <button class="collapsible-header" data-target="ptLoraSettings">
-                                                <span>LoRA Settings</span>
-                                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                            <!-- Content Filter -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 1rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                        Content Filter
+                                                    </span>
+                                                    <span id="ptProcYoloBadge" class="pt-badge pt-badge-warn" style="display:none;">ultralytics missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+                                                    Uses <strong>YOLO11n</strong> and <strong>OpenCV</strong> to remove images with no people or no visible faces.
+                                                </p>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptProcRequirePerson" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                                    <span>Remove images with no people</span>
+                                                </label>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptProcRequireFace" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"></circle><path d="M9.5 10.5c.5 1 1.5 1.5 2.5 1.5s2-.5 2.5-1.5"></path><line x1="9" y1="7.5" x2="9.01" y2="7.5"></line><line x1="15" y1="7.5" x2="15.01" y2="7.5"></line></svg>
+                                                    <span>Remove images with no visible faces</span>
+                                                </label>
+                                            </div>
+
+                                            <!-- Run Button -->
+                                            <button type="button" class="btn btn-primary" id="ptProcessBtn" style="width: 100%; margin-bottom: 1rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
                                                 </svg>
+                                                <span>Run Processing</span>
+                                                <span id="ptProcessIndicator" style="display: none; margin-left: 0.5rem; opacity: 0.7; font-size: 0.85rem;">⏳</span>
                                             </button>
-                                            <div class="collapsible-content" id="ptLoraSettings">
-                                                <div class="form-group">
-                                                    <label class="checkbox-label">
-                                                        <input type="checkbox" id="ptMcnlLora" class="checkbox-input">
-                                                        <span>MCNL LoRA (Female)</span>
-                                                    </label>
+
+                                            <!-- Progress -->
+                                            <div style="margin-bottom: 1rem;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                                                    <span style="font-size: 0.85rem; color: var(--text-muted);">Progress</span>
+                                                    <span id="ptProcessProgressLabel" style="font-size: 0.85rem; color: var(--text-muted);"></span>
                                                 </div>
-                                                <div class="form-group">
-                                                    <label class="checkbox-label">
-                                                        <input type="checkbox" id="ptSnofsLora" class="checkbox-input">
-                                                        <span>Snofs LoRA (Female)</span>
-                                                    </label>
-                                                </div>
-                                                <div class="form-group">
-                                                    <label class="checkbox-label">
-                                                        <input type="checkbox" id="ptMaleLora" class="checkbox-input">
-                                                        <span>Male LoRA</span>
-                                                    </label>
+                                                <div class="hw-bar" style="height: 8px; border-radius: 4px;">
+                                                    <div id="ptProcessProgressBar" class="hw-fill" style="width: 0%; transition: width 0.3s;"></div>
                                                 </div>
                                             </div>
+
+                                            <!-- Result Stats -->
+                                            <div id="ptProcessDedupStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                                <span id="ptProcessDedupStatsText"></span>
+                                            </div>
+                                            <div id="ptProcessContentStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                <span id="ptProcessContentStatsText"></span>
+                                            </div>
+
+                                            <!-- Log -->
+                                            <div class="form-group">
+                                                <label>Processing Log</label>
+                                                <pre id="ptProcessLog" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.8rem; max-height: 160px; overflow-y: auto; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+                                            </div>
+
                                         </div>
 
                                     </div>

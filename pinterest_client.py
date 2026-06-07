@@ -766,6 +766,141 @@ def _dedup_paths(
     return {"scanned": scanned, "removed": removed, "kept": kept}
 
 
+def run_process_folder(
+    job_id: str,
+    folder_path: str,
+    dedup: bool = False,
+    dedup_base_folder: str = "",
+    require_person: bool = False,
+    require_face: bool = False,
+) -> None:
+    """
+    Run dedup and/or content filtering on an already-downloaded folder.
+    Updates a job dict in-place; caller can poll get_job(job_id).
+    """
+    out_path = Path(folder_path)
+    image_files = sorted(
+        fp for fp in out_path.iterdir()
+        if fp.is_file() and fp.suffix.lower() in _IMAGE_EXTS
+    ) if out_path.exists() else []
+    total = len(image_files)
+
+    job = _create_job(job_id, str(out_path), total, folder_path)
+    job["num_requested"] = total
+
+    try:
+        if not out_path.exists() or not out_path.is_dir():
+            raise ValueError(f"Folder not found: {folder_path}")
+
+        if total == 0:
+            _log(job, "No images found in folder.")
+            job["status"] = "done"
+            _log(job, "Done.")
+            return
+
+        _log(job, f"Processing {total} image(s) in {out_path.name}…")
+
+        all_paths = set(image_files)
+        job["downloaded"] = total
+        job["progress"] = 0
+
+        use_dedup = dedup and IMAGEHASH_AVAILABLE and PIL_AVAILABLE
+        use_cf    = (require_person or require_face) and YOLO_AVAILABLE
+
+        if dedup and not use_dedup:
+            _log(job, "WARNING: imagehash/Pillow unavailable — dedup disabled")
+        if (require_person or require_face) and not YOLO_AVAILABLE:
+            _log(job, "WARNING: ultralytics not installed — content filter disabled")
+
+        # ── Step 1: pHash dedup ───────────────────────────────────────────
+        total_dedup_removed = 0
+        if use_dedup and all_paths:
+            _log(job, "Running duplicate detection…")
+
+            extra_base: list[Path] = []
+            if dedup_base_folder:
+                p = Path(dedup_base_folder)
+                if p.exists():
+                    extra_base.append(p)
+            pinterest_root = out_path.parent
+            if pinterest_root.exists():
+                for sibling in pinterest_root.iterdir():
+                    if sibling.is_dir() and sibling != out_path:
+                        extra_base.append(sibling)
+
+            persistent_base = _build_hash_registry(
+                extra_base, log_fn=lambda m: _log(job, m)
+            )
+
+            ds = _dedup_paths(
+                image_paths=all_paths,
+                registry=persistent_base,
+                threshold=DEDUP_THRESHOLD,
+                log_fn=lambda m: _log(job, m),
+            )
+            total_dedup_removed  = ds["removed"]
+            job["dupes_removed"] = total_dedup_removed
+            _log(job, f"Dedup: {ds['scanned']} scanned, "
+                      f"{total_dedup_removed} removed, {ds['kept']} kept")
+
+        # ── Step 2: content filter ────────────────────────────────────────
+        total_cf_removed = 0
+        if use_cf:
+            surviving = {fp for fp in all_paths if fp.exists()}
+            if surviving:
+                _log(job, f"Running content filter on {len(surviving)} image(s)…")
+                cf = _filter_by_content(
+                    surviving,
+                    require_person=require_person,
+                    require_face=require_face,
+                    log_fn=lambda m: _log(job, m),
+                )
+                job["no_person_removed"] = cf["no_person_removed"]
+                job["no_face_removed"]   = cf["no_face_removed"]
+                total_cf_removed = cf["no_person_removed"] + cf["no_face_removed"]
+                _log(job, f"Content filter: {total_cf_removed} removed "
+                          f"(no person: {cf['no_person_removed']}, "
+                          f"no face: {cf['no_face_removed']}), "
+                          f"{cf['kept']} kept")
+
+        final_paths = [fp for fp in all_paths if fp.exists()]
+        kept_count = len(final_paths)
+        job["downloaded"] = kept_count
+        job["progress"]   = total
+        _log(job, f"Done: {kept_count}/{total} image(s) kept "
+                  f"(-{total_dedup_removed} dupes, -{total_cf_removed} filtered)")
+        job["status"] = "done"
+
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = str(exc)
+        _log(job, f"ERROR: {exc}")
+
+
+def start_process_folder_thread(
+    job_id: str,
+    folder_path: str,
+    dedup: bool = False,
+    dedup_base_folder: str = "",
+    require_person: bool = False,
+    require_face: bool = False,
+) -> None:
+    """Launch run_process_folder in a daemon thread."""
+    t = threading.Thread(
+        target=run_process_folder,
+        kwargs=dict(
+            job_id=job_id,
+            folder_path=folder_path,
+            dedup=dedup,
+            dedup_base_folder=dedup_base_folder,
+            require_person=require_person,
+            require_face=require_face,
+        ),
+        daemon=True,
+    )
+    t.start()
+
+
 def start_scrape_thread(
     job_id: str,
     source_type: str,

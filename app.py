@@ -6739,7 +6739,8 @@ def get_hardware_stats():
 
 try:
     from pinterest_client import (
-        start_scrape_thread, get_job, list_jobs, cookies_status,
+        start_scrape_thread, start_process_folder_thread,
+        get_job, list_jobs, cookies_status,
         PINTEREST_COOKIES_PATH, PINTEREST_DEDUP_BASE_FOLDER,
         IMAGEHASH_AVAILABLE as PINTEREST_IMAGEHASH_AVAILABLE,
         YOLO_AVAILABLE as PINTEREST_YOLO_AVAILABLE,
@@ -6846,59 +6847,52 @@ def pinterest_yolo_available():
     return jsonify({'success': True, 'available': bool(PINTEREST_YOLO_AVAILABLE)})
 
 
-@app.route('/api/pinterest/queue-batch', methods=['POST'])
+@app.route('/api/pinterest/list-folders', methods=['GET'])
 @require_auth
-def pinterest_queue_batch():
+def pinterest_list_folders():
+    """Return all subfolders inside input/pinterest/."""
+    pinterest_root = INPUT_DIR / 'pinterest'
+    if not pinterest_root.exists():
+        return jsonify({'success': True, 'folders': []})
+    folders = sorted(
+        d.name for d in pinterest_root.iterdir() if d.is_dir()
+    )
+    return jsonify({'success': True, 'folders': folders})
+
+
+@app.route('/api/pinterest/process-folder', methods=['POST'])
+@require_auth
+def pinterest_process_folder():
+    """Run dedup and/or content filtering on an existing pinterest folder."""
+    if not PINTEREST_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Pinterest client not available'}), 503
     data = request.json or {}
-    prompt = (data.get('prompt') or '').strip()
-    folder = (data.get('folder') or '').strip()
-    use_original_size = bool(data.get('use_original_size', True))
-    width = int(data.get('width', 1024))
-    height = int(data.get('height', 1024))
-    steps = int(data.get('steps', 4))
-    cfg = float(data.get('cfg', 1.0))
-    shift = float(data.get('shift', 3.0))
-    seed = data.get('seed')
-    file_prefix = (data.get('file_prefix') or 'pinterest').strip()
-    subfolder = (data.get('subfolder') or '').strip()
-    mcnl_lora = bool(data.get('mcnl_lora', False))
-    snofs_lora = bool(data.get('snofs_lora', False))
-    male_lora = bool(data.get('male_lora', False))
-    if not prompt:
-        return jsonify({'success': False, 'error': 'Prompt required'}), 400
-    if not folder:
-        return jsonify({'success': False, 'error': 'Folder required'}), 400
-    try:
-        current_dir = INPUT_DIR / folder
-        if not current_dir.exists() or not current_dir.is_dir():
-            return jsonify({'success': False, 'error': f'Folder not found: {folder}'}), 400
-        allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
-        image_files = [f for f in current_dir.iterdir()
-                       if f.is_file() and f.suffix.lower() in allowed_extensions]
-        if not image_files:
-            return jsonify({'success': False, 'error': 'No images found in selected folder'}), 400
-        if not subfolder:
-            subfolder = folder.replace('\\\\', '/').strip('/')
-        queued_ids = []
-        with queue_lock:
-            for file in image_files:
-                rel_path = str(file.relative_to(INPUT_DIR))
-                job = {
-                    'id': str(uuid.uuid4()), 'prompt': prompt,
-                    'width': width, 'height': height, 'steps': steps,
-                    'cfg': cfg, 'shift': shift, 'seed': seed,
-                    'use_image': True, 'use_image_size': use_original_size,
-                    'image_filename': rel_path, 'file_prefix': file_prefix,
-                    'subfolder': subfolder, 'mcnl_lora': mcnl_lora,
-                    'snofs_lora': snofs_lora, 'male_lora': male_lora,
-                    'status': 'queued', 'added_at': datetime.now().isoformat()
-                }
-                generation_queue.insert(0, job)
-                queued_ids.append(job['id'])
-        save_queue_state()
-        return jsonify({'success': True, 'queued_count': len(queued_ids), 'job_ids': queued_ids})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    folder_name = (data.get('folder_name') or '').strip()
+    dedup = bool(data.get('dedup', False))
+    dedup_base_folder = (data.get('dedup_base_folder') or PINTEREST_DEDUP_BASE_FOLDER or '').strip()
+    require_person = bool(data.get('require_person', False))
+    require_face   = bool(data.get('require_face', False))
+    if not folder_name:
+        return jsonify({'success': False, 'error': 'folder_name required'}), 400
+    if dedup and not PINTEREST_IMAGEHASH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Dedup requires imagehash. Run: py -m pip install imagehash'}), 503
+    if (require_person or require_face) and not PINTEREST_YOLO_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Content filter requires ultralytics. Run: py -m pip install ultralytics'}), 503
+    if not dedup and not require_person and not require_face:
+        return jsonify({'success': False, 'error': 'Select at least one operation (dedup or content filter)'}), 400
+    folder_path = INPUT_DIR / 'pinterest' / folder_name
+    if not folder_path.exists() or not folder_path.is_dir():
+        return jsonify({'success': False, 'error': f'Folder not found: pinterest/{folder_name}'}), 404
+    job_id = str(uuid.uuid4())
+    start_process_folder_thread(
+        job_id=job_id,
+        folder_path=str(folder_path),
+        dedup=dedup,
+        dedup_base_folder=dedup_base_folder,
+        require_person=require_person,
+        require_face=require_face,
+    )
+    return jsonify({'success': True, 'job_id': job_id, 'folder': f'pinterest/{folder_name}'})
 
 
 # -- End Pinterest Routes --

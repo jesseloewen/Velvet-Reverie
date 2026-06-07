@@ -1,6 +1,6 @@
 // ─── Prompt History System ────────────────────────────────────────────────────
 // Tracks recent prompts per category (image, video, chat) in localStorage.
-// Image prompts are shared across: Single, Text Batch, Image Batch, Pinterest, Frame Edit.
+// Image prompts are shared across: Single, Text Batch, Image Batch, Frame Edit.
 // Video prompts are shared across: Video, Video Batch.
 // Chat prompts are shared across: Chat, Story, AutoChat (manual input).
 //
@@ -272,7 +272,6 @@ function initializePromptHistory() {
         'prompt',            // Single image
         'batchBasePrompt',   // Text Batch
         'imageBatchPrompt',  // Image Batch
-        'ptPrompt',          // Pinterest
         'frameEditPrompt',   // Frame Edit
     ];
     imagePromptIds.forEach(id => {
