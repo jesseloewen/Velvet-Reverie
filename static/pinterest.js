@@ -12,6 +12,8 @@ let pinterestRequireFace   = false;
 // Process section
 let ptProcessJobId     = null;
 let ptProcessPollTimer = null;
+// Completed folder name (used to auto-select in Open in Batch)
+let _ptLastCompletedFolder = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 function initPinterest() {
@@ -236,6 +238,8 @@ async function startPinterestScrape() {
             return;
         }
         pinterestCurrentJobId = data.job_id;
+        // Store the folder name returned by the server (e.g. "my-portraits")
+        _ptLastCompletedFolder = (data.folder || '').replace(/^pinterest\//, '');
         _ptStartPolling();
     } catch (e) {
         _ptSetScrapeState('error');
@@ -292,9 +296,11 @@ async function _ptPoll() {
                 if (cfRemoved > 0) parts.push(`${cfRemoved} filtered by content`);
                 msg = `${count} image(s) kept · ${parts.join(' · ')}`;
             }
-            showNotification(msg, 'Done', 'success', 4000);
+                        showNotification(msg, 'Done', 'success', 4000);
             if (removed > 0) _ptSetDedupStats(removed);
             if (noPerson2 > 0 || noFace2 > 0) _ptSetContentStats({ noPerson: noPerson2, noFace: noFace2 }, true);
+            // Auto-select the completed folder in the Open in Batch section
+            if (_ptLastCompletedFolder) _ptAutoSelectBatchFolder(_ptLastCompletedFolder);
         } else if (data.status === 'error') {
             clearInterval(pinterestPollTimer);
             _ptSetScrapeState('error');
@@ -405,6 +411,26 @@ function _ptSetContentStats(stats, isDone = false) {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', initPinterest);
+
+// ── Auto-select batch folder on job completion ───────────────────────────────
+/**
+ * Refresh the "Open in Batch" dropdown, select the given folder name,
+ * and expand the section if it is currently collapsed.
+ */
+async function _ptAutoSelectBatchFolder(folderName) {
+    // Refresh the folder list so the completed folder appears
+    await ptRefreshBatchFolders();
+    // Select the folder in the dropdown
+    const sel = document.getElementById('ptBatchFolder');
+    if (sel) sel.value = folderName;
+    // Expand the section if it is collapsed
+    const content = document.getElementById('ptOpenInBatchSection');
+    const header  = document.querySelector('[data-target="ptOpenInBatchSection"]');
+    if (content && !content.classList.contains('active')) {
+        content.classList.add('active');
+        if (header) header.classList.remove('collapsed');
+    }
+}
 
 // ── Open in Batch ────────────────────────────────────────────────────────────
 /**
@@ -586,7 +612,10 @@ async function _ptProcessPoll() {
             const msg = parts.length
                 ? `${kept} image(s) kept · ${parts.join(' · ')}`
                 : `Done — ${kept} image(s) remain in folder`;
-            showNotification(msg, 'Done', 'success', 4000);
+                        showNotification(msg, 'Done', 'success', 4000);
+            // Auto-select the processed folder in the Open in Batch section
+            const processedFolder = document.getElementById('ptProcessFolder')?.value || '';
+            if (processedFolder) _ptAutoSelectBatchFolder(processedFolder);
         } else if (data.status === 'error') {
             clearInterval(ptProcessPollTimer);
             _ptSetProcessState('idle');
