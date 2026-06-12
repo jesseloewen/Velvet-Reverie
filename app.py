@@ -76,11 +76,6 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=SESSION_LIFETIME_DAYS)
 PASSWORD_HASH = os.getenv('PASSWORD_HASH', 'f9031e664507bef426d72ed433ed4a07d47aefa362285b757186c6f8a7a1bf76')
 # To generate a new password hash: hashlib.sha256("your_password".encode()).hexdigest()
 
-# SSL/HTTPS Configuration
-ENABLE_SSL = os.getenv('ENABLE_SSL', 'False').lower() in ('true', '1', 'yes')
-SSL_CERT_FILE = os.getenv('SSL_CERT_FILE', 'cert.pem')
-SSL_KEY_FILE = os.getenv('SSL_KEY_FILE', 'key.pem')
-
 # ComfyUI Configuration
 COMFYUI_HOST = os.getenv('COMFYUI_HOST', '127.0.0.1')
 COMFYUI_PORT = os.getenv('COMFYUI_PORT', '8188')
@@ -6941,22 +6936,7 @@ if __name__ == '__main__':
     print("VELVET REVERIE - Starting Server")
     print("=" * 60)
     
-    # Setup SSL context if enabled
-    ssl_context = None
-    protocol = 'http'
-    if ENABLE_SSL:
-        if Path(SSL_CERT_FILE).exists() and Path(SSL_KEY_FILE).exists():
-            ssl_context = (SSL_CERT_FILE, SSL_KEY_FILE)
-            protocol = 'https'
-            print(f"SSL: Enabled (cert: {SSL_CERT_FILE}, key: {SSL_KEY_FILE})")
-        else:
-            print(f"[WARNING] SSL enabled but certificate files not found!")
-            print(f"  Expected: {SSL_CERT_FILE} and {SSL_KEY_FILE}")
-            print(f"  Run 'python generate_cert.py' to create self-signed certificates")
-            print(f"  Falling back to HTTP...")
-            protocol = 'http'
-    
-    print(f"Server: {protocol}://{FLASK_HOST}:{FLASK_PORT}")
+    print(f"Server: http://{FLASK_HOST}:{FLASK_PORT}")
     print(f"Output Directory: {OUTPUT_DIR.absolute()}")
     print(f"Workflows Directory: {WORKFLOWS_DIR.absolute()}")
     print(f"ComfyUI Server: http://{COMFYUI_HOST}:{COMFYUI_PORT}")
@@ -6973,10 +6953,5 @@ if __name__ == '__main__':
     thumbnail_thread.start()
     
     print("=" * 60)
-    if ssl_context:
-        print("Starting Flask with HTTPS...")
-        app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True, ssl_context=ssl_context)
-    else:
-        print("Starting Flask with HTTP...")
-        app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
+    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
 

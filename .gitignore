@@ -42,13 +42,6 @@ outputs/
 .env.*.local
 ENVIRONMENT
 
-# SSL Certificates (never commit private keys!)
-*.pem
-*.crt
-*.key
-cert.pem
-key.pem
-
 # IDE
 .vscode/
 .idea/
