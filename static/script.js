@@ -4743,13 +4743,8 @@ async function loadVideoBrowserFolder(folder, subpath) {
         renderVideoBrowserPath(folder, resolvedSubpath, detailsVideoCount);
         const detailsFolders = detailsData.folders || [];
         rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
-        const detailFiles = folder === 'input' ? (detailsData.images || []) : (detailsData.files || []);
-        const detailVideoFiles = detailFiles.filter(file => {
-            const filename = typeof file === 'string' ? file : (file.filename || file.path || '');
-            const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
-            return videoExtensions.includes(ext);
-        });
-        renderVideoBrowserGrid(detailsFolders, detailVideoFiles);
+        // Only patch folder counts – do NOT re-render the grid with metadata-free files.
+        updateRenderedFolderCounts(detailsFolders);
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
@@ -4848,7 +4843,7 @@ function renderVideoBrowserGrid(folders, videos) {
         const jsEscapedPath = folderPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         
         html += `
-            <div class="gallery-item folder-item" onclick="loadVideoBrowserFolder('${currentVideoBrowserFolder}', '${jsEscapedPath}')" style="cursor: pointer;">
+            <div class="gallery-item folder-item" data-path="${escapeHtml(folderPath)}" onclick="loadVideoBrowserFolder('${currentVideoBrowserFolder}', '${jsEscapedPath}')" style="cursor: pointer;">
                 <div class="folder-icon" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; background: var(--bg-tertiary); border-radius: 4px;">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -5603,6 +5598,7 @@ function renderImageBrowserGridContent(folder, subpath, data) {
         const folderLabel = formatBrowserFolderLabel(folderItem.name, folderItem, fallbackImageCount);
         const div = document.createElement('div');
         div.className = 'browser-folder-item';
+        div.dataset.path = folderItem.path || '';
         div.innerHTML = `
             <div class="browser-folder-icon">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -5758,7 +5754,10 @@ async function loadImageBrowserFolder(folder, subpath) {
         renderImageBrowserPath(folder, resolvedSubpath, detailsImageCount);
         const detailsFolders = detailsData.folders || [];
         rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
-        renderImageBrowserGridContent(folder, resolvedSubpath, detailsData);
+        // Only patch folder counts into the already-rendered grid – do NOT call
+        // renderImageBrowserGridContent with the metadata-free detailsData, which
+        // would overwrite the prompts/filenames shown in the quick-pass render.
+        updateRenderedFolderCounts(detailsFolders);
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
@@ -5926,6 +5925,40 @@ async function selectBrowsedImage(filename, folder, imagePath) {
     }
 }
 
+// Patch folder item counts into an already-rendered gallery/browser grid.
+// This is used by the details (second) fetch pass to update subfolder badges
+// without re-rendering the entire file grid (which would erase metadata).
+function updateRenderedFolderCounts(detailsFolders) {
+    if (!Array.isArray(detailsFolders) || detailsFolders.length === 0) return;
+
+    // Build a quick lookup: normalised path -> folder entry
+    const countMap = {};
+    detailsFolders.forEach(f => {
+        if (f && f.path != null) {
+            countMap[String(f.path).replace(/\\/g, '/')] = f;
+        }
+    });
+
+    // Update every rendered folder item whose data-path attribute is in the map
+    document.querySelectorAll('.gallery-item.folder-item[data-path], .browser-folder-item[data-path]').forEach(el => {
+        const path = el.getAttribute('data-path');
+        const folderData = path ? countMap[path] : null;
+        if (!folderData) return;
+
+        // Update image/video count badge if present
+        const badge = el.querySelector('.folder-count, .item-count, .gallery-count');
+        if (badge) {
+            const total = (folderData.image_count || 0) + (folderData.video_count || 0) +
+                          (folderData.audio_count || 0) + (folderData.item_count || 0);
+            // item_count is already the sum in the server response; prefer it
+            const display = Number.isInteger(folderData.item_count)
+                ? folderData.item_count
+                : total;
+            badge.textContent = String(display);
+        }
+    });
+}
+
 // Folder Browsing
 async function browseFolder(path) {
     const requestToken = ++browseFolderRequestToken;
@@ -5999,7 +6032,7 @@ async function browseFolder(path) {
         quickRenderCompleted = true;
         setLoadingOverlay('galleryGrid', 'galleryGridLoadingOverlay', false);
 
-                                        // Background details fetch: populate folder counts only (metadata already shown in first pass).
+                                        // Background details fetch: folder counts only – files already rendered with full metadata.
         setBrowserTopLoadingStatus('breadcrumb', 'browserBreadcrumbLoadingStatus', true, 'Loading details...');
         const detailsResponse = await fetch(`/api/browse?path=${encodeURIComponent(normalizedPath)}&root=images&with_metadata=0`, {
             signal: browseFolderAbortController.signal
@@ -6013,29 +6046,20 @@ async function browseFolder(path) {
         if (data.success === false) {
             throw new Error(data.error || 'Failed to load folder details');
         }
-        
-        currentPath = data.current_path;
+
+        // Only update folder counts and breadcrumb – do NOT re-render the file grid
+        // with the metadata-free file list, which would wipe out prompts/seeds shown
+        // in the first pass.
         const detailsFolders = data.folders || [];
         rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
-        allItems = [...detailsFolders, ...data.files];
-        
-        // Filter images array to exclude videos (videos go to Video Browser tab)
-        images = data.files.filter(file => {
-            if (!file.filename) return false;
-            const ext = file.filename.toLowerCase().slice(file.filename.lastIndexOf('.'));
-            // Include only image files, explicitly exclude videos
-            return imageExtensions.includes(ext) && !videoExtensions.includes(ext);
-        });
 
         const imageFileCount = Number.isInteger(data.current_counts?.images)
             ? data.current_counts.images
             : images.length;
-        
-        selectedItems.clear();
-        
+
         renderBreadcrumb(currentPath, imageFileCount);
-        renderGallery(detailsFolders, data.files);
-        updateSelectionButtons();
+        // Patch folder counts into the already-rendered gallery items.
+        updateRenderedFolderCounts(detailsFolders);
 
         if (imageBrowserCount) {
             imageBrowserCount.textContent = String(imageFileCount);
@@ -6044,7 +6068,7 @@ async function browseFolder(path) {
 
         browserLastLoadedPath = currentPath || 'images';
         browserLastLoadedAt = Date.now();
-        
+
         if (isFullscreenActive) {
             syncFullscreenAfterDataRefresh('browser');
         }
@@ -8398,22 +8422,19 @@ async function loadVideos(path) {
             throw new Error(data.error || 'Failed to load video details');
         }
 
-        videosCurrentPath = data.current_path || '';
-        const detailedVideoFiles = (data.files || []).filter(file => {
-            const filename = file.filename || '';
-            const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
-            return videoExtensions.includes(ext);
-        });
+        // Only update folder counts and breadcrumb – do NOT re-render the video grid
+        // with the metadata-free file list, which would wipe out prompts/info shown
+        // in the first pass.
+        const detailsFolders = data.folders || [];
+        rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
 
         const detailedVideoCount = Number.isInteger(data.current_counts?.videos)
             ? data.current_counts.videos
-            : detailedVideoFiles.length;
+            : videosItems.length;
 
-        const detailsFolders = data.folders || [];
-        rememberSessionFolderCounts(folderCountCacheScope, detailsFolders);
-        videosItems = detailedVideoFiles;
         renderVideosBreadcrumb(videosCurrentPath, detailedVideoCount);
-        renderVideosGrid(detailsFolders, detailedVideoFiles);
+        // Patch folder counts into already-rendered grid items.
+        updateRenderedFolderCounts(detailsFolders);
 
         if (isFullscreenActive) {
             syncFullscreenAfterDataRefresh('videos');
@@ -8505,7 +8526,7 @@ function renderVideosGrid(folders, videos) {
         const fallbackVideoCount = Number.isInteger(folder.video_count) ? folder.video_count : null;
         const folderLabel = formatBrowserFolderLabel(folder.name, folder, fallbackVideoCount);
         html += `
-            <div class="gallery-item folder-item" onclick="loadVideos('${escapedPath}')">
+            <div class="gallery-item folder-item" data-path="${escapeHtml(folder.path)}" onclick="loadVideos('${escapedPath}')">
                 <div class="folder-icon">
                     <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>

@@ -4982,7 +4982,11 @@ def get_recent_generation():
     # Add relative_path to all entries
     for item in sorted_metadata:
         item['type'] = 'file'
-        item['relative_path'] = str(Path(item['path']).relative_to(OUTPUT_DIR))
+        # Prefer the normalised relative_path already set by the media index;
+        # fall back to _normalize_media_path so old absolute paths from a
+        # previous install location never raise ValueError.
+        if not item.get('relative_path'):
+            item['relative_path'] = _normalize_media_path(item['path'])
     
     return jsonify({'success': True, 'files': sorted_metadata})
 
@@ -5857,12 +5861,15 @@ def browse_audio_files():
             audio_files = []
             
             for entry in metadata:
-                entry_path = Path(entry['path'])
-                if entry_path.parent == current_dir and entry_path.suffix.lower() in audio_extensions:
-                    rel_path = str(entry_path.relative_to(OUTPUT_DIR))
+                # Prefer the pre-normalised relative_path set by the media index;
+                # fall back to _normalize_media_path so old absolute paths from a
+                # previous install location never raise ValueError.
+                rel_path = entry.get('relative_path') or _normalize_media_path(entry.get('path', ''))
+                entry_abs = (OUTPUT_DIR / rel_path).resolve()
+                if entry_abs.parent == current_dir and Path(rel_path).suffix.lower() in audio_extensions:
                     audio_files.append({
                         'filename': entry['filename'],
-                        'path': entry['path'],
+                        'path': rel_path,
                         'relative_path': rel_path,
                         'mtime': entry.get('timestamp', ''),
                         'job_type': entry.get('job_type', '')
@@ -5915,8 +5922,10 @@ def browse_audio():
             for batch_id, entries in batches.items():
                 # Add relative_path and calculate duration if missing
                 for entry in entries:
-                    if 'relative_path' not in entry and 'path' in entry:
-                        entry['relative_path'] = str(Path(entry['path']).relative_to(OUTPUT_DIR))
+                    if not entry.get('relative_path') and 'path' in entry:
+                        # Use _normalize_media_path so old absolute paths from a previous
+                        # install location are safely converted instead of crashing.
+                        entry['relative_path'] = _normalize_media_path(entry['path'])
                     
                     # Calculate duration if not present or is 0
                     if 'duration' not in entry or entry.get('duration', 0) == 0:

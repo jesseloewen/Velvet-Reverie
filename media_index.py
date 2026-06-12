@@ -83,14 +83,23 @@ def _norm_key(path: Path) -> str:
 
 def _resolve_entry_path(entry: dict, output_dir: Path) -> Optional[Path]:
     """
-    Return the *absolute* Path for an entry.
+    Return the *absolute* Path for an entry, always rooted under the
+    *current* output_dir regardless of where the app was previously installed.
     The file does NOT need to exist on disk – we only need the path for
     bucketing into the directory index.
 
-    Handles three legacy path formats:
-        1. Absolute path                    e.g. C:/…/outputs/images/foo.png
-        2. Relative with 'outputs' prefix   e.g. outputs/images/foo.png
-        3. Plain relative                   e.g. images/foo.png
+    Handles four path formats:
+        1. Absolute path under current output_dir  (normal case after rebuild)
+        2. Absolute path from a previous install location
+               e.g. /old/location/outputs/images/foo.png
+               → re-rooted to output_dir/images/foo.png
+        3. Relative with 'outputs' prefix   e.g. outputs/images/foo.png
+        4. Plain relative                   e.g. images/foo.png
+
+    For case 2 we search for a directory component whose name matches the
+    last component of output_dir (typically 'outputs') and strip everything
+    before and including it so the remaining relative portion can be
+    re-rooted under the current output_dir.
     """
     raw = (entry.get('path') or '').strip()
     if not raw:
@@ -98,14 +107,35 @@ def _resolve_entry_path(entry: dict, output_dir: Path) -> Optional[Path]:
 
     p = Path(raw)
 
-    # 1. Already absolute – resolve in place (may or may not exist)
     if p.is_absolute():
+        # Fast path: already under the current output_dir – keep as-is.
         try:
-            return p.resolve()
+            resolved = p.resolve()
+            resolved.relative_to(output_dir)  # raises ValueError if not a child
+            return resolved
+        except ValueError:
+            pass  # Fall through to relocation logic
         except Exception:
-            return p  # Return as-is if resolve fails (network paths etc.)
+            pass
 
-    # 2. Relative – may start with 'outputs' or 'outputs/'
+        # Slow path: absolute path from a previous install location.
+        # Walk the parts looking for the outputs folder name so we can
+        # extract the relative sub-path and re-root it here.
+        output_dir_name = output_dir.name.lower()  # typically 'outputs'
+        parts = p.parts
+        for i, part in enumerate(parts):
+            if part.lower() == output_dir_name:
+                # Everything after this component is the relative sub-path.
+                rel_parts = parts[i + 1:]
+                if rel_parts:
+                    return (output_dir / Path(*rel_parts)).resolve()
+                break
+
+        # Last resort: the path does not contain an 'outputs'-like component.
+        # Strip all leading components and use just the filename.
+        return (output_dir / p.name).resolve()
+
+    # Relative path – may start with 'outputs' or 'outputs/'
     parts = p.parts
     if parts and parts[0].lower() in ('outputs', 'outputs/'):
         p = Path(*parts[1:])
@@ -116,7 +146,9 @@ def _resolve_entry_path(entry: dict, output_dir: Path) -> Optional[Path]:
 
 # Cache file format version – bump this whenever the pickle schema changes so
 # old caches are automatically discarded rather than causing subtle bugs.
-_CACHE_VERSION = 2
+# v3: _index_entry now normalises absolute paths to output_dir-relative paths
+#     so relocated installs no longer produce broken dir-index keys.
+_CACHE_VERSION = 3
 
 
 # ── main class ────────────────────────────────────────────────────────────────
@@ -438,15 +470,26 @@ class MediaIndex:
         if abs_path is None:
             return
 
-        # Enrich the entry with a normalised relative_path for the browser
+        # _resolve_entry_path always returns a path under self._output_dir now,
+        # so relative_to() should never raise ValueError.  The except branch is
+        # kept as a belt-and-suspenders fallback.
         try:
             rel = str(abs_path.relative_to(self._output_dir)).replace('\\', '/')
         except ValueError:
-            rel = str(abs_path).replace('\\', '/')
+            # Should not happen, but recover gracefully by using just the name.
+            rel = abs_path.name
 
         entry = dict(entry)  # work on a copy
         entry['relative_path'] = rel
         entry['type'] = 'file'
+
+        # If the stored 'path' was an absolute path from an old install location,
+        # normalise it to a plain relative path so future saves write portable
+        # paths into metadata.json and browser requests can resolve them.
+        raw_path = (entry.get('path') or '').strip()
+        if Path(raw_path).is_absolute():
+            entry['path'] = rel
+            entry['filename'] = abs_path.name
 
         # Remove old index entries for this id (handles re-indexing on rebuild)
         old_entry = self._by_id.get(entry_id)
