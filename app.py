@@ -86,10 +86,9 @@ COMFYUI_TOKEN = os.getenv('COMFYUI_TOKEN', '')
 OLLAMA_HOST = os.getenv('OLLAMA_HOST', '127.0.0.1')
 OLLAMA_PORT = os.getenv('OLLAMA_PORT', '11434')
 
-# Gradio TTS Configuration
-GRADIO_HOST = os.getenv('GRADIO_HOST', '127.0.0.1')
-GRADIO_PORT = os.getenv('GRADIO_PORT', '7860')
-GRADIO_OUTPUT_DIR = Path(os.getenv('GRADIO_OUTPUT_DIR', '../Ultimate-TTS-Studio.git/app/outputs'))
+# ChatterBox TTS subprocess server configuration
+GRADIO_HOST = os.getenv('GRADIO_HOST', '127.0.0.1')  # kept for .env compatibility
+GRADIO_PORT = os.getenv('GRADIO_PORT', '8765')       # now points to chatterbox_server.py
 
 # Paths Configuration
 OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', 'outputs'))
@@ -154,9 +153,9 @@ comfyui_client = ComfyUIClient(
 ollama_server = f"{OLLAMA_HOST}:{OLLAMA_PORT}"
 ollama_client = OllamaClient(server_address=ollama_server)
 
-# Initialize Gradio TTS client
+# Initialize ChatterBox TTS client (manages chatterbox_server.py subprocess)
 gradio_server = f"{GRADIO_HOST}:{GRADIO_PORT}"
-gradio_tts_client = GradioTTSClient(server_address=gradio_server, output_dir=str(GRADIO_OUTPUT_DIR))
+gradio_tts_client = GradioTTSClient(server_address=gradio_server)
 
 # Track last workflow type for model unloading
 last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 'tts'
@@ -6950,7 +6949,7 @@ if __name__ == '__main__':
     print(f"Workflows Directory: {WORKFLOWS_DIR.absolute()}")
     print(f"ComfyUI Server: http://{COMFYUI_HOST}:{COMFYUI_PORT}")
     print(f"Ollama Server: http://{OLLAMA_HOST}:{OLLAMA_PORT}")
-    print(f"Gradio TTS Server: http://{GRADIO_HOST}:{GRADIO_PORT}")
+    print(f"ChatterBox TTS Server: http://{GRADIO_HOST}:{GRADIO_PORT} (subprocess)")
     print("=" * 60)
     
     # Ensure dummy image exists

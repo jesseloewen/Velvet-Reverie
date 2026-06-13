@@ -6,9 +6,6 @@ Werkzeug
 python-dotenv
 
 # ── Image processing ─────────────────────────────────────────────────────────
-# Pillow 10.x is required by pinterest-dl; 11.x+ is required by newer gradio.
-# Install without version pin and let pip resolve — both work at runtime.
-# If there is a conflict, pin to: Pillow>=10.4.0,<11.0 OR Pillow>=11.0
 Pillow
 opencv-python
 numpy
@@ -20,8 +17,14 @@ psutil
 mutagen
 pydub
 
-# ── Gradio TTS client ────────────────────────────────────────────────────────
-gradio_client
+# ── ChatterBox TTS subprocess server ─────────────────────────────────────────
+# chatterbox-tts pulls in torch, torchaudio, transformers, etc.
+# Install CUDA-enabled torch FIRST (see README), then:
+#   pip install chatterbox-tts
+chatterbox-tts
+# FastAPI + uvicorn power the local TTS subprocess API server
+fastapi
+uvicorn[standard]
 
 # ── Pinterest scraper ────────────────────────────────────────────────────────
 # NOTE: pinterest-dl[image] pins pillow==10.4.0 which fails on Python 3.14.
