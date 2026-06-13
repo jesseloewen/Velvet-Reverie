@@ -623,7 +623,7 @@
   },
   "3:62:33:138": {
     "inputs": {
-      "lora_name": "nsfw\\male\\2025-11-29_09-52-02-save-78280-61-0.safetensors",
+      "lora_name": "nsfw/male/2025-11-29_09-52-02-save-78280-61-0.safetensors",
       "strength_model": 1,
       "strength_clip": 1,
       "model": [
@@ -758,7 +758,7 @@
   },
   "3:62:33:114": {
     "inputs": {
-      "lora_name": "nsfw\\female\\qwen_MCNL_v1.0.safetensors",
+      "lora_name": "nsfw/female/qwen_MCNL_v1.0.safetensors",
       "strength_model": 1,
       "strength_clip": 1,
       "model": [
@@ -777,7 +777,7 @@
   },
   "3:62:33:125": {
     "inputs": {
-      "lora_name": "nsfw\\female\\Qwen_Snofs_1_3.safetensors",
+      "lora_name": "nsfw/female/Qwen_Snofs_1_3.safetensors",
       "strength_model": 1,
       "strength_clip": 1,
       "model": [
