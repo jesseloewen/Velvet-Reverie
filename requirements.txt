@@ -25,6 +25,7 @@ chatterbox-tts
 # FastAPI + uvicorn power the local TTS subprocess API server
 fastapi
 uvicorn[standard]
+TorchCodec
 
 # ── Pinterest scraper ────────────────────────────────────────────────────────
 # NOTE: pinterest-dl[image] pins pillow==10.4.0 which fails on Python 3.14.
