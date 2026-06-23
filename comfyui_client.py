@@ -266,8 +266,8 @@ class ComfyUIClient:
         # Update image filename (node 43). Some workflows require a valid image path
         # even in text-to-image mode. Provide a fallback to the default image.
         if not image_filename:
-            # Default to the violet.webp image that comes with the workflow
-            image_filename = "violet.webp"
+            # Default to the example.png image that comes with the workflow
+            image_filename = "example.png"
         modified["43"]["inputs"]["image"] = image_filename
         
         # Update LoRA booleans (nodes 41=MCNL, 42=Snofs, 33=Male)

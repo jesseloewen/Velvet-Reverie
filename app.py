@@ -112,7 +112,7 @@ COMFYUI_TEMP_INPUT_SUBDIR = os.getenv('COMFYUI_TEMP_INPUT_SUBDIR', '_staged')
 # User-managed input library paths (separate from ComfyUI input)
 INPUT_DIR = Path(os.getenv('INPUT_DIR', 'input'))
 TTS_AUDIO_INPUT_DIR = Path(os.getenv('TTS_AUDIO_INPUT_DIR', str(INPUT_DIR / 'audio_tts')))
-DEFAULT_INPUT_IMAGE = os.getenv('DEFAULT_INPUT_IMAGE', 'permanent/violet.webp')
+DEFAULT_INPUT_IMAGE = os.getenv('DEFAULT_INPUT_IMAGE', 'permanent/example.png')
 
 # Documentation directory
 DOCS_DIR = Path(os.getenv('DOCS_DIR', 'docs'))
@@ -369,7 +369,7 @@ def resolve_comfy_input_filename(path_hint: str, media_label: str = 'file', pref
                 source_path = comfy_candidate
 
         if source_path is None:
-            # Support default image by filename (e.g., violet.webp) from input/permanent.
+            # Support default image by filename (e.g., example.png) from input/permanent.
             input_permanent_candidate = INPUT_DIR / 'permanent' / Path(normalized).name
             if input_permanent_candidate.exists() and input_permanent_candidate.is_file():
                 source_path = input_permanent_candidate
@@ -1320,7 +1320,7 @@ def process_queue():
                     
                     print(f"[VIDEO] Starting {'NSFW ' if is_nsfw else ''}video generation...")
                     print(f"[VIDEO] Prompt: {job['prompt']}")
-                    print(f"[VIDEO] Image: {job.get('image_filename', 'violet.webp')}")
+                    print(f"[VIDEO] Image: {job.get('image_filename', 'example.png')}")
                     print(f"[VIDEO] Frames: {job.get('frames', 64)}, FPS: {job.get('fps', 16)}, Megapixels: {job.get('megapixels', 0.25)}")
 
                     video_source_image = job.get('image_filename', DEFAULT_INPUT_IMAGE)
@@ -1375,7 +1375,7 @@ def process_queue():
                         megapixels=job.get('megapixels', 0.25),
                         fps=job.get('fps', 16),
                         job_type='video',
-                        source_image=job.get('image_filename', 'violet.webp'),
+                        source_image=job.get('image_filename', 'example.png'),
                         generation_duration=generation_duration,
                         nsfw=is_nsfw
                     )
@@ -6906,9 +6906,9 @@ def pinterest_process_folder():
 # -- End Pinterest Routes --
 
 def ensure_dummy_image():
-    """Create a dummy image if permanent\violet.webp doesn't exist"""
+    """Create a dummy image if example.png doesn't exist"""
     permanent_dir = INPUT_DIR / 'permanent'
-    dummy_image_path = permanent_dir / 'violet.webp'
+    dummy_image_path = permanent_dir / 'example.png'
     
     if not dummy_image_path.exists():
         print(f"Creating dummy image: {dummy_image_path}")

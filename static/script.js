@@ -3600,8 +3600,8 @@ async function generateVideo() {
         }
     }
     
-    // Use uploaded image or default violet.webp
-    const imageFilename = uploadedVideoImageFilename || 'violet.webp';
+    // Use uploaded image or default example.png
+    const imageFilename = uploadedVideoImageFilename || 'example.png';
     
     const data = {
         job_type: 'video',

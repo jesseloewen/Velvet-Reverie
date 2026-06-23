@@ -1,7 +1,7 @@
 {
   "97": {
     "inputs": {
-      "image": "violet.webp"
+      "image": "example.png"
     },
     "class_type": "LoadImage",
     "_meta": {
