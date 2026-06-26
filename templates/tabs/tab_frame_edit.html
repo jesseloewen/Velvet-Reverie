@@ -1,0 +1,292 @@
+                <section class="tab-content" id="frameEditTab">
+                    <div class="generation-panel">
+                        <div class="batch-header" style="margin-bottom: 1.5rem;">
+                            <h2 style="margin: 0 0 0.5rem 0;">Frame Edit</h2>
+                            <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
+                                Extract frames from video, apply AI edits to each frame, then recompile to video
+                            </p>
+                        </div>
+
+                        <!-- Step 1: Extract Frames -->
+                        <button class="collapsible-header active" data-target="frameEditStep1">
+                            <span>Step 1: Extract Frames from Video</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="frameEditStep1">
+                            <!-- Video Upload/Selection -->
+                            <div class="form-group">
+                                <label for="frameEditVideoUpload">Source Video</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input 
+                                        type="file" 
+                                        id="frameEditVideoUpload" 
+                                        accept="video/mp4,video/webm,video/mov,video/avi,video/mkv"
+                                        class="form-control"
+                                        style="flex: 1;"
+                                    >
+                                    <button type="button" class="btn btn-sm" id="browseFrameEditVideoBtn" title="Browse Existing Videos">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none;">
+                                            <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                                        </svg>
+                                        Browse Videos
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-danger" id="clearFrameEditVideoBtn" style="display: none;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none;">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                        Clear
+                                    </button>
+                                </div>
+                                <div id="frameEditVideoPreview" style="margin-top: 0.5rem; display: none;">
+                                    <video id="frameEditPreviewVideo" controls style="max-width: 100%; max-height: 300px; border-radius: 4px; border: 1px solid var(--border);"></video>
+                                    <div id="frameEditVideoInfo" style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.875rem;"></div>
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Upload a video or browse from input/output folders
+                                </small>
+                            </div>
+
+                            <!-- Frame Extraction Controls -->
+                            <div id="frameExtractControls" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="frameStartTime">Start Time (seconds)</label>
+                                        <input type="number" id="frameStartTime" class="form-control" value="0" min="0" step="0.1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEndTime">End Time (seconds)</label>
+                                        <input type="number" id="frameEndTime" class="form-control" value="0" min="0" step="0.1">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="frameSkip">Frame Skip (extract every Nth frame)</label>
+                                    <input type="number" id="frameSkip" class="form-control" value="1" min="1" max="60" step="1">
+                                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                        1 = extract all frames, 2 = every 2nd frame, 3 = every 3rd frame, etc.
+                                    </small>
+                                </div>
+
+                                <!-- Video Info Display -->
+                                <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                                    <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--text-secondary);">Video Information</h3>
+                                    <div class="info-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Original FPS</div>
+                                            <div id="videoOriginalFPS" style="font-weight: 500;">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Selected Section</div>
+                                            <div id="videoSelectedDuration" style="font-weight: 500;">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Total Frames (Selected)</div>
+                                            <div id="videoTotalFrames" style="font-weight: 500;">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Frames to Extract</div>
+                                            <div id="videoExtractedFrames" style="font-weight: 500; color: var(--accent-primary);">-</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem;">Playback FPS (Same Speed)</div>
+                                            <div id="videoPlaybackFPS" style="font-weight: 500; color: var(--accent-primary);">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="frameOutputFolder">Output Folder Name <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                                    <input type="text" id="frameOutputFolder" class="form-control" value="" placeholder="Leave empty to auto-generate">
+                                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                        Auto-generated format: video_name_[fps]fps_timestamp. Saved to: input/frame_edit/[folder_name]/
+                                    </small>
+                                </div>
+
+                                <button type="button" class="btn btn-primary" id="extractFramesBtn" style="width: 100%; margin-bottom: 1rem;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                        <rect x="3" y="3" width="7" height="7"></rect>
+                                        <rect x="14" y="3" width="7" height="7"></rect>
+                                        <rect x="14" y="14" width="7" height="7"></rect>
+                                        <rect x="3" y="14" width="7" height="7"></rect>
+                                    </svg>
+                                    Extract Frames
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Process Frames -->
+                        <button class="collapsible-header" data-target="frameEditStep2">
+                            <span>Step 2: Apply AI to Extracted Frames</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="frameEditStep2">
+                            <!-- Prompt -->
+                            <div class="form-group">
+                                <label for="frameEditPrompt">Prompt</label>
+                                <div class="prompt-container">
+                                    <textarea 
+                                        id="frameEditPrompt" 
+                                        rows="4" 
+                                        placeholder="Enter your prompt for all frames..."
+                                        class="form-control"
+                                    ></textarea>
+                                    <button class="btn btn-primary" id="queueFrameEditBtn">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                        </svg>
+                                        <span>Queue Frame Batch</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Folder Selection -->
+                            <div class="form-group">
+                                <label>Extracted Frames Folder</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <button type="button" class="btn" id="chooseFrameEditFolderBtn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                        Choose Folder
+                                    </button>
+                                    <span id="frameEditFolderDisplay" style="color: var(--text-muted);">None selected</span>
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Select a folder from input/frame_edit/ containing extracted frames
+                                </small>
+                                <div id="frameEditFrameCount" style="color: var(--accent-primary); font-size: 0.875rem; margin-top: 0.5rem; display: none;">
+                                    <strong>0 frames</strong> ready to process
+                                </div>
+                            </div>
+
+                            <!-- Parameters -->
+                            <button class="collapsible-header" data-target="frameEditParameters">
+                                <span>Parameters</span>
+                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="collapsible-content active" id="frameEditParameters">
+                                <div class="parameters-grid">
+                                    <div class="form-group">
+                                        <label for="frameEditSteps">Steps</label>
+                                        <input type="number" id="frameEditSteps" value="4" min="1" max="100" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditCfg">CFG Scale</label>
+                                        <input type="number" id="frameEditCfg" value="1.0" min="0.1" max="20.0" step="0.1" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditShift">Shift</label>
+                                        <input type="number" id="frameEditShift" value="3.0" min="0.0" max="10.0" step="0.1" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditSeed">Seed (optional)</label>
+                                        <input type="number" id="frameEditSeed" placeholder="Random" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditFilePrefix">File Prefix</label>
+                                        <input type="text" id="frameEditFilePrefix" placeholder="frame_edit" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="frameEditOutputFolder">Output Folder <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                                        <input type="text" id="frameEditOutputFolder" class="form-control" value="" placeholder="auto">
+                                        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                            Leave empty or "auto" for input folder name
+                                        </small>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- LoRA Settings -->
+                            <button class="collapsible-header" data-target="frameEditLoraSettings">
+                                <span>LoRA Settings</span>
+                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="collapsible-content" id="frameEditLoraSettings">
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="frameEditMcnlLora" class="checkbox-input">
+                                        <span>MCNL LoRA (Female)</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="frameEditSnofsLora" class="checkbox-input">
+                                        <span>Snofs LoRA (Female)</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="frameEditMaleLora" class="checkbox-input">
+                                        <span>Male LoRA</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: Stitch Frames to Video -->
+                        <button class="collapsible-header" data-target="frameEditStep3">
+                            <span>Step 3: Stitch Frames to Video</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="frameEditStep3">
+                            <!-- Folder Selection -->
+                            <div class="form-group">
+                                <label>Frames Folder</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <button type="button" class="btn" id="chooseStitchFolderBtn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                        Choose Folder
+                                    </button>
+                                    <span id="stitchFolderDisplay" style="color: var(--text-muted);">None selected</span>
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Select any folder containing frames from input or output
+                                </small>
+                                <div id="stitchFrameCount" style="color: var(--accent-primary); font-size: 0.875rem; margin-top: 0.5rem; display: none;">
+                                    <strong>0 frames</strong> found
+                                </div>
+                            </div>
+
+                            <!-- FPS Setting -->
+                            <div class="form-group">
+                                <label for="stitchFps">Output FPS</label>
+                                <input type="number" id="stitchFps" class="form-control" value="30" min="1" max="120" step="0.01">
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Frames per second for the output video (auto-filled from folder name if available)
+                                </small>
+                            </div>
+
+                            <!-- Output Filename -->
+                            <div class="form-group">
+                                <label for="stitchOutputName">Output Video Name <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                                <input type="text" id="stitchOutputName" class="form-control" value="" placeholder="Leave empty to auto-generate">
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Auto-generated format: folder_name.mp4. Saved to: outputs/videos/frame_edit/
+                                </small>
+                            </div>
+
+                            <!-- Stitch Button -->
+                            <button type="button" class="btn btn-primary" id="stitchFramesBtn" style="width: 100%;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                Stitch Frames to Video
+                            </button>
+                        </div>
+                    </div>
+                </section>

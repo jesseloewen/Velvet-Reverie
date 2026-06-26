@@ -1,0 +1,506 @@
+                <section class="tab-content" id="storyTab">
+                    <div class="chat-page-container">
+                        <!-- Left Sidebar - Story Sessions -->
+                        <aside class="chat-sessions-sidebar" id="storySessionsSidebar">
+                            <div class="chat-sessions-header">
+                                <h3>Story Sessions</h3>
+                                <button class="btn-icon" id="newStoryBtn" title="New Story">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                </button>
+                                <button class="btn-icon" id="closeStorySidebarBtn" title="Close Sessions">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="11 17 6 12 11 7"></polyline>
+                                        <polyline points="18 17 13 12 18 7"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="chat-sessions-list" id="storySessionsList">
+                                <!-- Story sessions will be loaded here -->
+                            </div>
+                        </aside>
+
+                        <!-- Center - Story Messages -->
+                        <div class="chat-main-area">
+                            <div class="chat-header">
+                                <button class="btn-icon" id="toggleStorySidebarBtn" title="Toggle Sessions">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                </button>
+                                <select id="storyModelSelector" class="form-control chat-model-selector" disabled>
+                                    <option value="">Loading models...</option>
+                                </select>
+                                <div class="chat-audio-controls">
+                                    <label class="chat-audio-autoplay-toggle" title="Automatically play the next story audio clip after each clip ends">
+                                        <input type="checkbox" id="storyAudioAutoplayToggle" onchange="setStoryAudioAutoPlay(this.checked);" aria-label="Enable auto play for story audio">
+                                        <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
+                                        <span class="chat-audio-autoplay-text">Auto Play</span>
+                                    </label>
+                                    <div class="audio-speed-control" title="Audio playback speed (global)">
+                                        <span class="audio-speed-badge"></span>
+                                        <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
+                                            <option value="0.5">0.5x</option>
+                                            <option value="0.75">0.75x</option>
+                                            <option value="1">1x</option>
+                                            <option value="1.25">1.25x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="1.75">1.75x</option>
+                                            <option value="2">2x</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-sm chat-audio-control-btn" id="storyDownloadAllAudioBtn" onclick="downloadWholeStoryAudio(); return false;" title="Merge and download all story message audio" aria-label="Merge and download all story message audio" disabled>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <button class="btn-icon" id="toggleStoryParamsBtn" title="Toggle Parameters">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                        <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m0 6l4.2 4.2m-6.4-4.2l-4.2 4.2m4.2-10.4l-4.2-4.2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div class="chat-context-info">
+                                <div class="chat-token-display" id="storyTotalTokens"></div>
+                                <div class="chat-context-track">
+                                    <div class="chat-context-bar" id="storyContextBar" style="width: 0%;"></div>
+                                </div>
+                                <div class="chat-context-label" id="storyContextLabel"></div>
+                            </div>
+
+                            <div class="chat-messages" id="storyMessages">
+                                <div class="chat-empty-state">
+                                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+                                        <circle cx="6.5" cy="11.5" r="1.5"></circle>
+                                        <circle cx="9.5" cy="7.5" r="1.5"></circle>
+                                        <circle cx="14.5" cy="7.5" r="1.5"></circle>
+                                        <circle cx="17.5" cy="11.5" r="1.5"></circle>
+                                    </svg>
+                                    <h3>Start your story</h3>
+                                    <p>Create a new story or select an existing one from the sidebar</p>
+                                </div>
+                            </div>
+
+                            <button class="chat-scroll-bottom-btn" id="storyScrollBottomBtn" title="Jump to latest messages">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                                <span>New messages</span>
+                            </button>
+
+                            <div class="chat-input-container" id="storyInputContainer" style="display: none;">
+                                <textarea id="storyInput" class="chat-input" placeholder="Type your story prompt..." rows="1"></textarea>
+                                <button id="storySendBtn" class="chat-send-btn" title="Send message">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Right Sidebar - Parameters -->
+                        <aside class="chat-params-sidebar" id="storyParamsSidebar">
+                            <div class="chat-params-header">
+                                <button class="btn-icon" id="closeStoryParamsBtn" title="Close Parameters">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="13 17 18 12 13 7"></polyline>
+                                        <polyline points="6 17 11 12 6 7"></polyline>
+                                    </svg>
+                                </button>
+                                <h3>Story Settings</h3>
+                                <button type="button" class="btn btn-sm" id="showStoryInstructionsBtn" title="View Story Instructions" style="margin-left: auto;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                    Instructions
+                                </button>
+                            </div>
+                            
+                            <div class="chat-params-content" id="storyParamsContent">
+                                <!-- Story Name -->
+                                <div class="form-group">
+                                    <label for="storySessionName">Story Name</label>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <input type="text" id="storySessionName" class="form-control" placeholder="My Story" disabled style="flex: 1;">
+                                    </div>
+                                </div>
+
+                                <!-- System Prompt -->
+                                <div class="form-group">
+                                    <label for="storySystemPrompt">Additional Instructions (Optional)</label>
+                                    <textarea id="storySystemPrompt" class="form-control" rows="4" placeholder="Optional: Add any extra instructions or writing style preferences (e.g., 'Write concisely', 'Focus on dialogue', 'Use descriptive prose')" disabled></textarea>
+                                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                        Leave blank to use default roleplay system. The AI will automatically understand character and persona roles.
+                                    </small>
+                                </div>
+
+                                <!-- Characters -->
+                                <div class="form-group">
+                                    <label>Characters <span id="charactersCount" class="param-value">0</span></label>
+                                    <button class="btn btn-secondary" id="manageCharactersBtn" disabled style="width: 100%; margin-top: 0.5rem;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                            <circle cx="12" cy="7" r="4"></circle>
+                                        </svg>
+                                        Manage Characters
+                                    </button>
+                                    <div style="margin-top: 0.5rem; font-size: 0.875rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                                        <div id="activeCharacterDisplay" style="color: var(--text-muted);">
+                                            No active character
+                                        </div>
+                                        <div id="userPersonaDisplay" style="color: var(--text-muted);">
+                                            No user persona
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Lorebook -->
+                                <div class="form-group">
+                                    <label>Lorebook <span id="lorebookCount" class="param-value">0</span></label>
+                                    <button class="btn btn-secondary" id="manageLorebookBtn" disabled style="width: 100%; margin-top: 0.5rem;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                                        </svg>
+                                        Manage Lorebook
+                                    </button>
+                                </div>
+
+                                <!-- Author's Note -->
+                                <button class="collapsible-header collapsed" data-target="storyAuthorsNote">
+                                    <span>Author's Note</span>
+                                    <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                                <div class="collapsible-content" id="storyAuthorsNote">
+                                    <div class="form-group">
+                                        <textarea id="authorsNote" class="form-control" rows="3" placeholder="High-priority instructions (e.g., 'Focus on action, avoid internal monologue')" disabled></textarea>
+                                    </div>
+                                </div>
+
+                                <!-- Generation Parameters -->
+                                <button class="collapsible-header" data-target="storyGenParams">
+                                    <span>Generation Parameters</span>
+                                    <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                                <div class="collapsible-content" id="storyGenParams">
+                                    <div class="form-group">
+                                        <label>
+                                            Temperature
+                                            <span class="param-value" id="storyTemperatureValue">0.8</span>
+                                        </label>
+                                        <input type="range" id="storyTemperature" class="form-range" min="0" max="2" step="0.1" value="0.8" disabled>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>
+                                            Top P
+                                            <span class="param-value" id="storyTopPValue">0.9</span>
+                                        </label>
+                                        <input type="range" id="storyTopP" class="form-range" min="0" max="1" step="0.05" value="0.9" disabled>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>
+                                            Top K
+                                            <span class="param-value" id="storyTopKValue">40</span>
+                                        </label>
+                                        <input type="range" id="storyTopK" class="form-range" min="1" max="100" step="1" value="40" disabled>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>
+                                            Repeat Penalty
+                                            <span class="param-value" id="storyRepeatPenaltyValue">1.1</span>
+                                        </label>
+                                        <input type="range" id="storyRepeatPenalty" class="form-range" min="1" max="2" step="0.05" value="1.1" disabled>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>
+                                            Context Window
+                                            <span class="param-value" id="storyNumCtxValue">4096</span>
+                                        </label>
+                                        <select id="storyNumCtx" class="form-control" disabled>
+                                            <option value="2048">2048</option>
+                                            <option value="4096" selected>4096</option>
+                                            <option value="8192">8192</option>
+                                            <option value="16384">16384</option>
+                                            <option value="32768">32768</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label>
+                                            Seed
+                                            <span class="param-value" id="storySeedValue">Random</span>
+                                        </label>
+                                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                            <input type="number" id="storySeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                            <button type="button" class="btn btn-sm" id="clearStorySeedBtn" title="Clear seed (random)" onclick="clearStorySeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <small>Random seed for reproducibility (empty = random)</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+
+                    <!-- Characters Management Modal -->
+                    <div class="custom-modal" id="charactersModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 1000px; width: 90vw; max-height: 85vh; height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+                            <div class="modal-header">
+                                <h2>Manage Characters</h2>
+                                <button class="modal-close" onclick="closeCharactersModal()">&times;</button>
+                            </div>
+                            <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 1.5rem 1.5rem 1rem 1.5rem;">
+                                <!-- Character List -->
+                                <div style="margin-bottom: 1.5rem;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem;">
+                                        <h3 style="margin: 0; font-size: 1.1rem;">Characters</h3>
+                                        <div style="display: flex; gap: 0.5rem;">
+                                            <button class="btn btn-secondary btn-sm" onclick="showCopyAllCharactersModal()" title="Copy all characters to another story">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                </svg>
+                                                Copy All
+                                            </button>
+                                            <button class="btn btn-primary btn-sm" onclick="addNewCharacter()">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                </svg>
+                                                New Character
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="charactersList" style="display: grid; gap: 0.75rem;">
+                                        <!-- Characters will be rendered here -->
+                                    </div>
+                                </div>
+
+                                <!-- Character Editor (shown when editing) -->
+                                <div id="characterEditor" style="display: none; border-top: 2px solid var(--border-color); padding-top: 1.5rem;">
+                                    <h3 style="margin: 0 0 1rem 0; font-size: 1.1rem;" id="characterEditorTitle">Edit Character</h3>
+                                    <input type="hidden" id="editingCharacterId">
+                                    
+                                    <div class="form-group">
+                                        <label for="editCharName">Name</label>
+                                        <input type="text" id="editCharName" class="form-control" placeholder="Character name">
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label>Character Image (Optional)</label>
+                                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                            <input type="file" id="editCharImageUpload" accept="image/*" style="display: none;">
+                                            <button type="button" class="btn btn-secondary" onclick="document.getElementById('editCharImageUpload').click();" style="flex-shrink: 0;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                                </svg>
+                                                Upload
+                                            </button>
+                                            <button type="button" class="btn btn-secondary" onclick="openImageBrowserForCharacter()" style="flex-shrink: 0;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                                </svg>
+                                                Browse
+                                            </button>
+                                            <input type="text" id="editCharImage" class="form-control" placeholder="Or paste image URL" style="flex: 1;">
+                                        </div>
+                                        <!-- Image Preview -->
+                                        <div id="charImagePreview" style="display: none; margin-top: 0.5rem; position: relative;">
+                                            <img id="charImagePreviewImg" src="" alt="Character preview" style="max-width: 150px; max-height: 150px; border-radius: 8px; object-fit: cover;">
+                                            <button type="button" class="btn-icon" onclick="clearCharacterImage()" style="position: absolute; top: 0.25rem; right: 0.25rem; background: var(--bg-primary); border: 1px solid var(--border-color);" title="Clear image">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                            Upload an image, select from your files, or paste a URL
+                                        </small>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="editCharDescription">Description</label>
+                                        <textarea id="editCharDescription" class="form-control" rows="3" placeholder="Physical appearance, age, etc."></textarea>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="editCharPersonality">Personality</label>
+                                        <textarea id="editCharPersonality" class="form-control" rows="3" placeholder="Traits, quirks, mannerisms"></textarea>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="editCharExampleDialogue">Example Dialogue</label>
+                                        <textarea id="editCharExampleDialogue" class="form-control" rows="3" placeholder="Sample conversations"></textarea>
+                                    </div>
+
+                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                        <button class="btn btn-secondary" onclick="cancelCharacterEdit()">Cancel</button>
+                                        <button class="btn btn-primary" onclick="saveCharacterEdit()">Save</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lorebook Management Modal -->
+                    <div class="custom-modal" id="lorebookModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 900px; width: 85vw; max-height: 85vh; height: 75vh; overflow: hidden; display: flex; flex-direction: column;">
+                            <div class="modal-header">
+                                <h2>Manage Lorebook</h2>
+                                <button class="modal-close" onclick="closeLorebookModal()">&times;</button>
+                            </div>
+                            <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 1.5rem 1.5rem 1rem 1.5rem;">
+                                <!-- Lorebook Entry List -->
+                                <div style="margin-bottom: 1.5rem;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem;">
+                                        <h3 style="margin: 0; font-size: 1.1rem;">Lorebook Entries</h3>
+                                        <div style="display: flex; gap: 0.5rem;">
+                                            <button class="btn btn-secondary btn-sm" onclick="showCopyAllLorebookModal()" title="Copy all lorebook entries to another story">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                </svg>
+                                                Copy All
+                                            </button>
+                                            <button class="btn btn-primary btn-sm" onclick="addNewLorebookEntry()">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                </svg>
+                                                New Entry
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="lorebookEntriesList" style="display: grid; gap: 0.75rem;">
+                                        <!-- Lorebook entries will be rendered here -->
+                                    </div>
+                                </div>
+
+                                <!-- Lorebook Entry Editor (shown when editing) -->
+                                <div id="lorebookEntryEditor" style="display: none; border-top: 2px solid var(--border-color); padding-top: 1.5rem;">
+                                    <h3 style="margin: 0 0 1rem 0; font-size: 1.1rem;" id="lorebookEntryEditorTitle">Edit Entry</h3>
+                                    <input type="hidden" id="editingLorebookEntryIndex">
+                                    
+                                    <div class="form-group">
+                                        <label for="editLorebookKeys">Keywords (comma-separated)</label>
+                                        <input type="text" id="editLorebookKeys" class="form-control" placeholder="castle, fortress, stronghold">
+                                        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                            Trigger words that activate this entry (not needed if persistent)
+                                        </small>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="editLorebookContent">Content</label>
+                                        <textarea id="editLorebookContent" class="form-control" rows="6" placeholder="The ancient castle stands atop the mountain..."></textarea>
+                                        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                            Context that gets inserted when keywords appear in the conversation
+                                        </small>
+                                    </div>
+
+                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                        <button class="btn btn-secondary" onclick="cancelLorebookEntryEdit()">Cancel</button>
+                                        <button class="btn btn-primary" onclick="saveLorebookEntryEdit()">Save</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Copy Character Modal -->
+                    <div class="custom-modal" id="copyCharacterModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 600px; width: 90vw;">
+                            <div class="modal-header">
+                                <h2>Copy Character to Another Story</h2>
+                                <button class="modal-close" onclick="closeCopyCharacterModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                                    Copy character <strong id="copyCharacterName"></strong> to:
+                                </p>
+                                <div id="copyCharacterStoryList" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    <!-- Story list will be rendered here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Copy Lorebook Modal -->
+                    <div class="custom-modal" id="copyLorebookModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 600px; width: 90vw;">
+                            <div class="modal-header">
+                                <h2>Copy Lorebook Entry to Another Story</h2>
+                                <button class="modal-close" onclick="closeCopyLorebookModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                                    Copy lorebook entry <strong id="copyLorebookKeys"></strong> to:
+                                </p>
+                                <div id="copyLorebookStoryList" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    <!-- Story list will be rendered here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Copy All Characters Modal -->
+                    <div class="custom-modal" id="copyAllCharactersModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 600px; width: 90vw;">
+                            <div class="modal-header">
+                                <h2>Copy All Characters to Another Story</h2>
+                                <button class="modal-close" onclick="closeCopyAllCharactersModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                                    Copy <strong id="copyAllCharactersCount"></strong> characters to:
+                                </p>
+                                <div id="copyAllCharactersStoryList" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    <!-- Story list will be rendered here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Copy All Lorebook Modal -->
+                    <div class="custom-modal" id="copyAllLorebookModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 600px; width: 90vw;">
+                            <div class="modal-header">
+                                <h2>Copy All Lorebook Entries to Another Story</h2>
+                                <button class="modal-close" onclick="closeCopyAllLorebookModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                                    Copy <strong id="copyAllLorebookCount"></strong> lorebook entries to:
+                                </p>
+                                <div id="copyAllLorebookStoryList" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    <!-- Story list will be rendered here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>

@@ -1,0 +1,325 @@
+                <section class="tab-content" id="autochatTab">
+                    <div class="chat-page-container">
+                        <!-- Left Sidebar - Auto Chat Sessions -->
+                        <aside class="chat-sessions-sidebar" id="autochatSessionsSidebar">
+                            <div class="chat-sessions-header">
+                                <h3>Auto Chat Sessions</h3>
+                                <button class="btn-icon" id="newAutochatBtn" title="New Auto Chat">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                </button>
+                                <button class="btn-icon" id="closeAutochatSidebarBtn" title="Close Sessions">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="11 17 6 12 11 7"></polyline>
+                                        <polyline points="18 17 13 12 18 7"></polyline>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="chat-sessions-list" id="autochatSessionsList">
+                                <!-- Auto chat sessions will be loaded here -->
+                            </div>
+                        </aside>
+
+                        <!-- Center - Auto Chat Messages -->
+                        <div class="chat-main-area">
+                            <div class="chat-header">
+                                <button class="btn-icon" id="toggleAutochatSidebarBtn" title="Toggle Sessions">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                </button>
+                                <div style="flex: 1; display: flex; align-items: center; gap: 1rem; margin: 0 1rem;">
+                                    <span id="autochatSessionTitle" style="font-weight: 500; color: var(--text-primary);">Select a session</span>
+                                    <span id="autochatTurnCounter" style="color: var(--text-muted); font-size: 0.875rem; display: none;"></span>
+                                </div>
+                                <div class="chat-audio-controls">
+                                    <label class="chat-audio-autoplay-toggle" title="Automatically play the next auto chat audio clip after each clip ends">
+                                        <input type="checkbox" id="autochatAudioAutoplayToggle" onchange="setAutochatAudioAutoPlay(this.checked);" aria-label="Enable auto play for auto chat audio">
+                                        <span class="chat-audio-autoplay-slider" aria-hidden="true"></span>
+                                        <span class="chat-audio-autoplay-text">Auto Play</span>
+                                    </label>
+                                    <div class="audio-speed-control" title="Audio playback speed (global)">
+                                        <span class="audio-speed-badge"></span>
+                                        <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
+                                            <option value="0.5">0.5x</option>
+                                            <option value="0.75">0.75x</option>
+                                            <option value="1">1x</option>
+                                            <option value="1.25">1.25x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="1.75">1.75x</option>
+                                            <option value="2">2x</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-sm chat-audio-control-btn" id="autochatDownloadAllAudioBtn" onclick="downloadWholeAutochatAudio(); return false;" title="Merge and download all autochat message audio" aria-label="Merge and download all autochat message audio" disabled>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="autochat-controls" style="display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-sm" id="startAutochatBtn" disabled>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                        </svg>
+                                        Start
+                                    </button>
+                                    <button class="btn btn-sm btn-warning" id="stopAutochatBtn" disabled style="display: none;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="6" y="6" width="12" height="12"></rect>
+                                        </svg>
+                                        Stop
+                                    </button>
+                                    <button class="btn btn-sm" id="continueAutochatBtn" disabled style="display: none;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                        </svg>
+                                        Continue
+                                    </button>
+                                    <label class="autochat-flip-toggle" id="flipDisplayLabel" style="display: none; align-items: center; gap: 0.5rem; margin: 0; cursor: pointer;">
+                                        <input type="checkbox" id="flipDisplayCheckbox" class="checkbox-input">
+                                        <span style="font-size: 0.875rem;">Flip Display</span>
+                                    </label>
+                                </div>
+                                <button class="btn-icon" id="toggleAutochatParamsBtn" title="Toggle Parameters">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                        <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m0 6l4.2 4.2m-6.4-4.2l-4.2 4.2m4.2-10.4l-4.2-4.2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div class="chat-context-info">
+                                <div class="chat-token-display" id="autochatTotalTokens"></div>
+                                <div class="chat-context-track">
+                                    <div class="chat-context-bar" id="autochatContextBar" style="width: 0%;"></div>
+                                </div>
+                                <div class="chat-context-label" id="autochatContextLabel"></div>
+                            </div>
+
+                            <div class="chat-messages" id="autochatMessages">
+                                <div class="chat-empty-state">
+                                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                        <path d="M9 10h.01M15 10h.01"></path>
+                                        <path d="M9.5 15a3.5 3.5 0 0 0 5 0"></path>
+                                    </svg>
+                                    <h3>Start AI Conversation</h3>
+                                    <p>Create a new auto chat or select an existing one from the sidebar</p>
+                                </div>
+                            </div>
+
+                            <button class="chat-scroll-bottom-btn" id="autochatScrollBottomBtn" title="Jump to latest messages">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                                <span>New messages</span>
+                            </button>
+
+                            <!-- Manual Message Input -->
+                            <div class="autochat-manual-section" id="autochatManualSection" style="display: none;">
+                                <div style="padding: 0.75rem; background: rgba(255,255,255,0.05); border-top: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 1rem;">
+                                    <span id="autochatSendAsLabel" style="font-size: 0.875rem; color: var(--text-muted); font-weight: 500;">Send as Persona</span>
+                                    <span id="manualCharCount" style="font-size: 0.875rem; color: var(--text-muted); margin-left: auto;">0 characters</span>
+                                </div>
+                                <div class="chat-input-container">
+                                    <textarea id="autochatManualInput" class="chat-input" placeholder="Type a manual message to inject into the conversation..." rows="2"></textarea>
+                                    <button id="autochatManualSendBtn" class="chat-send-btn" title="Send manual message">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Sidebar - Parameters -->
+                        <aside class="chat-params-sidebar" id="autochatParamsSidebar">
+                            <div class="chat-params-header">
+                                <button class="btn-icon" id="closeAutochatParamsBtn" title="Close Parameters">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="13 17 18 12 13 7"></polyline>
+                                        <polyline points="6 17 11 12 6 7"></polyline>
+                                    </svg>
+                                </button>
+                                <h3>Auto Chat Settings</h3>
+                            </div>
+                            
+                            <div class="chat-params-content" id="autochatParamsContent">
+                                <!-- Session Name -->
+                                <div class="form-group">
+                                    <label for="autochatSessionName">Session Name</label>
+                                    <input type="text" id="autochatSessionName" class="form-control" placeholder="AI Conversation" disabled>
+                                </div>
+
+                                <!-- Shared Model -->
+                                <div class="form-group">
+                                    <label for="autochatSharedModel">Model (Both Personas)</label>
+                                    <select id="autochatSharedModel" class="form-control" disabled>
+                                        <option value="">Loading models...</option>
+                                    </select>
+                                </div>
+
+                                <!-- Shared Context Window -->
+                                <div class="form-group">
+                                    <label for="autochatSharedNumCtx">Context Window <span class="param-value" id="autochatSharedNumCtxValue">2048</span></label>
+                                    <input type="range" id="autochatSharedNumCtx" class="slider" min="512" max="32768" step="512" value="2048" disabled>
+                                    <small style="color: var(--text-muted);">Shared context window for entire conversation</small>
+                                </div>
+
+                                <!-- Max Turns -->
+                                <div class="form-group">
+                                    <label for="autochatMaxTurns">Max Turns <span class="param-value" id="autochatMaxTurnsValue">10</span></label>
+                                    <input type="range" id="autochatMaxTurns" class="slider" min="1" max="100" value="10" disabled>
+                                    <small style="color: var(--text-muted);">Maximum number of back-and-forth exchanges</small>
+                                </div>
+
+                                <!-- Persona A Settings -->
+                                <div class="autochat-params-accordion">
+                                    <div class="accordion-header" onclick="toggleAccordion('personaASettings')">
+                                        <span>Persona A Settings</span>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </div>
+                                    <div class="accordion-content active" id="personaASettings">
+                                        <div class="form-group">
+                                            <label for="personaAName">Name</label>
+                                            <input type="text" id="personaAName" class="form-control" placeholder="Alice" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaASystem">System Prompt</label>
+                                            <textarea id="personaASystem" class="form-control" rows="4" placeholder="You are Alice, a helpful AI assistant." disabled></textarea>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaATemperature">Temperature <span class="param-value" id="personaATemperatureValue">0.7</span></label>
+                                            <input type="range" id="personaATemperature" class="slider" min="0" max="2" step="0.1" value="0.7" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaATopP">Top P <span class="param-value" id="personaATopPValue">0.9</span></label>
+                                            <input type="range" id="personaATopP" class="slider" min="0" max="1" step="0.05" value="0.9" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaATopK">Top K <span class="param-value" id="personaATopKValue">40</span></label>
+                                            <input type="range" id="personaATopK" class="slider" min="1" max="100" value="40" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaARepeatPenalty">Repeat Penalty <span class="param-value" id="personaARepeatPenaltyValue">1.1</span></label>
+                                            <input type="range" id="personaARepeatPenalty" class="slider" min="1" max="2" step="0.1" value="1.1" disabled>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="personaASeed">Seed <span class="param-value" id="personaASeedValue">Random</span></label>
+                                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                <input type="number" id="personaASeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                                <button type="button" class="btn btn-sm" id="clearpersonaASeedBtn" title="Clear seed (random)" onclick="clearPersonaASeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <small style="color: var(--text-muted); font-size: 0.85rem;">Random seed for reproducibility</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Persona B Settings -->
+                                <div class="autochat-params-accordion">
+                                    <div class="accordion-header" onclick="toggleAccordion('personaBSettings')">
+                                        <span>Persona B Settings</span>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </div>
+                                    <div class="accordion-content" id="personaBSettings">
+                                        <div class="form-group">
+                                            <label for="personaBName">Name</label>
+                                            <input type="text" id="personaBName" class="form-control" placeholder="Bob" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBSystem">System Prompt</label>
+                                            <textarea id="personaBSystem" class="form-control" rows="4" placeholder="You are Bob, a curious AI assistant." disabled>
+</textarea>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBTemperature">Temperature <span class="param-value" id="personaBTemperatureValue">0.7</span></label>
+                                            <input type="range" id="personaBTemperature" class="slider" min="0" max="2" step="0.1" value="0.7" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBTopP">Top P <span class="param-value" id="personaBTopPValue">0.9</span></label>
+                                            <input type="range" id="personaBTopP" class="slider" min="0" max="1" step="0.05" value="0.9" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBTopK">Top K <span class="param-value" id="personaBTopKValue">40</span></label>
+                                            <input type="range" id="personaBTopK" class="slider" min="1" max="100" value="40" disabled>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="personaBRepeatPenalty">Repeat Penalty <span class="param-value" id="personaBRepeatPenaltyValue">1.1</span></label>
+                                            <input type="range" id="personaBRepeatPenalty" class="slider" min="1" max="2" step="0.1" value="1.1" disabled>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label for="personaBSeed">Seed <span class="param-value" id="personaBSeedValue">Random</span></label>
+                                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                <input type="number" id="personaBSeed" class="form-control" placeholder="Leave empty for random" style="flex: 1;" disabled>
+                                                <button type="button" class="btn btn-sm" id="clearpersonaBSeedBtn" title="Clear seed (random)" onclick="clearPersonaBSeed(); return false;" disabled style="flex-shrink: 0; padding: 0.5rem;">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <small style="color: var(--text-muted); font-size: 0.85rem;">Random seed for reproducibility</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+
+                    <!-- Duplicate Session Modal -->
+                    <div class="custom-modal" id="duplicateAutochatModal" style="display: none;">
+                        <div class="modal-content" style="max-width: 500px; width: 90vw;">
+                            <div class="modal-header">
+                                <h2>Duplicate Auto Chat Session</h2>
+                                <button class="modal-close" onclick="closeDuplicateAutochatModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p style="margin-bottom: 1.5rem; color: var(--text-muted);">
+                                    Choose what to copy to the new session:
+                                </p>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="duplicateAutochatSettings" class="checkbox-input" checked>
+                                        <span>Copy session settings (personas, models, parameters)</span>
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="duplicateAutochatMessages" class="checkbox-input">
+                                        <span>Copy all messages</span>
+                                    </label>
+                                </div>
+                                <div class="custom-modal-actions">
+                                    <button class="btn btn-secondary" onclick="closeDuplicateAutochatModal()">Cancel</button>
+                                    <button class="btn btn-primary" onclick="confirmDuplicateAutochat()">Duplicate</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>

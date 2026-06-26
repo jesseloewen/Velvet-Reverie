@@ -1,0 +1,276 @@
+                <section class="tab-content" id="batchTab">
+                    <div class="generation-panel">
+                        <div class="batch-header" style="margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                                <div style="flex: 1;">
+                                    <h2 style="margin: 0 0 0.5rem 0;">Text Batch Generation</h2>
+                                    <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
+                                        Generate multiple images using a base prompt with parameters. Use [parameter] placeholders in your prompt and provide values via CSV.
+                                    </p>
+                                </div>
+                                <button type="button" class="btn btn-sm" id="showBatchInstructionsBtn" title="View Instructions" style="flex-shrink: 0;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                    Instructions
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Image Upload Section -->
+                        <div class="form-group">
+                            <label for="batchImageUpload">Upload Image (Optional - for Image-to-Image)</label>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <input 
+                                    type="file" 
+                                    id="batchImageUpload" 
+                                    accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                                    class="form-control"
+                                    style="flex: 1;"
+                                >
+                                <button type="button" class="btn btn-sm" id="browseBatchImageBtn" title="Browse Existing Images">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <polyline points="21 15 16 10 5 21"></polyline>
+                                    </svg>
+                                    Browse
+                                </button>
+                                <button type="button" class="btn btn-sm btn-danger" id="clearBatchImageBtn" style="display: none;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                    Clear
+                                </button>
+                            </div>
+                            <div id="batchImagePreview" style="margin-top: 0.5rem; display: none;">
+                                <img id="batchImagePreviewImg" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid var(--border);">
+                            </div>
+                        </div>
+
+                        <!-- Use Image Size Option (only shown when image is uploaded) -->
+                        <div class="form-group" id="batchUseImageSizeGroup" style="display: none;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="batchUseImageSize" class="checkbox-input">
+                                <span>Use Uploaded Image Size</span>
+                            </label>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                When enabled, width and height will match the uploaded image (ignores CSV width/height)
+                            </small>
+                        </div>
+
+                        <!-- Base Prompt -->
+                        <div class="form-group">
+                            <label for="batchBasePrompt">Base Prompt with Parameters</label>
+                            <textarea 
+                                id="batchBasePrompt" 
+                                rows="4" 
+                                placeholder="Optional: A photo of a [subject] in [setting], [lighting] lighting, [style] style&#10;Leave empty to use one image per line from the CSV field below."
+                                class="form-control"
+                            ></textarea>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                Use [parameterName] to mark replaceable parameters. Detected parameters: <span id="detectedParameters" style="color: var(--primary); font-weight: 500;">None</span>.
+                                Leave empty to treat each CSV line as a complete prompt.
+                            </small>
+                        </div>
+
+                        <!-- CSV Input -->
+                        <div class="form-group">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <label for="batchCSV">Parameter Values (CSV)</label>
+                                <div class="csv-buttons-wrapper" style="display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-sm" id="loadCSVFile">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="17 8 12 3 7 8"></polyline>
+                                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                                        </svg>
+                                        <span>Load CSV File</span>
+                                    </button>
+                                    <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+                                </div>
+                            </div>
+                            <textarea 
+                                id="batchCSV" 
+                                rows="8" 
+                                placeholder="With base prompt template:&#10;subject,setting,lighting,style&#10;woman,beach,golden hour,cinematic&#10;man,office,soft,professional&#10;&#10;OR leave base prompt empty and list one prompt per line:&#10;a beautiful woman at the beach, golden hour&#10;a man in an office, soft lighting"
+                                class="form-control"
+                                style="font-family: monospace; font-size: 0.9rem;"
+                            ></textarea>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                <strong>Template mode:</strong> First row = column names matching [parameters] in prompt. <strong>Simple mode:</strong> Leave base prompt empty — each line here becomes one image prompt.
+                            </small>
+                        </div>
+
+                        <!-- Preview -->
+                        <div class="form-group">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <label>Batch Preview</label>
+                                <button class="btn btn-primary" id="queueBatchBtn" onclick="queueBatchGeneration(); return false;" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    <span>Queue <span id="batchCount">0</span> Images</span>
+                                </button>
+                            </div>
+                            <div id="batchPreview" class="batch-preview" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 1rem;">
+                                <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                                    Enter a base prompt with parameters and CSV data to preview the batch
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Batch Parameters -->
+                        <button class="collapsible-header" data-target="batchParameters">
+                            <span>Parameters (Default or Per-Image via CSV)</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="batchParameters">
+                            <small style="color: var(--text-muted); display: block; margin-bottom: 1rem;">
+                                Check "Use from CSV" to make a parameter vary per-image. Add a column in your CSV with the parameter name.
+                            </small>
+                            
+                            <div class="parameters-grid">
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchWidth">Width</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchWidthVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="number" id="batchWidth" value="1024" min="64" max="2048" step="64" class="form-control">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchHeight">Height</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchHeightVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="number" id="batchHeight" value="1024" min="64" max="2048" step="64" class="form-control">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchSteps">Steps</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchStepsVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="number" id="batchSteps" value="4" min="1" max="100" class="form-control">
+                                </div>
+
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchCfg">CFG Scale</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchCfgVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="number" id="batchCfg" value="1.0" min="0.1" max="20.0" step="0.1" class="form-control">
+                                </div>
+
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchShift">Shift</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchShiftVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="number" id="batchShift" value="3.0" min="0.0" max="10.0" step="0.1" class="form-control">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchSeed">Seed</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchSeedVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="number" id="batchSeed" placeholder="Random" class="form-control">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchFilePrefix">File Prefix</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchFilePrefixVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="text" id="batchFilePrefix" placeholder="batch" class="form-control">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="batchSubfolder">Output Folder</label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchSubfolderVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                    <input type="text" id="batchSubfolder" placeholder="Leave empty for root" class="form-control">
+                                </div>
+                            </div>
+
+                            <button class="collapsible-header" data-target="batchLoraSettings">
+                                <span>LoRA Settings</span>
+                                <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="collapsible-content active" id="batchLoraSettings">
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="batchMcnlLora" class="checkbox-input">
+                                            <span>MCNL LoRA (Female)</span>
+                                        </label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchMcnlLoraVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="batchSnofsLora" class="checkbox-input">
+                                            <span>Snofs LoRA (Female)</span>
+                                        </label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchSnofsLoraVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="batchMaleLora" class="checkbox-input">
+                                            <span>Male LoRA</span>
+                                        </label>
+                                        <label class="checkbox-label" style="font-size: 0.85rem; margin: 0;">
+                                            <input type="checkbox" id="batchMaleLoraVariable" class="checkbox-input batch-param-variable">
+                                            <span>Use from CSV</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>

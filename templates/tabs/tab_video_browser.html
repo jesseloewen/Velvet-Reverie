@@ -1,0 +1,27 @@
+                <section class="tab-content" id="videosTab">
+                    <div class="gallery-panel">
+                        <div class="gallery-header">
+                            <h2>Videos Browser <span id="videoBrowserCount" class="gallery-counter">0</span></h2>
+                            <div class="gallery-toolbar">
+                                <label class="media-blur-toggle" title="Play all videos inline in the list">
+                                    <input type="checkbox" id="videosPlayToggle" class="media-blur-toggle-input">
+                                    <span class="media-blur-toggle-track" aria-hidden="true"></span>
+                                    <span class="media-blur-toggle-text">Play Videos</span>
+                                </label>
+                                <button class="btn btn-sm" id="videosRefreshBtn" title="Refresh">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="23 4 23 10 17 10"></polyline>
+                                        <polyline points="1 20 1 14 7 14"></polyline>
+                                        <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                    </svg>
+                                    <span>Refresh</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="breadcrumb" id="videosBreadcrumb"></div>
+
+                        <div class="gallery-grid" id="videosGrid"></div>
+                        <div class="gallery-empty" id="videosEmpty"><p>No videos found</p></div>
+                    </div>
+                </section>

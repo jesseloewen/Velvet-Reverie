@@ -1,0 +1,395 @@
+                                <!-- Pinterest Tab -->
+                                <section class="tab-content" id="pinterestTab">
+                                    <div class="generation-panel">
+                                        <div class="batch-header" style="margin-bottom: 1.5rem;">
+                                                                                        <h2 style="margin: 0 0 0.5rem 0;">Pinterest Downloader</h2>
+                                            <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
+                                                Download images from Pinterest by search query or URL.
+                                            </p>
+                                        </div>
+
+                                                                                <button class="collapsible-header active" data-target="ptScrapeSection">
+                                            <span>Download from Pinterest</span>
+                                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="collapsible-content active" id="ptScrapeSection">
+
+                                            <!-- Cookies Status -->
+                                            <div class="form-group">
+                                                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <circle cx="12" cy="12" r="10"></circle>
+                                                        <path d="M12 8v4m0 4h.01"></path>
+                                                    </svg>
+                                                    Authentication Status
+                                                </label>
+                                                <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border);">
+                                                    <span id="ptCookiesBadge" class="pt-badge pt-badge-warn">Checking…</span>
+                                                    <span id="ptCookiesDetail" style="font-size: 0.85rem; color: var(--text-muted); flex: 1;"></span>
+                                                    <button type="button" class="btn btn-sm" onclick="checkPinterestCookies(); return false;" title="Re-check cookies">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <polyline points="23 4 23 10 17 10"></polyline>
+                                                            <polyline points="1 20 1 14 7 14"></polyline>
+                                                            <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                                        </svg>
+                                                        Refresh
+                                                    </button>
+                                                </div>
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.35rem;">
+                                                    Set <code>PINTEREST_COOKIES_PATH</code> in your <code>.env</code> file to point to your Pinterest cookies JSON.
+                                                </small>
+                                            </div>
+
+                                            <!-- Source Type -->
+                                            <div class="form-group">
+                                                <label>Source Type</label>
+                                                <div style="display: flex; gap: 1.5rem;">
+                                                    <label class="checkbox-label">
+                                                        <input type="radio" name="ptSourceType" id="ptSourceSearch" value="search" checked class="checkbox-input">
+                                                        <span>Search Query</span>
+                                                    </label>
+                                                    <label class="checkbox-label">
+                                                        <input type="radio" name="ptSourceType" id="ptSourceUrl" value="url" class="checkbox-input">
+                                                        <span>Board / Pin URL</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <!-- Search Query (shown when search selected) -->
+                                            <div class="form-group" id="ptSearchGroup">
+                                                <label for="ptSearchQuery">Search Query</label>
+                                                <input
+                                                    type="text"
+                                                    id="ptSearchQuery"
+                                                    class="form-control"
+                                                    placeholder="e.g. watercolor portrait, fantasy landscape"
+                                                >
+                                            </div>
+
+                                            <!-- URL (shown when url selected) -->
+                                            <div class="form-group" id="ptUrlGroup" style="display: none;">
+                                                <label for="ptUrl">Pinterest URL</label>
+                                                <input
+                                                    type="url"
+                                                    id="ptUrl"
+                                                    class="form-control"
+                                                    placeholder="https://www.pinterest.com/search/pins/?q=…"
+                                                >
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                                    Board URL, search URL, or individual pin URL
+                                                </small>
+                                            </div>
+
+                                            <div class="parameters-grid">
+                                                <div class="form-group">
+                                                    <label for="ptNumImages">Number of Images</label>
+                                                    <input type="number" id="ptNumImages" value="30" min="1" max="500" class="form-control">
+                                                    <small style="color: var(--text-muted);">Max images to download</small>
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptFolderName">Save Folder Name <span style="font-weight: normal; color: var(--text-muted);">(optional)</span></label>
+                                                    <input type="text" id="ptFolderName" class="form-control" placeholder="Auto from query/URL">
+                                                    <small style="color: var(--text-muted);">Saved to input/pinterest/&lt;folder&gt;/</small>
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptRenameLabel">File Label <span style="font-weight: normal; color: var(--text-muted);">(optional)</span></label>
+                                                    <input type="text" id="ptRenameLabel" class="form-control" placeholder="Auto from query/URL">
+                                                    <small style="color: var(--text-muted);">Files saved as &quot;01. Label.jpg&quot;</small>
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptMinWidth">Min Width (px)</label>
+                                                    <input type="number" id="ptMinWidth" value="512" min="1" max="4096" class="form-control">
+                                                </div>
+
+                                                <div class="form-group">
+                                                    <label for="ptMinHeight">Min Height (px)</label>
+                                                    <input type="number" id="ptMinHeight" value="512" min="1" max="4096" class="form-control">
+                                                </div>
+                                            </div>
+                                            <!-- Duplicate Detection -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 0.5rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                                        <input type="checkbox" id="ptDedupeEnabled" class="checkbox-input">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"></path></svg>
+                                                        <span>Remove Duplicate Images</span>
+                                                    </label>
+                                                    <span id="ptDedupeBadge" class="pt-badge pt-badge-warn" style="display:none;">imagehash missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.6rem 0;">
+                                                    Uses perceptual hashing (pHash) to compare each downloaded image against all
+                                                    existing Pinterest folders &amp; an optional base collection. Duplicates
+                                                    (Hamming distance &le; 4) are deleted and extra images are downloaded to
+                                                    meet your requested count.
+                                                </p>
+                                                <div id="ptDedupeOptions" style="display: none;">
+                                                    <div class="form-group" style="margin: 0;">
+                                                        <label for="ptDedupeBaseFolder" style="font-size: 0.8rem;">
+                                                            Base Folder <span style="font-weight:normal; color:var(--text-muted)">(optional — your large reference collection)</span>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            id="ptDedupeBaseFolder"
+                                                            class="form-control"
+                                                            placeholder="e.g. V:/Set01/input/media  or leave empty"
+                                                            style="font-size: 0.85rem;"
+                                                        >
+                                                        <small style="color: var(--text-muted);">
+                                                            Absolute path. All existing <code>input/pinterest/</code> subfolders are always included automatically.
+                                                            Set <code>PINTEREST_DEDUP_BASE_FOLDER</code> in <code>.env</code> to pre-fill this field.
+                                                        </small>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+
+                                            <!-- Content Filter (YOLO person + face detection) -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 0.5rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                        Content Filter
+                                                    </span>
+                                                    <span id="ptYoloBadge" class="pt-badge pt-badge-warn" style="display:none;">ultralytics missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+                                                    Uses <strong>YOLO11n</strong> to detect people and <strong>OpenCV Haar cascade</strong>
+                                                    for faces. Images not meeting the selected criteria are removed.
+                                                </p>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptRequirePerson" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                                    <span>Remove images with no people</span>
+                                                </label>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptRequireFace" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"></circle><path d="M9.5 10.5c.5 1 1.5 1.5 2.5 1.5s2-.5 2.5-1.5"></path><line x1="9" y1="7.5" x2="9.01" y2="7.5"></line><line x1="15" y1="7.5" x2="15.01" y2="7.5"></line></svg>
+                                                    <span>Remove images with no visible faces</span>
+                                                </label>
+                                            </div>
+
+                                            <!-- Scrape Button -->
+                                            <button type="button" class="btn btn-primary" id="ptScrapeBtn" style="width: 100%; margin-bottom: 1rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                                    <circle cx="11" cy="11" r="8"></circle>
+                                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                                </svg>
+                                                <span>Download Images</span>
+                                                <span id="ptScrapeIndicator" style="display: none; margin-left: 0.5rem; opacity: 0.7; font-size: 0.85rem;">⏳</span>
+                                            </button>
+
+                                            <!-- Progress -->
+                                            <div style="margin-bottom: 1rem;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                                                    <span style="font-size: 0.85rem; color: var(--text-muted);">Progress</span>
+                                                    <span id="ptProgressLabel" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+                                                </div>
+                                                <div class="hw-bar" style="height: 8px; border-radius: 4px;">
+                                                    <div id="ptProgressBar" class="hw-fill" style="width: 0%; transition: width 0.3s;"></div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Dedup Stats -->
+                                            <div id="ptDedupStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                                <span id="ptDedupStatsText"></span>
+                                            </div>
+
+
+                                            <!-- Content Filter Stats -->
+                                            <div id="ptContentStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                <span id="ptContentStatsText"></span>
+                                            </div>
+                                                                                        <!-- Log -->
+                                            <div class="form-group">
+                                                <label>Scrape Log</label>
+                                                <pre id="ptScrapeLog" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.8rem; max-height: 160px; overflow-y: auto; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+                                            </div>
+
+                                        </div>
+
+                                        <!-- Process Existing Folder -->
+                                        <button class="collapsible-header" data-target="ptProcessSection">
+                                            <span>Process Existing Folder</span>
+                                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="collapsible-content" id="ptProcessSection">
+
+                                            <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1rem 0;">
+                                                Run duplicate removal and content filtering on an already-downloaded Pinterest folder — no new download required.
+                                            </p>
+
+                                            <!-- Folder selector -->
+                                            <div class="form-group">
+                                                <label for="ptProcessFolder">Select Folder</label>
+                                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                    <select id="ptProcessFolder" class="form-control" style="flex: 1;">
+                                                        <option value="">— choose a folder —</option>
+                                                    </select>
+                                                    <button type="button" class="btn btn-sm" id="ptRefreshFoldersBtn" title="Refresh folder list" onclick="ptRefreshFolders(); return false;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <polyline points="23 4 23 10 17 10"></polyline>
+                                                            <polyline points="1 20 1 14 7 14"></polyline>
+                                                            <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                                        </svg>
+                                                        Refresh
+                                                    </button>
+                                                </div>
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">Folders inside <code>input/pinterest/</code></small>
+                                            </div>
+
+                                            <!-- Dedup -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 0.5rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                                        <input type="checkbox" id="ptProcDedupeEnabled" class="checkbox-input">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35M8 11h6M11 8v6"></path></svg>
+                                                        <span>Remove Duplicate Images</span>
+                                                    </label>
+                                                    <span id="ptProcDedupeBadge" class="pt-badge pt-badge-warn" style="display:none;">imagehash missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.5rem 0;">
+                                                    Compares images in the selected folder against all other Pinterest folders using perceptual hashing. Duplicates are permanently deleted.
+                                                </p>
+                                                <div id="ptProcDedupeOptions" style="display: none;">
+                                                    <div class="form-group" style="margin: 0;">
+                                                        <label for="ptProcDedupeBaseFolder" style="font-size: 0.8rem;">
+                                                            Base Folder <span style="font-weight:normal; color:var(--text-muted);">(optional)</span>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            id="ptProcDedupeBaseFolder"
+                                                            class="form-control"
+                                                            placeholder="e.g. V:/Set01/input/media  or leave empty"
+                                                            style="font-size: 0.85rem;"
+                                                        >
+                                                        <small style="color: var(--text-muted);">Absolute path to an extra reference collection. All other <code>input/pinterest/</code> subfolders are always included automatically.</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Content Filter -->
+                                            <div class="form-group" style="border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-secondary); margin-bottom: 1rem;">
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                        Content Filter
+                                                    </span>
+                                                    <span id="ptProcYoloBadge" class="pt-badge pt-badge-warn" style="display:none;">ultralytics missing</span>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+                                                    Uses <strong>YOLO11n</strong> and <strong>OpenCV</strong> to remove images with no people or no visible faces.
+                                                </p>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptProcRequirePerson" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                                    <span>Remove images with no people</span>
+                                                </label>
+                                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-size: 0.88rem;">
+                                                    <input type="checkbox" id="ptProcRequireFace" class="checkbox-input">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"></circle><path d="M9.5 10.5c.5 1 1.5 1.5 2.5 1.5s2-.5 2.5-1.5"></path><line x1="9" y1="7.5" x2="9.01" y2="7.5"></line><line x1="15" y1="7.5" x2="15.01" y2="7.5"></line></svg>
+                                                    <span>Remove images with no visible faces</span>
+                                                </label>
+                                            </div>
+
+                                            <!-- Run Button -->
+                                            <button type="button" class="btn btn-primary" id="ptProcessBtn" style="width: 100%; margin-bottom: 1rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.5rem;">
+                                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                                </svg>
+                                                <span>Run Processing</span>
+                                                <span id="ptProcessIndicator" style="display: none; margin-left: 0.5rem; opacity: 0.7; font-size: 0.85rem;">⏳</span>
+                                            </button>
+
+                                            <!-- Progress -->
+                                            <div style="margin-bottom: 1rem;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                                                    <span style="font-size: 0.85rem; color: var(--text-muted);">Progress</span>
+                                                    <span id="ptProcessProgressLabel" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+                                                </div>
+                                                <div class="hw-bar" style="height: 8px; border-radius: 4px;">
+                                                    <div id="ptProcessProgressBar" class="hw-fill" style="width: 0%; transition: width 0.3s;"></div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Result Stats -->
+                                            <div id="ptProcessDedupStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                                <span id="ptProcessDedupStatsText"></span>
+                                            </div>
+                                            <div id="ptProcessContentStats" style="display:none; font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem; padding:0.4rem 0.6rem; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px;">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                                <span id="ptProcessContentStatsText"></span>
+                                            </div>
+
+                                            <!-- Log -->
+                                            <div class="form-group">
+                                                <label>Processing Log</label>
+                                                <pre id="ptProcessLog" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.8rem; max-height: 160px; overflow-y: auto; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+                                            </div>
+
+                                                                                </div>
+
+                                        <!-- Step 3: Open in Batch -->
+                                        <button class="collapsible-header" data-target="ptOpenInBatchSection">
+                                            <span>Open Folder in Batch</span>
+                                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="collapsible-content" id="ptOpenInBatchSection">
+
+                                            <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1rem 0;">
+                                                Select a downloaded Pinterest folder and open it directly in the Image Batch or Video Batch tab, ready to queue.
+                                            </p>
+
+                                            <!-- Folder selector -->
+                                            <div class="form-group">
+                                                <label for="ptBatchFolder">Select Folder</label>
+                                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                    <select id="ptBatchFolder" class="form-control" style="flex: 1;">
+                                                        <option value="">&mdash; choose a folder &mdash;</option>
+                                                    </select>
+                                                    <button type="button" class="btn btn-sm" id="ptRefreshBatchFoldersBtn" title="Refresh folder list" onclick="ptRefreshBatchFolders(); return false;">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <polyline points="23 4 23 10 17 10"></polyline>
+                                                            <polyline points="1 20 1 14 7 14"></polyline>
+                                                            <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                                        </svg>
+                                                        Refresh
+                                                    </button>
+                                                </div>
+                                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">Folders inside <code>input/pinterest/</code></small>
+                                            </div>
+
+                                            <!-- Open buttons -->
+                                            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                                <button type="button" class="btn btn-primary" id="ptOpenImageBatchBtn" onclick="ptOpenInImageBatch(); return false;" style="flex: 1; min-width: 160px;">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.4rem;">
+                                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                                        <polyline points="21 15 16 10 5 21"></polyline>
+                                                    </svg>
+                                                    Open in Image Batch
+                                                </button>
+                                                <button type="button" class="btn btn-primary" id="ptOpenVideoBatchBtn" onclick="ptOpenInVideoBatch(); return false;" style="flex: 1; min-width: 160px;">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none; vertical-align: middle; margin-right: 0.4rem;">
+                                                        <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                                                    </svg>
+                                                    Open in Video Batch
+                                                </button>
+                                            </div>
+
+                                        </div>
+
+                                    </div>
+                                </section>

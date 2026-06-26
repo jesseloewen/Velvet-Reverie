@@ -1,0 +1,63 @@
+                <section class="tab-content" id="viewerTab">
+                    <div class="viewer-panel">
+                        <div class="viewer-header">
+                            <h2>Most Recent Generation</h2>
+                            <div class="viewer-counter" id="viewerCounter" style="display: none;">1 / 1</div>
+                            <div class="viewer-controls">
+                                <button class="btn btn-sm" id="viewerToggleInputBtn" style="display: none;" title="Toggle Input/Output">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <span id="viewerToggleInputText">Show Input</span>
+                                </button>
+                                <label class="checkbox-label" id="viewerMatchSizesLabel" style="display: none;" title="Scale input/output to same size for perfect overlay">
+                                    <input type="checkbox" id="viewerMatchSizesCheckbox" class="checkbox-input">
+                                    <span>Match Sizes</span>
+                                </label>
+                                <button class="btn btn-sm" id="viewerFullscreenBtn" title="Fullscreen (F)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                                    </svg>
+                                    Fullscreen
+                                </button>
+                                <button class="btn btn-sm" id="viewerRefreshBtn" title="Refresh (R)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="23 4 23 10 17 10"></polyline>
+                                        <polyline points="1 20 1 14 7 14"></polyline>
+                                        <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                    </svg>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="viewer-container" id="viewerContainer">
+                            <div class="viewer-content" id="viewerContent">
+                                <button class="viewer-nav viewer-prev" id="viewerPrev" style="display: none;" onclick="navigateViewer(-1); return false;">
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="15 18 9 12 15 6"></polyline>
+                                    </svg>
+                                </button>
+                                <button class="viewer-nav viewer-next" id="viewerNext" style="display: none;" onclick="navigateViewer(1); return false;">
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                </button>
+                                <div class="viewer-loading" id="viewerLoading">
+                                    <p>Loading most recent generation...</p>
+                                </div>
+                                <div class="viewer-empty" id="viewerEmpty" style="display: none;">
+                                    <p>No generations found</p>
+                                </div>
+                                <div class="viewer-image-wrapper" id="viewerImageWrapper" style="display: none;">
+                                    <img id="viewerImage" alt="Recent Generation">
+                                    <video id="viewerVideo" style="display: none;"></video>
+                                </div>
+                            </div>
+                            <div class="viewer-metadata" id="viewerMetadata" style="display: none;">
+                                <!-- Metadata will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                </section>

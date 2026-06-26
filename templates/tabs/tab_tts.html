@@ -1,0 +1,229 @@
+                <section class="tab-content" id="ttsTab">
+                    <div class="generation-panel">
+                        <div class="gallery-header">
+                            <h2>Text-to-Speech (TTS)</h2>
+                            <small style="color: var(--text-muted);">Convert text to speech using VibeVoice AI</small>
+                        </div>
+                        
+                        <!-- Narrator Voice Selection -->
+                        <div class="form-group">
+                            <label for="ttsNarratorAudio">Narrator Voice (Audio File)</label>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <input 
+                                    type="text" 
+                                    id="ttsNarratorAudio" 
+                                    value="Holly.mp3"
+                                    placeholder="Holly.mp3"
+                                    class="form-control"
+                                    style="flex: 1;"
+                                >
+                                <button type="button" class="btn btn-sm" id="browseTTSAudioBtn" onclick="openAudioBrowser('tts'); return false;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M9 18V5l12-2v13"></path>
+                                        <circle cx="6" cy="18" r="3"></circle>
+                                        <circle cx="18" cy="16" r="3"></circle>
+                                    </svg>
+                                    Browse
+                                </button>
+                            </div>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                Select or upload an audio file to clone the voice
+                            </small>
+                        </div>
+
+                        <!-- Text Input -->
+                        <div class="form-group">
+                            <label for="ttsText">Text to Speak</label>
+                            <div class="prompt-container">
+                                <textarea 
+                                    id="ttsText" 
+                                    rows="6" 
+                                    placeholder="Enter the text you want to convert to speech. Each sentence will be generated separately."
+                                    class="form-control"
+                                ></textarea>
+                                <button class="btn btn-primary btn-generate" id="generateTTSBtn" onclick="generateTTS(); return false;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M9 18V5l12-2v13"></path>
+                                        <circle cx="6" cy="18" r="3"></circle>
+                                        <circle cx="18" cy="16" r="3"></circle>
+                                    </svg>
+                                    <span>Generate Speech</span>
+                                </button>
+                            </div>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                Text will be split by sentences and each sentence will be generated as a separate audio file.
+                            </small>
+                        </div>
+
+                        <!-- TTS Parameters -->
+                        <button class="collapsible-header" data-target="ttsParameters">
+                            <span>TTS Parameters</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="ttsParameters">
+                            <!-- Engine Selection -->
+                            <div class="form-group">
+                                <label for="ttsEngine">TTS Engine</label>
+                                <select id="ttsEngine" class="form-control">
+                                    <option value="ChatterboxTTS" selected>ChatterboxTTS (Standard)</option>
+                                    <option value="Chatterbox Multilingual">Chatterbox Multilingual</option>
+                                    <option value="Chatterbox Turbo">Chatterbox Turbo</option>
+                                </select>
+                                <small style="color: var(--text-muted);">Select ChatterBox engine variant</small>
+                            </div>
+
+                            <!-- Audio Format Selection -->
+                            <div class="form-group">
+                                <label for="ttsAudioFormat">Audio Format</label>
+                                <select id="ttsAudioFormat" class="form-control">
+                                    <option value="wav" selected>WAV (Lossless)</option>
+                                    <option value="mp3">MP3 (Compressed)</option>
+                                </select>
+                                <small style="color: var(--text-muted);">Output audio file format</small>
+                            </div>
+
+                            <div class="parameters-grid">
+                                <div class="form-group">
+                                    <label for="ttsSeed">Seed (optional)</label>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <input 
+                                            type="number" 
+                                            id="ttsSeed" 
+                                            placeholder="Random"
+                                            class="form-control"
+                                            style="flex: 1;"
+                                        >
+                                        <button type="button" class="clear-btn" id="clearTTSSeedBtn" title="Clear seed" onclick="clearTTSSeed(); return false;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <small style="color: var(--text-muted);">Random seed for reproducible results (0 = random)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsFilePrefix">File Prefix</label>
+                                    <input 
+                                        type="text" 
+                                        id="ttsFilePrefix" 
+                                        placeholder="tts"
+                                        class="form-control"
+                                        value="tts"
+                                    >
+                                    <small style="color: var(--text-muted);">Prefix for generated audio files</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsSubfolder">Output Folder</label>
+                                    <input 
+                                        type="text" 
+                                        id="ttsSubfolder" 
+                                        placeholder="Leave empty for root"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Subfolder in outputs directory</small>
+                                </div>
+                            </div>
+
+                            <!-- Advanced ChatterBox Parameters -->
+                            <div class="parameters-grid" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                                <div class="form-group">
+                                    <label for="ttsTemperature">Temperature</label>
+                                    <input 
+                                        type="number" 
+                                        id="ttsTemperature" 
+                                        value="0.8"
+                                        min="0"
+                                        max="2"
+                                        step="0.1"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Randomness (0-2, default: 0.8, higher = more expressive)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsExaggeration">Exaggeration</label>
+                                    <input 
+                                        type="number" 
+                                        id="ttsExaggeration" 
+                                        value="0.5"
+                                        min="0"
+                                        max="2"
+                                        step="0.1"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Voice style intensity (0-2, default: 0.5)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsCfgWeight">CFG Weight</label>
+                                    <input 
+                                        type="number" 
+                                        id="ttsCfgWeight" 
+                                        value="0.5"
+                                        min="0"
+                                        max="2"
+                                        step="0.1"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Guidance weight (0-2, default: 0.5)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsChunkSize">Chunk Size</label>
+                                    <input 
+                                        type="number" 
+                                        id="ttsChunkSize" 
+                                        value="300"
+                                        min="50"
+                                        max="1000"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Max characters per chunk (default: 300)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsLanguage">Language</label>
+                                    <select id="ttsLanguage" class="form-control">
+                                        <option value="en" selected>English (en)</option>
+                                        <option value="zh">Chinese (zh)</option>
+                                        <option value="ar">Arabic (ar)</option>
+                                        <option value="da">Danish (da)</option>
+                                        <option value="nl">Dutch (nl)</option>
+                                        <option value="fr">French (fr)</option>
+                                        <option value="de">German (de)</option>
+                                        <option value="el">Greek (el)</option>
+                                        <option value="hi">Hindi (hi)</option>
+                                        <option value="it">Italian (it)</option>
+                                        <option value="ja">Japanese (ja)</option>
+                                        <option value="ko">Korean (ko)</option>
+                                        <option value="pl">Polish (pl)</option>
+                                        <option value="pt">Portuguese (pt)</option>
+                                        <option value="ru">Russian (ru)</option>
+                                        <option value="es">Spanish (es)</option>
+                                        <option value="tr">Turkish (tr)</option>
+                                    </select>
+                                    <small style="color: var(--text-muted);">Output language (mainly for Multilingual engine)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ttsRepetitionPenalty">Repetition Penalty</label>
+                                    <input 
+                                        type="number" 
+                                        id="ttsRepetitionPenalty" 
+                                        value="2.0"
+                                        min="1.0"
+                                        max="5.0"
+                                        step="0.1"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">For Multilingual engine (default: 2.0)</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>

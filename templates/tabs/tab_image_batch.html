@@ -1,0 +1,132 @@
+                <section class="tab-content" id="imageBatchTab">
+                    <div class="generation-panel">
+                        <div class="batch-header" style="margin-bottom: 1.5rem;">
+                            <h2 style="margin: 0 0 0.5rem 0;">Image Batch Generation</h2>
+                            <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">
+                                Select a folder from the input directory. All images in that folder will be queued using the same prompt and settings. Choose to use each image's original size or set a custom size for all.
+                            </p>
+                        </div>
+
+                        <!-- Prompt -->
+                        <div class="form-group">
+                            <label for="imageBatchPrompt">Prompt</label>
+                            <div class="prompt-container">
+                                <textarea 
+                                    id="imageBatchPrompt" 
+                                    rows="4" 
+                                    placeholder="Enter your prompt for all images..."
+                                    class="form-control"
+                                ></textarea>
+                                <button class="btn btn-primary" id="queueImageBatchBtn">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    <span>Queue Image Batch</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Folder Selection -->
+                        <div class="form-group">
+                            <label>Input Folder</label>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button type="button" class="btn" id="chooseImageBatchFolderBtn">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                    Choose Folder
+                                </button>
+                                <span id="imageBatchFolderDisplay" style="color: var(--text-muted);">None selected</span>
+                            </div>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                Uses all image files directly under the selected folder.
+                            </small>
+                        </div>
+
+                        <!-- Parameters (same as Single) -->
+                        <button class="collapsible-header" data-target="imageBatchParameters">
+                            <span>Parameters</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="imageBatchParameters">
+                            <!-- Size Mode Selection -->
+                            <div class="form-group" style="grid-column: 1 / -1; margin-bottom: 1rem;">
+                                <label>Image Size Mode</label>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <label class="checkbox-label">
+                                        <input type="radio" name="imageBatchSizeMode" id="imageBatchUseOriginalSize" value="original" checked class="checkbox-input">
+                                        <span>Use Original Image Size (for each image)</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="radio" name="imageBatchSizeMode" id="imageBatchUseCustomSize" value="custom" class="checkbox-input">
+                                        <span>Use Custom Size (for all images)</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="parameters-grid">
+                                <div class="form-group" id="imageBatchWidthGroup">
+                                    <label for="imageBatchWidth">Width</label>
+                                    <input type="number" id="imageBatchWidth" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
+                                </div>
+                                <div class="form-group" id="imageBatchHeightGroup">
+                                    <label for="imageBatchHeight">Height</label>
+                                    <input type="number" id="imageBatchHeight" value="1024" min="64" max="2048" step="64" class="form-control" disabled>
+                                </div>
+                                <div class="form-group">
+                                    <label for="imageBatchSteps">Steps</label>
+                                    <input type="number" id="imageBatchSteps" value="4" min="1" max="100" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label for="imageBatchCfg">CFG Scale</label>
+                                    <input type="number" id="imageBatchCfg" value="1.0" min="0.1" max="20.0" step="0.1" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label for="imageBatchShift">Shift</label>
+                                    <input type="number" id="imageBatchShift" value="3.0" min="0.0" max="10.0" step="0.1" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label for="imageBatchSeed">Seed (optional)</label>
+                                    <input type="number" id="imageBatchSeed" placeholder="Random" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label for="imageBatchFilePrefix">File Prefix</label>
+                                    <input type="text" id="imageBatchFilePrefix" placeholder="image_batch" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label for="imageBatchSubfolder">Output Folder</label>
+                                    <input type="text" id="imageBatchSubfolder" placeholder="Leave empty for root" class="form-control">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LoRA Settings -->
+                        <button class="collapsible-header" data-target="imageBatchLoraSettings">
+                            <span>LoRA Settings</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="imageBatchLoraSettings">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="imageBatchMcnlLora" class="checkbox-input">
+                                    <span>MCNL LoRA (Female)</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="imageBatchSnofsLora" class="checkbox-input">
+                                    <span>Snofs LoRA (Female)</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="imageBatchMaleLora" class="checkbox-input">
+                                    <span>Male LoRA</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>

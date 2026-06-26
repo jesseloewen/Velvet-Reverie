@@ -1,0 +1,173 @@
+                <section class="tab-content" id="videoTab">
+                    <div class="generation-panel">
+                        <div class="gallery-header">
+                            <h2>Video Generation (Image to Video)</h2>
+                            <small style="color: var(--text-muted);">Convert a static image into an animated video</small>
+                        </div>
+                        
+                        <!-- Image Upload -->
+                        <div class="form-group">
+                            <label for="videoImageUpload">Source Image</label>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <input 
+                                    type="file" 
+                                    id="videoImageUpload" 
+                                    accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                                    class="form-control"
+                                    style="flex: 1;"
+                                >
+                                <button type="button" class="btn btn-sm" id="browseVideoImageBtn" title="Browse Existing Images" onclick="console.log('INLINE onclick fired'); openImageBrowser('video'); return false;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none;">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <polyline points="21 15 16 10 5 21"></polyline>
+                                    </svg>
+                                    Browse
+                                </button>
+                                <button type="button" class="btn btn-sm btn-danger" id="clearVideoImageBtn" style="display: none;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events: none;">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                    Clear
+                                </button>
+                            </div>
+                            <div id="videoImagePreview" style="margin-top: 0.5rem; display: none;">
+                                <img id="videoPreviewImg" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid var(--border);">
+                            </div>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                Upload or select an image to animate into a video
+                            </small>
+                        </div>
+
+                        <!-- Prompt -->
+                        <div class="form-group">
+                            <label for="videoPrompt">Motion Prompt</label>
+                            <div class="prompt-container">
+                                <textarea 
+                                    id="videoPrompt" 
+                                    rows="4" 
+                                    placeholder="Describe the motion or action... (e.g., 'Smile and waves at camera.')"
+                                    class="form-control"
+                                ></textarea>
+                                <button class="btn btn-primary btn-generate" id="generateVideoBtn" onclick="generateVideo(); return false;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    <span>Generate Video</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Video Parameters -->
+                        <button class="collapsible-header" data-target="videoParameters">
+                            <span>Video Parameters</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="videoParameters">
+                            <div class="parameters-grid">
+                                <div class="form-group">
+                                    <label>NSFW Mode</label>
+                                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                        <input type="checkbox" id="videoNSFW" class="checkbox-input">
+                                        <span>Use NSFW</span>
+                                    </label>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="videoFrames">Frames (Length)</label>
+                                    <input 
+                                        type="number" 
+                                        id="videoFrames" 
+                                        value="64" 
+                                        min="10" 
+                                        max="200"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Number of frames to generate (higher = longer video)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="videoFps">FPS (Frames Per Second)</label>
+                                    <input 
+                                        type="number" 
+                                        id="videoFps" 
+                                        value="16" 
+                                        min="8" 
+                                        max="60"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Video playback speed</small>
+                                </div>
+
+                                <!-- Video Duration Display -->
+                                <div class="form-group">
+                                    <label style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <polyline points="12 6 12 12 16 14"></polyline>
+                                        </svg>
+                                        Estimated Duration
+                                    </label>
+                                    <div id="videoDuration" style="padding: 0.5rem 0.75rem; background: var(--bg-secondary); border-radius: 4px; border: 1px solid var(--border); font-weight: 500; color: var(--primary);">
+                                        <span id="videoDurationValue">4.3 seconds</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="videoMegapixels">Megapixels</label>
+                                    <input 
+                                        type="number" 
+                                        id="videoMegapixels" 
+                                        value="0.25" 
+                                        min="0.1" 
+                                        max="2.0"
+                                        step="0.05"
+                                        class="form-control"
+                                    >
+                                    <small style="color: var(--text-muted);">Image scale (lower = faster, higher = better quality)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="videoSeed">Seed (optional)</label>
+                                    <div class="input-with-clear">
+                                        <input 
+                                            type="number" 
+                                            id="videoSeed" 
+                                            placeholder="Random"
+                                            class="form-control"
+                                        >
+                                        <button type="button" class="clear-btn" id="clearVideoSeedBtn" title="Clear seed" onclick="clearVideoSeed(); return false;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="videoFilePrefix">File Prefix (optional)</label>
+                                    <input 
+                                        type="text" 
+                                        id="videoFilePrefix" 
+                                        placeholder="video"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="videoSubfolder">Output Folder (optional)</label>
+                                    <input 
+                                        type="text" 
+                                        id="videoSubfolder" 
+                                        placeholder="Leave empty for root"
+                                        class="form-control"
+                                    >
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>

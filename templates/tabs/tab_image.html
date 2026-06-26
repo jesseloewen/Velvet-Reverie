@@ -1,0 +1,225 @@
+                <section class="tab-content" id="singleTab">
+                    <div class="generation-panel">
+                        <!-- Image Upload Section -->
+                        <div class="form-group">
+                            <label for="imageUpload">Upload Image (Optional - for Image-to-Image)</label>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <input 
+                                    type="file" 
+                                    id="imageUpload" 
+                                    accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                                    class="form-control"
+                                    style="flex: 1;"
+                                >
+                                <button type="button" class="btn btn-sm" id="browseImageBtn" title="Browse Existing Images">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <polyline points="21 15 16 10 5 21"></polyline>
+                                    </svg>
+                                    Browse
+                                </button>
+                                <button type="button" class="btn btn-sm btn-danger" id="clearImageBtn" style="display: none;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                    Clear
+                                </button>
+                            </div>
+                            <div id="imagePreview" style="margin-top: 0.5rem; display: none;">
+                                <img id="imagePreviewImg" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid var(--border);">
+                            </div>
+                        </div>
+
+                        <!-- Use Image Size Option (only shown when image is uploaded) -->
+                        <div class="form-group" id="useImageSizeGroup" style="display: none;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="useImageSize" class="checkbox-input">
+                                <span>Use Uploaded Image Size</span>
+                            </label>
+                            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                When enabled, width and height will match the uploaded image
+                            </small>
+                        </div>
+
+                        <!-- Prompt -->
+                        <div class="form-group">
+                            <label for="prompt">Prompt</label>
+                            <div class="prompt-container">
+                                <textarea 
+                                    id="prompt" 
+                                    rows="4" 
+                                    placeholder="Enter your prompt here... (Ctrl+Enter to generate)"
+                                    class="form-control"
+                                ></textarea>
+                                <button class="btn btn-primary btn-generate" id="generateBtn">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    <span>Generate</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Basic Parameters -->
+                        <button class="collapsible-header" data-target="singleParameters">
+                            <span>Basic Parameters</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content active" id="singleParameters">
+                            <div class="parameters-grid">
+                                <div class="form-group" id="widthGroup">
+                                    <label for="width">Width</label>
+                                    <input 
+                                        type="number" 
+                                        id="width" 
+                                        value="512" 
+                                        min="64" 
+                                        max="2048" 
+                                        step="64"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group" id="heightGroup">
+                                    <label for="height">Height</label>
+                                    <input 
+                                        type="number" 
+                                        id="height" 
+                                        value="1024" 
+                                        min="64" 
+                                        max="2048" 
+                                        step="64"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="filePrefix">File Prefix (optional)</label>
+                                    <input 
+                                        type="text" 
+                                        id="filePrefix" 
+                                        placeholder="velvet"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="subfolder">Output Folder (optional)</label>
+                                    <input 
+                                        type="text" 
+                                        id="subfolder" 
+                                        placeholder="Leave empty for root"
+                                        class="form-control"
+                                    >
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Parameters -->
+                        <button class="collapsible-header" data-target="advancedSettings">
+                            <span>Advanced Settings</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="advancedSettings">
+                            <div class="parameters-grid">
+                                <div class="form-group">
+                                    <label for="steps">Steps</label>
+                                    <input 
+                                        type="number" 
+                                        id="steps" 
+                                        value="4" 
+                                        min="1" 
+                                        max="100"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="cfg">CFG Scale</label>
+                                    <input 
+                                        type="number" 
+                                        id="cfg" 
+                                        value="1.0" 
+                                        min="0.1" 
+                                        max="20.0"
+                                        step="0.1"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="shift">Shift</label>
+                                    <input 
+                                        type="number" 
+                                        id="shift" 
+                                        value="3.0" 
+                                        min="0.0" 
+                                        max="10.0"
+                                        step="0.1"
+                                        class="form-control"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="seed">Seed (optional)</label>
+                                    <div class="input-with-clear">
+                                        <input 
+                                            type="number" 
+                                            id="seed" 
+                                            placeholder="Random"
+                                            class="form-control"
+                                        >
+                                        <button type="button" class="clear-btn" id="clearSeedBtn" title="Clear seed">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LoRA Settings -->
+                        <button class="collapsible-header" data-target="loraSettings">
+                            <span>LoRA Settings</span>
+                            <svg class="collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="loraSettings">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="mcnlLora" class="checkbox-input">
+                                    <span>MCNL LoRA (Female)</span>
+                                </label>
+                                <div class="keyword-list">
+                                    <small>Keywords: cum_on_face, nsfw, blowjob, cowgirlout, creamp1e, penis</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="snofsLora" class="checkbox-input">
+                                    <span>Snofs LoRA (Female)</span>
+                                </label>
+                                <div class="keyword-list">
+                                    <small>Keywords: anus, blowjob, deepthroat, braless, cowgirl position, cum, cunnilingus, dildo, doggystyle position, fingering, hand in panties, handjob, implied blowjob, ipcam, masturbating, massage, missionary position, naked, nude, penis, prone position, reverse cowgirl position, sex, sheer, snapchat, selfie, mirror selfie, spooning position, strap-on dildo, tentacles, licking testicles, undressing, vagina</small>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="maleLora" class="checkbox-input">
+                                    <span>Male LoRA</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>

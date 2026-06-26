@@ -1,654 +1,398 @@
 # Velvet Reverie
 
-Flask-based web UI for image/video generation, AI chat, text-to-speech, with **password protection**, queue management, and organized file storage. Supports Qwen Image model (4-step lightning), Wan2.2 I2V (image-to-video) with NSFW mode, Gradio ChatterBox TTS (audio), and Ollama (AI chat).
+Flask-based web UI for AI image/video generation, chat, and text-to-speech — with password protection, a persistent job queue, hardware monitoring, and organized file storage. Supports Qwen Image (4-step lightning), Wan2.2 I2V (image-to-video, including NSFW mode), ChatterBox TTS, and Ollama.
 
 ## Features
 
-- 🔐 **Password protection** - Session-based authentication with remember me (30 days)
-- 💜 **Multi-theme system** - 5 beautiful themes (Velvet, Dark, Light, Ocean, Sunset)
-- 📁 **Organized storage** - Separate folders for images, videos, audio, and chat sessions
-- 📊 **Hardware monitor** - Real-time CPU/RAM/GPU/VRAM usage with color-coded progress bars
-- 📱 **Mobile-optimized** - Collapsible menus, touch-friendly controls, responsive design
-- 🖼️ **Image generation** - Text-to-image and image-to-image with Qwen Lightning
-- 🎬 **Video generation** - Image-to-video using Wan2.2 I2V workflow with NSFW mode support
-- 🎥 **Frame Edit** - Complete video → frames → AI processing → video pipeline with 3-step UI
-- 🗣️ **Text-to-Speech** - Batch TTS generation with voice display and full text viewer
-- 💬 **AI Chat** - Interactive chat with Ollama models (streaming responses)
-- 📚 **Story Mode** - Character-driven storytelling with lorebook system
-- 🤖 **Auto Chat** - Autonomous dual AI persona conversations
-- 🔄 **Smart workflow switching** - Automatic model unloading when switching between workflows
-- 🎬 **Video batch processing** - Convert entire folders of images to videos
-- 🎭 **Reveal Browser** - Automatically pairs input images with generated outputs
-- 🎥 **Video Browser** - Dedicated tab for viewing generated videos only
-- 🎵 **Audio Browser** - Manage TTS-generated audio with voice labels and playback
-- 📊 **Batch generation** - CSV-based parameter templates with `[placeholder]` support
-- 🖼️ **Image browser** - Browse and organize images (separated from videos)
-- 🎛️ **LoRA controls** - Three toggle switches with keyword hints (MCNL, Snofs, Male)
-- 📌 **Pinterest pipeline** - Scrape images from Pinterest search or board URLs, then batch-queue them for AI image-to-image generation
-- 🧠 **YOLO content filter** - Remove scraped images with no people or no faces using YOLOv11n + OpenCV Haar cascade detection
-- ⌨️ **Keyboard shortcuts** - Ctrl+Enter to generate, fullscreen navigation
-- 📋 **Persistent queue** - Shared across users, survives restarts, shows count badge
-- 📁 **Folder management** - Create, browse, move, delete with breadcrumbs
-- 🖼️ **Image/Video viewer** - Fullscreen with zoom (100-500%), autoplay, keyboard nav
-- 💾 **Metadata tracking** - All generation params saved automatically
-- 🔔 **Toast notifications** - Custom modals, no browser dialogs
+- **Password protection** — session-based auth with remember-me (30 days)
+- **Multi-theme system** — 5 themes: Velvet, Dark, Light, Ocean, Sunset
+- **Hardware monitor** — real-time CPU / RAM / GPU / VRAM bars (color-coded)
+- **Mobile-optimized** — collapsible sidebars, touch controls, responsive layout
+- **Image generation** — text-to-image and image-to-image with Qwen Lightning
+- **Video generation** — image-to-video via Wan2.2 I2V, standard and NSFW workflows
+- **Frame Edit** — extract frames → AI-process each frame → stitch back to video
+- **Text-to-Speech** — batch TTS with ChatterBox, per-sentence regeneration, audio download
+- **AI Chat** — streaming chat with any Ollama model, session management, branching
+- **Story Mode** — character-driven storytelling with lorebook system
+- **Auto Chat** — autonomous dual-AI persona conversations
+- **Batch generation** — CSV parameter templates with `[placeholder]` support
+- **Image Batch** — queue an entire input folder with one shared prompt
+- **Video Batch** — convert entire folders of images to videos
+- **Pinterest pipeline** — scrape images from Pinterest, deduplicate with pHash, filter with YOLO11n / OpenCV, then batch-queue for AI generation
+- **Image Browser** — browse, organize, move, and delete generated images
+- **Video Browser** — browse and play generated videos with inline preview
+- **Viewer** — auto-refresh fullscreen viewer (zoom 100–500%, autoplay, keyboard nav)
+- **Audio Browser** — manage TTS batches; per-sentence playback, full-text view, download
+- **Reveal Browser** — pairs input images with their generated outputs side-by-side
+- **LoRA controls** — MCNL, Snofs, and Male LoRA toggles with keyword hints
+- **Persistent queue** — survives restarts, shared across all browsers, drag-to-reorder
+- **Prompt history** — per-category localStorage dropdown (last 50 prompts)
+- **Blur Media toggle** — one-click privacy blur on all images and videos
+
+## Tab URLs
+
+Each section of the app has its own URL — bookmark or share directly:
+
+| URL | Tab |
+|-----|-----|
+| `/image` | Image generation |
+| `/text-batch` | Text Batch generation |
+| `/image-batch` | Image Batch |
+| `/pinterest` | Pinterest scraper |
+| `/video` | Video generation |
+| `/video-batch` | Video Batch |
+| `/frame-edit` | Frame Edit pipeline |
+| `/browser` | Image Browser |
+| `/video-browser` | Video Browser |
+| `/viewer` | Viewer |
+| `/chat` | Chat |
+| `/story` | Story Mode |
+| `/autochat` | Auto Chat |
+| `/tts` | Text-to-Speech |
+| `/audio` | Audio Browser |
+
+Navigating between tabs updates the URL via `history.pushState` (no full reload). The browser back/forward buttons work as expected.
 
 ## Security & Authentication
 
-### Password Protection
-The web interface is protected with password authentication:
-
-- **Default password:** `password` ⚠️ **Change immediately!**
-- **Remember me:** Keeps you logged in for 30 days (default enabled)
+- **Default password:** `password` — **change this immediately**
+- **Remember me:** 30-day cookie (enabled by default)
 - **Secure sessions:** Flask sessions with HTTP-only cookies
-- **Auto-logout:** Automatic redirect to login on session expiry
+- **Auto-logout:** redirects to login on session expiry
 
 ### Changing the Password
 
-1. Open `app.py` and find the `PASSWORD_HASH` variable (line ~22)
-2. Generate a new password hash using Python:
-   ```python
-   import hashlib
-   new_password = "your_secure_password"
-   print(hashlib.sha256(new_password.encode()).hexdigest())
-   ```
-3. Replace the hash in `app.py` with your new hash
-4. Restart the application
+Generate a SHA-256 hash for your new password:
 
-**Quick command:**
-```powershell
+```bash
 python -c "import hashlib; print(hashlib.sha256(b'your_password').hexdigest())"
 ```
 
-See [PASSWORD_README.md](PASSWORD_README.md) for detailed instructions.
-
-## File Organization
-
-```
-outputs/
-├── metadata.json          # Shared metadata for all generations
-├── queue_state.json       # Persistent queue state
-├── images/                # Generated images
-├── videos/                # Generated videos
-├── audio/                 # TTS audio files
-└── chats/                 # Chat session data
-```
+Then set `PASSWORD_HASH` in your `.env` file (or directly in `app.py`) and restart.
 
 ## Requirements
 
-**Must be running before starting the app:**
-- **ComfyUI server** on `http://127.0.0.1:8188` with models:
-  - Qwen Image model (diffusion, CLIP, VAE, LoRA)
-  - Wan2.2 I2V model (standard and NSFW variants)
-- **Gradio ChatterBox TTS** on `http://127.0.0.1:7860` (for text-to-speech)
-- **Ollama server** on `http://127.0.0.1:11434` (for AI chat features)
-- Optional: NVIDIA GPU with nvidia-smi for GPU/VRAM monitoring
-- **ffmpeg** (required for audio merging): Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
+The following services must be running before starting the app:
+
+| Service | Default address |
+|---------|----------------|
+| ComfyUI | `http://127.0.0.1:8188` |
+| Ollama | `http://127.0.0.1:11434` |
+| ChatterBox TTS (subprocess) | managed automatically |
+
+Additional system tools:
+- **ffmpeg** — required for audio merging (add to PATH)
+- **nvidia-smi** — optional, enables GPU / VRAM monitoring
+
+ComfyUI models needed:
+- Qwen Image model (diffusion, CLIP, VAE, LoRA)
+- Wan2.2 I2V (standard + NSFW variants)
 
 ## Quick Start
 
-```powershell
+```bash
 pip install -r requirements.txt
-python app.py  # Starts on http://localhost:4879
+python app.py          # http://localhost:4879
 ```
 
-**First Login:**
-- Navigate to `http://localhost:4879`
-- Enter default password: `password`
-- Check "Remember me" to stay logged in for 30 days
-- **⚠️ Change the default password immediately!**
-
-## Tabs Overview
-
-The interface has **15 tabs**:
-1. **Image**: Generate individual images with full parameter control
-2. **Text Batch**: Create multiple variations using CSV templates with parameter placeholders  
-3. **Image Batch**: Batch processing with folder selection and same-prompt AI editing
-4. **Pinterest**: Scrape images from Pinterest and queue them for AI generation (see [Pinterest Pipeline](#pinterest-pipeline))
-5. **Video**: Convert static images into animated videos with NSFW mode option
-6. **Video Batch**: Batch convert folders of images to videos
-7. **Frame Edit**: Extract frames from video → AI process all frames → stitch back to video
-8. **Image Browser**: Browse, organize, and manage your generated images
-9. **Video Browser**: Browse and play generated videos
-10. **Viewer**: Image/video viewer (opens automatically from other tabs)
-11. **Chat**: Interactive AI chat with Ollama models (streaming responses)
-12. **Story**: Character-driven interactive storytelling with lorebook system
-13. **Auto Chat**: Autonomous dual AI persona conversations
-14. **TTS**: Text-to-speech batch generation with Gradio ChatterBox
-15. **Audio**: Browse and manage TTS-generated audio files
-
-## Mobile Optimization
-### Desktop
-- **Collapsible Queue Sidebar** - Click chevron to collapse sidebar from 320px to 40px
-- **Responsive Layout** - Main content expands smoothly when sidebar collapses
-- **Generate Button** - Positioned next to prompt box for quick access
-- **Keyboard Shortcuts** - Full keyboard navigation support
-
-### Mobile
-- **Responsive Design** - Optimized layouts for screens ≤768px (tablets) and ≤480px (phones)
-- **Collapsible Menu** - Hamburger button (☰) in header toggles queue sidebar overlay
-- **Collapsible Sections** - Parameters and LoRA settings collapse to save screen space
-- **Touch-Friendly** - Minimum 44px touch targets, increased button spacing
-- **Single-Column Layout** - Parameter grids and prompt controls stack vertically
-- **Fullscreen Viewer** - Pinch-to-zoom, swipe navigation, optimized controls, video playback
-- **Tab Navigation** - Compact tabs for all 8 modes
-
-## Keyboard Shortcuts
-
-**Anywhere (except in modals):**
-- `Ctrl+Enter` (or `Cmd+Enter`) - Generate image/video
-
-**Fullscreen Viewer:**
-- `←` / `→` or `A` / `D` - Navigate images/videos
-- `+` / `-` - Zoom in/out
-- `0` - Reset zoom to 100%
-- `Space` - Toggle autoplay
-- `Esc` - Exit fullscreen
-
-**Image Modal:**
-- `←` / `→` - Previous/next image
-- `Esc` - Close modal
-
-## Usage
-- **Reveal Browser**: View input images paired with generated outputs
-- **Video**: Convert static images into animated videos with NSFW mode option
-- **Video Batch**: Batch convert folders of images to videos
-- **Video Browser**: Browse and play generated videos
-
-### Generate Images (Image Tab)
-
-1. Navigate to the **Image** tab (default)
-2. **Monitor hardware usage** - Check CPU/RAM/GPU/VRAM bars at the top (updates every 2 seconds)
-3. **Upload or browse images** (optional, for image-to-image):
-   - Click "Upload Image" to select a file from your computer
-   - Click "Browse" to select existing images from input/output folders
-   - Enable "Use Image Size" to match source image dimensions
-4. Enter your prompt in the text area (or press `Ctrl+Enter` to generate quickly)
-5. Adjust parameters:
-   - **Width/Height**: Image dimensions (default: 1024×1024)
-   - **Steps**: Sampling steps (default: 4)
-   - **CFG Scale**: Classifier-free guidance (default: 1.0)
-   - **Shift**: Generation shift parameter (default: 3.0)
-   - **Seed**: Random seed (leave empty for random, ✕ button to clear)
-   - **File Prefix**: Custom filename prefix (default: "comfyui")
-   - **Subfolder**: Target folder for output (optional, set from browser)
-6. Configure **LoRA Settings** (collapsible section):
-   - **MCNL LoRA**: Manga/comic line art style with keywords
-   - **Snofs LoRA**: Soft lighting and artistic effects with keywords
-   - **Male LoRA**: Male character enhancement
-7. Click "Generate" button or press `Ctrl+Enter` to add to queue
-8. Watch progress in the left sidebar queue panel
-9. **Note:** Models automatically unload when switching between text-to-image and image-to-image modes
-
-### Generate Videos (Video Tab)
-
-1. Navigate to the **Video** tab
-2. **Upload or browse a source image**:
-   - Click "Upload Image" or "Browse" to select an input image
-   - Clear with the X button to select a different image
-3. **Enable NSFW Mode** (optional):
-   - Check "NSFW Mode" to use NSFW-enabled workflow
-   - Requires NSFW models installed in ComfyUI
-   - System automatically unloads models when switching between standard/NSFW modes
-4. Enter a **motion prompt** describing the desired animation:
-   - Example: "Make her wave at the camera"
-   - Example: "Zoom in slowly while camera rotates"
-5. Adjust video parameters:
-   - **Frames**: Video length (10-200, default: 64)
-   - **FPS**: Frames per second (8-60, default: 16)  
-   - **Megapixels**: Scale factor (0.1-2.0, default: 0.25)
-   - **Seed**: Random seed (optional, for reproducibility)
-6. View **estimated duration** below FPS field (updates automatically)
-7. Click "Generate Video" to add to queue
-8. Video appears in queue with "🎬 Video" badge
-9. When complete, video can be viewed in **Video Browser** tab
-
-### Video Batch Processing (Video Batch Tab)
-
-1. Navigate to the **Video Batch** tab
-2. **Select a folder of images** to convert to videos:
-   - Click "Choose Folder" to browse ComfyUI input folders
-   - Each image in the folder will be queued as a separate video generation
-3. Enter a **motion prompt** for all videos:
-   - This prompt will be applied to every image in the folder
-4. Adjust video parameters (applied to all):
-   - **Frames**: Video length (10-200, default: 64)
-   - **FPS**: Frames per second (8-60, default: 16)
-   - **Megapixels**: Scale factor (0.1-2.0, default: 0.25)
-   - **Seed**: Random seed (optional)
-5. View **estimated duration** per video and total batch duration
-6. Click "Queue Video Batch" to add all jobs to queue
-7. Videos appear in queue with "🎬 Video" badges
-8. All videos output to the same subfolder
-
-### Reveal Browser (Input/Output Pairing - Images Only)
-
-1. Navigate to the **Reveal Browser** tab
-2. Browse folders containing processed images
-3. Toggle between:
-   - **Show Output** / **Show Input**: Switch between viewing outputs or inputs
-
-### Text-to-Speech (TTS Tab)
-
-1. Navigate to the **TTS** tab
-2. **Enter text** to convert to speech:
-   - Multiple sentences supported (auto-split)
-   - Full paragraphs or stories
-3. **Select voice** from available narrator options
-4. Configure TTS parameters:
-   - **Seed**: Random seed (optional)
-   - **File Prefix**: Custom filename prefix (default: "tts")
-   - **Subfolder**: Output folder in `outputs/audio/` (optional)
-5. Click **"Generate TTS Batch"** to queue all sentences
-6. Each sentence generates as a separate audio file
-7. View progress in queue sidebar (shows batch count)
-8. Results appear in **Audio Browser** tab
-
-### Pinterest Pipeline
-
-A two-step workflow that scrapes images from Pinterest and feeds them into the AI generation queue as image-to-image jobs.
-
-#### Prerequisites — Cookie Authentication
-
-Pinterest requires authentication for scraping. The app uses a saved-session cookie file instead of prompting for credentials on every run.
-
-1. **Install Pinterest dependencies** (one-time):
-   ```powershell
-   py setup_pinterest.py
-   ```
-   This installs `pinterest-dl`, `playwright`, `selenium`, and downloads the Firefox browser binary used for the login flow.
-
-2. **Generate your cookie file** by running the login helper:
-   ```powershell
-   # Email / password login
-   py setup_pinterest.py --login
-
-   # Google account login (opens Firefox, click "Continue with Google")
-   py setup_pinterest.py --login --google
-   ```
-   A Firefox window will open. Complete the sign-in (including any CAPTCHA or 2FA), then the window closes automatically and cookies are saved to `pinterest_cookies.json` (path configurable via `PINTEREST_COOKIES_PATH` in `.env`).
-
-3. **Verify cookies** in the Pinterest tab — the **Cookies Status** badge turns green when a valid session is detected (`_pinterest_sess` or `csrftoken` found).
-
-> ⚠️ `pinterest_cookies.json` contains your session credentials. It is listed in `.gitignore` and should **never** be committed.
-
-#### Step 1 — Scrape
-
-1. Navigate to the **Pinterest** tab
-2. Choose a **source type**:
-   - **Search query** — enter a keyword (e.g. `"fantasy art female warrior"`)
-   - **Board / Pin URL** — paste a full Pinterest URL
-3. Set the number of images to scrape (default: 20)
-4. Optionally set a custom **folder name** and **rename label**
-5. Optionally filter by minimum image dimensions (width / height)
-6. *(Optional)* Enable **Remove Duplicate Images** — uses pHash (imagehash) to compare every download against existing Pinterest folders and an optional reference collection. Extra rounds are fetched automatically until the requested count of unique images is collected.
-7. *(Optional)* Enable **Content Filter** options:
-   - **Remove images with no people** — uses YOLO11n (ultralytics) to detect whether at least one person is present; images with no person are deleted
-   - **Remove images with no visible faces** — uses OpenCV Haar cascade face detection; images with no detected face are deleted
-   - Both filters run after dedup in each download round. The stats banner shows how many images were removed by each filter.
-8. Click **"Download Images"**
-9. Watch the live progress bar, dedup stats banner, and content-filter stats banner as images download
-10. When complete, the output folder path is shown under the progress bar
-
-Scraped images are saved to `input/pinterest/<folder_name>/`.
-
-> **Note on YOLO model:** `yolo11n.pt` (~5 MB) is downloaded automatically from the Ultralytics GitHub release on the first run and cached in the project root. Subsequent runs load from cache instantly.
-
-#### Step 2 — Queue for Generation
-
-1. After a successful scrape the **"Queue for Generation"** button activates
-2. Enter a **prompt** to apply to every image
-3. Choose a **size mode**:
-   - **Use original size** — each image keeps its own dimensions
-   - **Custom size** — override width and height for all images
-4. Adjust generation parameters: steps, CFG scale, shift, seed, file prefix, subfolder
-5. Toggle **LoRA settings** (MCNL, Snofs, Male)
-6. Click **"Queue for Generation"**
-7. All scraped images are added to the queue as individual image-to-image jobs
-8. Track progress in the left sidebar queue panel
-
-#### Configuration
-
-| `.env` variable | Default | Description |
-|---|---|---|
-| `PINTEREST_COOKIES_PATH` | `pinterest_cookies.json` | Path to the Pinterest session cookies file |
-| `PINTEREST_DEDUP_BASE_FOLDER` | *(empty)* | Absolute path to an external reference image collection for dedup comparison |
-
-#### Content Filter Dependencies
-
-| Library | Purpose | Install |
-|---|---|---|
-| `ultralytics` | YOLO11n person detection | `py -m pip install ultralytics` |
-| `opencv-python` | Haar cascade face detection | Already in `requirements.txt` |
-
-Both are included in `requirements.txt`. If `ultralytics` is not installed, the **Content Filter** checkboxes are disabled with a warning badge in the UI (the rest of the Pinterest pipeline continues to work normally).
-
----
-
-### Audio Browser
-
-1. Navigate to the **Audio** tab
-2. View TTS batches organized by generation time
-3. Each batch shows:
-   - **Title**: First 50 characters of generated text
-   - **Voice name**: Narrator used (e.g., "Holly")
-   - **Date and sentence count**
-4. **Expand batch** to see individual sentences
-5. **Play controls**:
-   - Click "Play All" to play sentences sequentially
-   - Click individual sentences to play from that point
-   - Current sentence highlights during playback
-6. **View Full Text** button:
-   - Opens modal with complete text
-   - Easy copy with "Copy Text" button
-   - Shows all sentences in batch
-7. **Audio player** - Integrated controls for playback
-
-### AI Chat (Chat Tab)
-
-1. Navigate to the **Chat** tab
-2. **Start a new chat**:
-   - Enter optional chat name
-   - Select Ollama model (loads available models)
-   - Add system instructions (optional, defines AI behavior)
-   - Click "Start Chat"
-3. **Chat interface**:
-   - Type messages in text area
-   - Press Enter or click "Send" to submit
-   - **Streaming responses** - Text appears in real-time
-   - Messages persist in session history
-4. **Session management**:
-   - View all chat sessions with "View Sessions"
-   - Load previous conversations
-   - Clear chat history
-   - Import settings to new chat
-5. **Queue integration**:
-   - Chat messages appear in queue with timer badge
-   - Background processing continues even if browser disconnects
-   - Session saved before and after generation
-
-### Chat to Chat (Autonomous AI Conversations)
-
-1. Navigate to the **Chat to Chat** tab
-2. **Configure conversation**:
-   - Enter conversation topic/name
-   - Select two different Ollama models
-   - Name each AI agent (e.g., "Philosopher", "Scientist")
-   - Add system instructions for each agent
-   - Enter starting message for first agent
-   - Set maximum turns (default: 50)
-3. **Start conversation**:
-   - Click "Start Conversation"
-   - AI agents chat autonomously
-   - **Real-time updates** - Messages appear as generated
-4. **Conversation controls**:
-   - **Stop** - Pause conversation at any point
-   - **Continue** - Resume from where it stopped
-   - Conversation auto-stops at max turns
-5. **View sessions**:
-   - Browse all Chat to Chat sessions
-   - Load previous conversations
-   - Continue or review completed chats
-6. **Queue integration**:
-   - Shows "Chat to Chat" b     # Flask backend with auth, queue, hardware monitoring
-├── comfyui_client.py           # Python stdlib ComfyUI API wrapper (urllib, json)
-├── ollama_client.py            # Python stdlib Ollama API wrapper (urllib, json)
-├── templates/
-│   ├── index.html              # 13-tab SPA main interface
-│   └── login.html              # Password login page
-├── static/
-│   ├── style.css               # Dark theme, mobile responsive
-│   └── script.js               # Vanilla JS (queue, hardware, chat streaming)
-├── outputs/                    # Generated content (gitignored)
-│   ├── images/                 # All image generations
-│   │   └── myFolder/           # User subfolders
-│   ├── videos/                 # All video generations
-│   │   └── myFolder/
-│   ├── audio/                  # All TTS audio
-│   │   └── myFolder/
-│   ├── chats/                  # Chat sessions
-│   │   ├── chat_sessions.json
-│   │   └── c2c_sessions.json
-│   ├── metadata.json           # Generation metadata
-│   └── queue_state.json        # Persistent queue state
-├── workflows/
-│   ├── Qwen_Full (API).json         # Image generation workflow
-│   ├── Wan2.2 I2V (API).json        # Video generation workflow (standard)
-│   ├── Wan2.2 I2V NSFW (API).json   # Video generation workflow (NSFW)
-│   └── TTSVibe (API).json           # Text-to-speech workflow
-├── requirements.txt            # Python dependencies
-├── PASSWORD_README.md          # Password change instructions
-├── Authentication
-- `POST /api/auth/login` - Login with password and remember me flag
-- `POST /api/auth/logout` - Clear session and cookies
-- `GET /api/auth/check` - Check authentication status
-
-### Core Endpoints
-- `GET /` - Main web interface (13 tabs) or login page
-- `POST /api/queue/image` - Add image generation job to queue
-- `POST /api/queue/video` - Add video generation job to queue
-- `GET /api/queue/status` - Get queue status (queued, active, completed)
-- `POST /api/queue/cancel/<job_id>` - Cancel queued job
-- `POST /api/queue/clear` - Clear queued items only
-- `POST /api/queue/batch` - Add batch image generation jobs from CSV
-- `POST /api/queue/image-batch` - Queue folder of images for batch processing
-- `POST /api/queue/video-batch` - Queue folder of images to convert to videos
-- `POST /api/queue/tts` - Queue text-to-speech batch generation
-- `GET /api/batch-instructions` - Get inline batch CSV instructions
-- `GET /api/browse` - Browse folder contents with metadata
-- `GET /api/browse_audio` - Browse audio files and TTS batches
-- `GET /api/reveal` - Get input/output pairs for reveal browser
-- `POST /api/folder` - Create new subfolder
-- `POST /api/move` - Move files/folders
-- `POST /api/delete` - Delete files/folders
-- `GET /api/images/<image_id>` - Get specific image metadata
-- `GET /outputs/<path:filepath>` - Serve generated image/video/audio
-
-### Video Endpoints
-- `GET /api/video/<path:filepath>` - Serve video from ComfyUI input or outputs
-- `POST /api/upload` - Upload image to ComfyUI input (returns filename)
-
-### Chat & AI Endpoints
-- `GET /api/ollama/health` - Check if Ollama server is running
-- `GET /api/ollama/models` - List available Ollama models
-- `POST /api/chat/message` - Send chat message (SSE streaming response)
-- `GET /api/chat/sessions` - List all chat sessions
-- `GET /api/chat/<session_id>` - Get specific chat session
-- `POST /api/chat/<session_id>/clear` - Clear chat history
-- `POST /api/chat2chat/start` - Start autonomous AI-to-AI conversation
-- `GET /api/chat2chat/<session_id>` - Get Chat to Chat session status
-- `POST /api/chat2chat/<session_id>/stop` - Stop running conversation
-- `POST /api/chat2chat/<session_id>/continue` - Resume stopped conversation
-- `GET /api/chat2chat/sessions` - List all Chat to Chat sessions
-- Click any image/video to open detail view with metadata
-- Use arrow buttons or keyboard (←/→/A/D) to navigate
-- Click fullscreen button for immersive viewing:
-  - **Videos**: Play with controls, looping enabled in modal
-  - **Images**: Zoom 100-500%, drag to pan when zoomed
-  - **Autoplay**: Press Space or and Ollama clients (urllib, json)
-- External dependencies: Flask, psutil
-- **Authentication:**
-  - Session-based with Flask sessions
-  - Remember me cookie lasts 30 days
-  - All API endpoints protected with `@require_auth` decorator
-  - 401 responses trigger automatic redirect to login
-- **Smart Workflow Switching:**
-  - Automatically detects workflow type changes (image/video/NSFW/chat)
-  - Unloads models before switching to prevent conflicts
-  - 2-5 second delay after unloading for stability
-- **Model Management:**
-  - Unloads ALL models (ComfyUI + Ollama) after EVERY job completion
-  - 5-second wait for complete cleanup
-  - Prevents RAM/VRAM cramming on limited systems
-- **Hardware Monitoring:**
-  - Updates every 2 seconds via polling
-  - Uses psutil for CPU/RAM (cross-platform)
-  - Uses nvidia-smi for GPU/VRAM (NVIDIA only)
-  - Color-coded bars: blue (normal), orange (high), red (critical)
-- **Video Generation:**
-  - Supports standard and NSFW workflows
-  - Videos saved as MP4 files in `outputs/videos/`
-  - Proper MIME types for browser playback
-  - Integrated with fullscreen viewer
-- **Chat Features:**
-  - Background thread processing for async handling
-  - SSE (Server-Sent Events) for real-time streaming
-  - Session persistence in JSON files
-  - Ollama integration for LLM support
-- **File Organization:**
-  - Media-type folders created automatically
-  - User subfolders nested within media types
-  - Transparent to user interfacend with immediate UI feedback
-- **Persistent queue** - Survives server restarts via `queue_state.json`
-- **Shared across all users** - All browsers see same queue state
-
-## Generation Parameters
-
-### Image Parameters
-- `positive_prompt`: Main prompt text (sent to Qwen CLIP encoder)
-- `width`: Image width (64-2048, step 64, default 1024)
-- `height`: Image height (64-2048, step 64, default 1024)  
-- `steps`: Sampling steps (1-100, default 4 for Qwen Lightning)
-- `seed`: Random seed (optional, auto-generated if empty)
-- `cfg`: Classifier-free guidance (default 1.0)
-- `shift`: Generation shift parameter (default 3.0)
-- `file_prefix`: Custom filename prefix (default: "comfyui")
-- `subfolder`: Target subfolder path (optional)
-- `mcnl_lora`: Enable MCNL LoRA (manga/comic style)
-- `snofs_lora`: Enable Snofs LoRA (soft lighting effects)
-- `male_lora`: Enable Male LoRA (male character enhancement)
-
-### Video Parameters
-- `positive_prompt`: Motion description (animation to apply)
-- `image_filename`: Source image from ComfyUI input directory
-- `frames`: Video length (10-200, default 64)
-- `fps`: Frames per second (8-60, default 16)
-- `megapixels`: Scale factor (0.1-2.0, default 0.25)
-- `seed`: Random seed (optional, for reproducibility)
-- `nsfw`: Use NSFW workflow (boolean, default false)
-- `file_prefix`: Custom filename prefix (default: "video")
-- `subfolder`: Target subfolder path (optional)
+Log in with the default password `password`, then change it.
 
 ## Project Structure
 
 ```
-├── app.py                      # Flask backend (auth, queue, hardware, all routes)
-├── comfyui_client.py           # Python stdlib ComfyUI API wrapper (urllib, json)
-├── ollama_client.py            # Python stdlib Ollama API wrapper (urllib, json)
-├── gradio_tts_client.py        # Gradio ChatterBox TTS client
-├── pinterest_client.py         # Pinterest scraper module (pinterest-dl, playwright)
-├── setup_pinterest.py          # One-time Pinterest dependency installer + login helper
-├── pinterest_cookies.json      # Pinterest session cookies — GITIGNORED, never commit!
-├── samples/                    # Reference / scratch scripts — GITIGNORED
-├── templates/
-│   ├── index.html              # 15-tab SPA main interface
-│   └── login.html              # Password login page
-├── static/
-│   ├── style.css               # Multi-theme system, mobile responsive
-│   ├── script.js               # Core UI logic, queue, hardware monitoring
-│   ├── story.js                # Story mode with lorebook
-│   ├── story_modals.js         # Story UI modals
-│   ├── autochat.js             # Dual AI persona chat
-│   └── pinterest.js            # Pinterest scrape + queue pipeline UI
-├── outputs/                    # Generated content (gitignored)
-│   ├── images/                 # All image generations
-│   │   └── myFolder/           # User subfolders
-│   ├── videos/                 # All video generations
-│   │   └── myFolder/
-│   ├── audio/                  # All TTS audio
-│   │   └── myFolder/
-│   ├── chats/                  # Chat sessions
-│   │   └── chats.json
-│   ├── metadata.json           # Generation metadata
-│   └── queue_state.json        # Persistent queue state
-├── workflows/
-│   ├── Qwen_Full (API).json         # Image generation workflow
-│   ├── Wan2.2 I2V (API).json        # Video generation workflow (standard)
-│   └── Wan2.2 I2V NSFW (API).json   # Video generation workflow (NSFW)
-├── cache/                      # Cache directories for ML frameworks
-├── requirements.txt            # Python dependencies (flask, psutil, mutagen, gradio_client)
-└── PASSWORD_README.md          # Password change instructions
+app.py                          # Flask backend — only Python file in root
+requirements.txt
+
+lib/                            # Supporting Python modules
+├── __init__.py
+├── chatterbox_server.py        # ChatterBox TTS FastAPI subprocess server
+├── comfyui_client.py           # ComfyUI API client (stdlib urllib)
+├── ollama_client.py            # Ollama API client (stdlib urllib)
+├── gradio_tts_client.py        # ChatterBox TTS HTTP client + subprocess manager
+├── media_index.py              # In-memory media index with pickle cache
+├── pinterest_client.py         # Pinterest scraper (pHash dedup + YOLO filter)
+└── setup_pinterest.py          # One-time Pinterest dependency installer + login
+.env                            # Runtime config (gitignored)
+.env.example                    # Config template
+
+models/
+└── yolo/
+    └── yolo11n.pt              # Auto-downloaded on first Pinterest use
+
+static/
+├── assets/                     # Theme icons (velvet, dark, ocean, sunset)
+├── css/
+│   ├── main.css                # @imports all modules below
+│   ├── themes.css              # CSS custom properties for all 5 themes + reset
+│   ├── layout.css              # Sidebars, header, hardware monitor, content wrapper
+│   ├── components.css          # Buttons, forms, modals, queue items, collapsibles
+│   ├── browser.css             # Gallery grid, fullscreen viewer, zoom, hover compare
+│   ├── chat.css                # Chat / story / autochat UI
+│   ├── tts.css                 # TTS panel, audio batch player
+│   └── misc.css                # Prompt history, Pinterest badges, scrollbar
+├── js/
+│   ├── core.js                 # Globals, state, init, tab switching, theme, hardware
+│   ├── queue.js                # Queue rendering, drag-drop reorder, navigation
+│   ├── image.js                # Single / text-batch / image-batch generation
+│   ├── video.js                # Video / video-batch / frame-edit generation
+│   ├── browser.js              # Image browser, video browser, viewer, fullscreen
+│   ├── tts.js                  # TTS generation, audio browser, batch playback
+│   └── chat.js                 # Chat, story, autochat, conversation audio
+├── autochat.js                 # Auto Chat UI logic
+├── story.js                    # Story mode with lorebook
+├── story_modals.js             # Story character / lorebook modals
+├── pinterest.js                # Pinterest scrape + queue pipeline UI
+├── prompt_history.js           # Per-category prompt history (localStorage)
+└── video-player.js             # Custom HTML5 video player widget
+
+templates/
+├── index.html                  # App shell — includes all tab templates
+├── login.html                  # Password login page
+└── tabs/
+    ├── tab_image.html
+    ├── tab_text_batch.html
+    ├── tab_image_batch.html
+    ├── tab_pinterest.html
+    ├── tab_video.html
+    ├── tab_video_batch.html
+    ├── tab_frame_edit.html
+    ├── tab_browser.html
+    ├── tab_video_browser.html
+    ├── tab_viewer.html
+    ├── tab_chat.html
+    ├── tab_story.html
+    ├── tab_autochat.html
+    ├── tab_tts.html
+    └── tab_audio.html
+
+workflows/
+├── Qwen_Full (API).json
+├── Wan2.2 I2V (API).json
+└── Wan2.2 I2V NSFW (API).json
+
+outputs/                        # Generated content (gitignored)
+├── images/
+├── videos/
+├── audio/
+├── chats/
+├── metadata.json
+└── queue_state.json
 ```
+
+## Configuration (`.env`)
+
+```ini
+FLASK_HOST=0.0.0.0
+FLASK_PORT=4879
+FLASK_SECRET_KEY=velvet-reverie-secret-key
+SESSION_LIFETIME_DAYS=30
+PASSWORD_HASH=<sha256 hash>
+
+COMFYUI_HOST=127.0.0.1
+COMFYUI_PORT=8188
+COMFYUI_TOKEN=
+
+OLLAMA_HOST=127.0.0.1
+OLLAMA_PORT=11434
+
+GRADIO_HOST=127.0.0.1
+GRADIO_PORT=8765
+
+OUTPUT_DIR=outputs
+INPUT_DIR=input
+TTS_AUDIO_INPUT_DIR=input/audio_tts
+COMFYUI_INPUT_DIR=../ComfyUI/input/
+COMFYUI_OUTPUT_DIR=../ComfyUI/output/
+WORKFLOWS_DIR=workflows
+
+WORKFLOW_QWEN=Qwen_Full (API).json
+WORKFLOW_VIDEO=Wan2.2 I2V (API).json
+WORKFLOW_VIDEO_NSFW=Wan2.2 I2V NSFW (API).json
+
+PINTEREST_COOKIES_PATH=pinterest_cookies.json
+PINTEREST_DEDUP_BASE_FOLDER=
+```
+
+## Keyboard Shortcuts
+
+**Anywhere:**
+- `Ctrl+Enter` / `Cmd+Enter` — generate image or video
+
+**Fullscreen Viewer:**
+- `←` / `→` or `A` / `D` — navigate
+- `+` / `-` — zoom in / out
+- `0` — reset zoom to 100%
+- `Space` — toggle autoplay
+- `Esc` — exit fullscreen
+
+**Image Modal:**
+- `←` / `→` — previous / next
+- `Esc` — close
+
+## Pinterest Pipeline
+
+### Prerequisites
+
+1. Install Pinterest dependencies (one-time):
+   ```bash
+   python lib/setup_pinterest.py
+   ```
+
+2. Save your Pinterest session cookies:
+   ```bash
+   python lib/setup_pinterest.py --login          # email/password
+   python lib/setup_pinterest.py --login --google # Google account (opens Firefox)
+   ```
+   Cookies are saved to `pinterest_cookies.json` (path set by `PINTEREST_COOKIES_PATH`).
+
+> `pinterest_cookies.json` contains session credentials — it is gitignored and must never be committed.
+
+### Workflow
+
+1. **Download** — enter a search query or Pinterest URL, set image count, optional dedup (pHash) and content filters (YOLO person / OpenCV face detection)
+2. **Process Existing Folder** — run dedup and content filtering on already-downloaded folders without re-scraping
+3. **Open in Batch** — send any Pinterest folder directly to Image Batch or Video Batch and queue for generation
+
+### Content Filter Dependencies
+
+| Library | Purpose |
+|---------|---------|
+| `ultralytics` | YOLO11n person detection |
+| `opencv-python` | Haar cascade face detection |
+
+Both are in `requirements.txt`. If `ultralytics` is missing the content filter checkboxes are disabled with a warning badge; everything else continues to work.
+
+## Generation Parameters
+
+### Image
+| Parameter | Default | Range |
+|-----------|---------|-------|
+| width | 1024 | 64–2048 (step 64) |
+| height | 1024 | 64–2048 (step 64) |
+| steps | 4 | 1–100 |
+| cfg | 1.0 | 0.1–20.0 |
+| shift | 3.0 | 0.0–10.0 |
+| seed | random | optional |
+| file_prefix | velvet | optional |
+| subfolder | — | optional |
+
+### Video
+| Parameter | Default | Range |
+|-----------|---------|-------|
+| frames | 64 | 10–200 |
+| fps | 16 | 8–60 |
+| megapixels | 0.25 | 0.1–2.0 |
+| seed | random | optional |
+| nsfw | false | boolean |
 
 ## API Endpoints
 
-### Pinterest Endpoints
-- `GET /api/pinterest/cookies-status` - Check if Pinterest cookies file exists and contains a valid session
-- `POST /api/pinterest/scrape` - Start a Pinterest scrape job; accepts `dedup`, `dedup_base_folder`, `require_person`, `require_face`
-- `GET /api/pinterest/job/<job_id>` - Poll scrape job status, progress, log lines, `dupes_removed`, `no_person_removed`, `no_face_removed`
-- `GET /api/pinterest/jobs` - List all scrape jobs in the current session
-- `GET /api/pinterest/dedup-available` - Returns `{available: bool}` indicating whether `imagehash` is installed
-- `GET /api/pinterest/yolo-available` - Returns `{available: bool}` indicating whether `ultralytics` is installed
-- `POST /api/pinterest/queue-batch` - Queue all images from a completed scrape as generation jobs
+### Auth
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/check`
 
-### Core Endpoints
-- `GET /` - Main web interface with 15 tabs
-- `POST /api/queue` - Add image or video generation job to queue
-- `GET /api/queue` - Get queue status (queued, active, completed)
-- `DELETE /api/queue/<job_id>` - Remove queued or completed job
-- `POST /api/queue/clear` - Clear queued items only
-- `POST /api/queue/batch` - Add batch image generation jobs
-- `POST /api/queue/image-batch` - Queue folder of images for batch processing
-- `POST /api/queue/video-batch` - Queue folder of images to convert to videos
-- `GET /api/browse` - Browse folder contents with metadata
-- `GET /api/reveal` - Get input/output pairs for reveal browser
-- `POST /api/folder` - Create new subfolder
-- `POST /api/move` - Move files/folders
-- `POST /api/delete` - Delete files/folders
-- `GET /api/images/<image_id>` - Get specific image metadata
-- `GET /outputs/<path:filepath>` - Serve generated image/video
+### Tab URLs
+- `GET /` — root (redirects to Image tab or login)
+- `GET /image`, `/text-batch`, `/image-batch`, `/pinterest`
+- `GET /video`, `/video-batch`, `/frame-edit`
+- `GET /browser`, `/video-browser`, `/viewer`
+- `GET /chat`, `/story`, `/autochat`
+- `GET /tts`, `/audio`
 
-### Video Endpoints
-- `GET /api/video/<path:filepath>` - Serve video from ComfyUI input or outputs
-- `POST /api/upload` - Upload image to ComfyUI input (returns filename)
+### Queue
+- `POST /api/queue` — image or video job
+- `GET /api/queue` — queue status
+- `DELETE /api/queue/<job_id>`
+- `POST /api/queue/batch` — CSV batch
+- `POST /api/queue/image-batch`
+- `POST /api/queue/video-batch`
+- `POST /api/queue/tts`
+- `POST /api/queue/tts/regenerate`
+- `POST /api/queue/pause`
+- `POST /api/queue/reorder`
+- `POST /api/queue/clear`
+- `POST /api/cancel/<job_id>`
 
-### System Monitoring Endpoints
-- `GET /api/hardware/stats` - Get CPU/RAM/GPU/VRAM usage statistics
-- `POST /api/comfyui/unload` - Manually unload models and clear memory
-- `GET /api/comfyui/status` - Get memory status and auto-unload timer
+### Browse & Files
+- `GET /api/browse`
+- `GET /api/browse_images`
+- `GET /api/browse_audio`
+- `GET /api/browse_audio_files`
+- `POST /api/folder`
+- `POST /api/move`
+- `POST /api/delete`
+- `POST /api/upload`
+- `POST /api/copy_to_input`
+- `POST /api/copy_folder_to_input`
+- `GET /api/recent`
+- `GET /outputs/<path>`
+- `GET /api/video/<path>`
+- `GET /api/thumbnail/<path>`
+- `GET /api/image/input/<path>`
+- `GET /api/audio/input/<path>`
+- `GET /api/audio/download/<file_id>`
+- `POST /api/audio/merge_batch`
 
-### Image Management Endpoints
-- `GET /api/browse_images?folder=input` - List images from ComfyUI input
-- `GET /api/image/input/<filename>` - Serve image from ComfyUI input
-- `POST /api/copy_to_input` - Copy image from output to input folder
+### Chat / Story / Auto Chat
+- `GET|POST /api/chat/sessions`
+- `GET|PUT|DELETE /api/chat/sessions/<id>`
+- `POST /api/chat/sessions/<id>/duplicate`
+- `POST /api/chat/message`
+- `GET /api/chat/stream/<session_id>/<response_id>`
+- `POST /api/chat/generate_name`
+- `GET /api/chat/sessions/<id>/audio/download`
+- `GET|POST /api/story/sessions` (same pattern)
+- `POST /api/story/message`
+- `GET /api/story/stream/<session_id>/<response_id>`
+- `GET|POST /api/autochat/sessions` (same pattern)
+- `POST /api/autochat/start`
+- `POST /api/autochat/manual_message`
+- `GET /api/autochat/stream/<session_id>/<response_id>`
+- `POST /api/autochat/sessions/<id>/stop`
+- `POST /api/autochat/sessions/<id>/continue`
 
-## Development
+### Frame Edit
+- `POST /api/frame-edit/extract`
+- `GET /api/frame-edit/count`
+- `POST /api/frame-edit/process`
+- `GET /api/frame-edit/count-output`
+- `POST /api/frame-edit/stitch`
 
-- **No hot reload** - Restart Flask server after Python changes
-- Frontend changes (HTML/CSS/JS) only need browser refresh (Ctrl+F5)
-- Queue processing runs in daemon thread
-- Uses Python stdlib for ComfyUI and Ollama clients (urllib, json)
-- **Required dependency**: Flask
-- **Optional dependencies**: psutil (hardware monitoring), mutagen (MP3 duration), ffmpeg (audio merging)
-- **UTF-8 Encoding**: All file I/O uses `encoding='utf-8'` for Windows compatibility
-- **Smart Workflow Switching:**
-  - Automatically detects workflow type changes (image/video/NSFW/chat)
-  - Unloads ALL models (ComfyUI + Ollama) after every job completion
-  - 5-second wait after unloading to prevent RAM cramming
-- **Model Management:**
-  - Complete cleanup after each generation
-  - Prevents memory issues on limited hardware
-- **Hardware Monitoring:**
-  - Updates every 2 seconds via polling
-  - Uses psutil for CPU/RAM (cross-platform, optional)
-  - Uses nvidia-smi for GPU/VRAM (NVIDIA only, optional)
-  - Color-coded bars: blue (normal), orange (high), red (critical)
-- **Video Generation:**
-  - Supports standard and NSFW workflows
-  - Videos saved as MP4 files
-  - Proper MIME types for browser playback
-  - Integrated with fullscreen viewer
-- **Chat Features:**
-  - SSE streaming for real-time responses
-  - Background processing continues if browser disconnects
-  - Session persistence across restarts
+### System
+- `GET /api/hardware/stats`
+- `GET /api/ollama/health`
+- `GET /api/ollama/models`
+- `GET /api/gradio_tts/health`
+- `POST /api/comfyui/unload`
+- `POST /api/settings/auto-unload`
+- `POST /api/thumbnails/generate-all`
+
+### Pinterest
+- `GET /api/pinterest/cookies-status`
+- `POST /api/pinterest/scrape`
+- `GET /api/pinterest/job/<job_id>`
+- `GET /api/pinterest/jobs`
+- `GET /api/pinterest/dedup-available`
+- `GET /api/pinterest/yolo-available`
+- `GET /api/pinterest/list-folders`
+- `POST /api/pinterest/process-folder`
+
+## Development Notes
+
+- **Frontend changes** (HTML / CSS / JS) — browser refresh only (Ctrl+F5)
+- **Backend changes** (`app.py` or other `.py` files) — restart the Flask server
+- Queue processing runs in a background daemon thread
+- ComfyUI and Ollama clients use Python stdlib only (`urllib`, `json`)
+- All file I/O uses `encoding='utf-8'`
+- Auto-unload: models are freed after every completed job (ComfyUI `/free`, Ollama `keep_alive=0`, ChatterBox `/unload`); configurable via the Auto-Unload toggle in the hardware monitor strip
 
 ## Privacy
 
-- `outputs/` directory is gitignored
-- `robots.txt` blocks major AI crawlers (GPTBot, Claude-Web, etc.)
+- `outputs/` is gitignored
+- `pinterest_cookies.json` is gitignored
 - All metadata stored locally in `outputs/metadata.json`
 
 ## License
 
-This project is open source and available for use and modification.
+Open source — free to use and modify.

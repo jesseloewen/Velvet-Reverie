@@ -1,0 +1,290 @@
+/* Browser item text readability: prevent name/count truncation on cards */
+.gallery-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.gallery-item-prompt,
+.browser-image-name,
+.browser-folder-name,
+.browser-audio-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.browser-audio-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+/* Keep folder labels fully readable while media card titles stay compact */
+.gallery-item-info .gallery-item-media-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+/* -- Pinterest tab badges -------------------------------------------- */
+.pt-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.pt-badge-ok   { background: rgba(34,197,94,0.15);  color: #22c55e; border: 1px solid rgba(34,197,94,0.4); }
+.pt-badge-warn { background: rgba(234,179,8,0.15);  color: #eab308; border: 1px solid rgba(234,179,8,0.4); }
+.pt-badge-error{ background: rgba(239,68,68,0.15);  color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
+
+/* ============================================================================
+   PROMPT HISTORY SYSTEM
+   ============================================================================ */
+
+/* Wrapper that contains the textarea + history button + dropdown */
+.ph-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+}
+
+/* The small "History" trigger button placed below the textarea */
+.ph-trigger-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    align-self: flex-start;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.ph-trigger-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+
+.ph-trigger-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.ph-trigger-btn .ph-trigger-chevron {
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.ph-trigger-btn.active .ph-trigger-chevron {
+    transform: rotate(180deg);
+}
+
+.ph-trigger-label {
+    white-space: nowrap;
+}
+
+/* Dropdown panel */
+.ph-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 3000;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+    min-width: 320px;
+    max-width: min(560px, 95vw);
+    max-height: 340px;
+    overflow: hidden;
+    flex-direction: column;
+    animation: phFadeIn 0.15s ease-out;
+}
+
+.ph-dropdown.open {
+    display: flex;
+}
+
+/* Flip dropdown above the textarea when there is not enough space below */
+.ph-dropdown.flip-up {
+    top: auto;
+    bottom: calc(100% + 2px);
+    animation: phFadeInUp 0.15s ease-out;
+}
+
+@keyframes phFadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes phFadeInUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Header bar inside dropdown */
+.ph-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0.85rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    border-radius: 8px 8px 0 0;
+    flex-shrink: 0;
+}
+
+.ph-header-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.ph-clear-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ph-clear-btn:hover {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+
+/* Empty state */
+.ph-empty {
+    padding: 1.25rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+/* Scrollable list */
+.ph-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.35rem;
+    overflow-y: auto;
+    max-height: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+/* Individual prompt item */
+.ph-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+    outline: none;
+}
+
+.ph-item:hover,
+.ph-item:focus {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+}
+
+.ph-item:active {
+    background: rgba(139,92,246,0.15);
+}
+
+.ph-item-text {
+    flex: 1;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    text-overflow: ellipsis;
+    word-break: break-word;
+}
+
+.ph-item-del {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.2rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    margin-top: 0.1rem;
+}
+
+.ph-item:hover .ph-item-del,
+.ph-item:focus .ph-item-del {
+    opacity: 1;
+}
+
+.ph-item-del:hover {
+    color: var(--error);
+    background: rgba(239,68,68,0.12);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .ph-dropdown {
+        min-width: 0;
+        max-width: calc(100vw - 1rem);
+        left: 0;
+    }
+
+    .ph-trigger-label {
+        display: none;
+    }
+
+    .ph-item-del {
+        opacity: 1;
+    }
+
+    .ph-item {
+        padding: 0.65rem 0.6rem;
+    }
+
+    .ph-item-text {
+        font-size: 0.825rem;
+    }
+}

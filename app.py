@@ -3,10 +3,10 @@ Velvet Reverie - Flask Web UI
 """
 
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, Response, stream_with_context, session, make_response
-from comfyui_client import ComfyUIClient
-from ollama_client import OllamaClient
-from gradio_tts_client import GradioTTSClient
-from media_index import MediaIndex
+from scripts.comfyui_client import ComfyUIClient
+from scripts.ollama_client import OllamaClient
+from scripts.gradio_tts_client import GradioTTSClient
+from scripts.media_index import MediaIndex
 import os
 import json
 import time
@@ -63,6 +63,8 @@ else:
     print("[AUDIO] Download from: https://ffmpeg.org/download.html")
 
 app = Flask(__name__)
+# Disable static file caching so JS/CSS changes take effect immediately on refresh
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 # Flask Configuration from environment
 FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
@@ -2941,18 +2943,52 @@ queue_thread = threading.Thread(target=process_queue, daemon=True)
 queue_thread.start()
 
 
+TAB_ROUTES = {
+    '/image': 'single',
+    '/text-batch': 'batch',
+    '/image-batch': 'image-batch',
+    '/pinterest': 'pinterest',
+    '/video': 'video',
+    '/video-batch': 'video-batch',
+    '/frame-edit': 'frame-edit',
+    '/browser': 'browser',
+    '/video-browser': 'videos',
+    '/viewer': 'viewer',
+    '/chat': 'chat',
+    '/story': 'story',
+    '/autochat': 'autochat',
+    '/tts': 'tts',
+    '/audio': 'audio',
+}
+
+for _route, _tab in TAB_ROUTES.items():
+    def _make_tab_view(tab_name):
+        def tab_view():
+            if session.get('authenticated'):
+                return render_template('index.html', active_tab=tab_name)
+            remember_token = request.cookies.get('remember_token')
+            if remember_token and remember_token == get_remember_token():
+                session['authenticated'] = True
+                session.permanent = True
+                return render_template('index.html', active_tab=tab_name)
+            return render_template('login.html')
+        tab_view.__name__ = f'tab_{tab_name.replace("-", "_")}'
+        return tab_view
+    app.add_url_rule(_route, view_func=_make_tab_view(_tab))
+
+
 @app.route('/')
 def index():
     """Main page"""
     # Check session
     if session.get('authenticated'):
-        return render_template('index.html')
+        return render_template('index.html', active_tab='single')
     # Check remember me cookie
     remember_token = request.cookies.get('remember_token')
     if remember_token and remember_token == get_remember_token():
         session['authenticated'] = True
         session.permanent = True
-        return render_template('index.html')
+        return render_template('index.html', active_tab='single')
     # Show login page
     return render_template('login.html')
 
@@ -6746,7 +6782,7 @@ def get_hardware_stats():
 
 
 try:
-    from pinterest_client import (
+    from scripts.pinterest_client import (
         start_scrape_thread, start_process_folder_thread,
         get_job, list_jobs, cookies_status,
         PINTEREST_COOKIES_PATH, PINTEREST_DEDUP_BASE_FOLDER,
