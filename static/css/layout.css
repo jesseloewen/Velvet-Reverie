@@ -148,6 +148,7 @@
     text-align: left;
     display: block;
     width: 100%;
+    text-decoration: none;
     -webkit-tap-highlight-color: transparent; /* Remove iOS tap highlight */
 }
 

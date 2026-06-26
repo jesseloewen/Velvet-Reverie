@@ -419,6 +419,64 @@ async function selectChatSession(sessionId, skipPollingResume = false) {
     }
 }
 
+/**
+ * Poll the session until its chat_name changes away from 'New Chat'.
+ * This handles the race where auto_generate_first_chat_name() runs on the backend
+ * after the message is marked completed, so the first loadChatSessions() call
+ * returns before the new name is written.
+ *
+ * @param {string} sessionId - session to watch
+ */
+async function pollForChatSessionName(sessionId) {
+    const MAX_WAIT_MS = 60 * 1000; // 60 seconds — Ollama can be slow
+    const POLL_INTERVAL_MS = 1500;
+    const startTime = Date.now();
+
+    const poll = async () => {
+        if (Date.now() - startTime > MAX_WAIT_MS) {
+            console.log('[CHAT] Session name poll timed out for:', sessionId);
+            return;
+        }
+
+        // Stop if the user has switched away from this session or the name is already updated
+        if (!currentChatSession || currentChatSession.session_id !== sessionId) return;
+        if (currentChatSession.chat_name !== 'New Chat') return;
+
+        try {
+            const resp = await fetch(`/api/chat/sessions/${sessionId}`);
+            if (!resp.ok) { setTimeout(poll, POLL_INTERVAL_MS); return; }
+
+            const data = await resp.json();
+            if (!data.success) { setTimeout(poll, POLL_INTERVAL_MS); return; }
+
+            const freshName = data.session?.chat_name;
+            if (freshName && freshName !== 'New Chat') {
+                console.log('[CHAT] Auto-generated name received:', freshName);
+
+                // Update in-memory state
+                currentChatSession.chat_name = freshName;
+
+                // Update session list cache
+                const idx = chatSessions.findIndex(s => s.session_id === sessionId);
+                if (idx !== -1) {
+                    chatSessions[idx].chat_name = freshName;
+                }
+
+                // Refresh UI
+                syncActiveChatNameUI(freshName);
+                renderChatSessions();
+            } else {
+                setTimeout(poll, POLL_INTERVAL_MS);
+            }
+        } catch (err) {
+            console.error('[CHAT] Session name poll error:', err);
+            setTimeout(poll, POLL_INTERVAL_MS);
+        }
+    };
+
+    setTimeout(poll, POLL_INTERVAL_MS);
+}
+
 function syncActiveChatNameUI(chatName) {
     const safeName = chatName || 'New Chat';
     const chatTitle = document.getElementById('chatTitle');
@@ -2013,6 +2071,15 @@ function startChatStreamingPolling(responseId) {
                 
                 // Reload session list to update order (most recent first)
                 loadChatSessions();
+                
+                // The backend auto-names the session on the first exchange, but it does so
+                // via a second Ollama call that runs AFTER marking the message completed.
+                // loadChatSessions() above may resolve before that name is written, so the
+                // UI would keep showing "New Chat". Poll the session endpoint for a short
+                // grace period to catch the name update as soon as it appears.
+                if (currentChatSession && currentChatSession.chat_name === 'New Chat') {
+                    pollForChatSessionName(sessionId);
+                }
                 
                 // CRITICAL FIX: Re-create message element to show action buttons
                 // The buttons only appear when !isLoading in createChatMessageElement

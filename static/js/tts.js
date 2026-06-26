@@ -450,10 +450,11 @@ async function submitChatTTS() {
         if (data.success) {
             showNotification(`TTS queued! ${data.total_sentences} sentence(s) will be generated.`, 'Success', 'success', 4000);
             
-            // Store batch ID with message for later audio attachment
-            if (messageId && data.batch_id) {
-                // We'll handle this when TTS completes
-                console.log('[TTS] Batch ID:', data.batch_id, 'for message:', messageId);
+            // If this TTS is linked to a chat message, poll the session until audio is ready
+            // then inject the audio player into the message element without requiring a page reload.
+            if (messageId && sessionId) {
+                console.log('[TTS] Starting audio ready poll for message:', messageId, 'session:', sessionId, 'type:', sessionType);
+                pollForChatTTSAudio(messageId, sessionId, sessionType);
             }
         } else {
             showNotification(data.error || 'Failed to queue TTS generation', 'Error', 'error', 5000);
@@ -461,6 +462,162 @@ async function submitChatTTS() {
     } catch (error) {
         console.error('TTS generation error:', error);
         showNotification('Failed to queue TTS generation', 'Error', 'error', 5000);
+    }
+}
+
+/**
+ * Poll the session endpoint until tts_audio is set on the target message,
+ * then inject the audio player element into the DOM so it appears immediately
+ * without the user needing to reload or navigate away and back.
+ *
+ * @param {string} messageId  - message_id or response_id of the target message
+ * @param {string} sessionId  - session_id of the chat/story/autochat session
+ * @param {string} sessionType - 'chat' | 'story' | 'autochat'
+ */
+async function pollForChatTTSAudio(messageId, sessionId, sessionType) {
+    const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes
+    const POLL_INTERVAL_MS = 2000;       // poll every 2 seconds
+    const startTime = Date.now();
+
+    // Map session type to its API endpoint
+    const sessionEndpoints = {
+        'chat':     `/api/chat/sessions/${sessionId}`,
+        'story':    `/api/story/sessions/${sessionId}`,
+        'autochat': `/api/autochat/sessions/${sessionId}`,
+    };
+    const endpoint = sessionEndpoints[sessionType] || sessionEndpoints['chat'];
+
+    // Map session type to the container selector and conversation audio type label
+    const containerIds = {
+        'chat':     'chatMessages',
+        'story':    'storyMessages',
+        'autochat': 'autochatMessages',
+    };
+    const messagesContainerId = containerIds[sessionType] || 'chatMessages';
+    const audioConversationType = sessionType; // 'chat', 'story', or 'autochat'
+
+    const poll = async () => {
+        if (Date.now() - startTime > MAX_WAIT_MS) {
+            console.warn('[TTS] Audio poll timed out for message:', messageId);
+            return;
+        }
+
+        try {
+            const resp = await fetch(endpoint);
+            if (!resp.ok) {
+                console.warn('[TTS] Session fetch failed, retrying...', resp.status);
+                setTimeout(poll, POLL_INTERVAL_MS);
+                return;
+            }
+
+            const data = await resp.json();
+            if (!data.success) {
+                setTimeout(poll, POLL_INTERVAL_MS);
+                return;
+            }
+
+            const session = data.session;
+            const messages = session.messages || [];
+
+            // Find the message by message_id or response_id
+            const msg = messages.find(m =>
+                m.message_id === messageId || m.response_id === messageId
+            );
+
+            if (!msg) {
+                // Message not found yet, keep polling
+                setTimeout(poll, POLL_INTERVAL_MS);
+                return;
+            }
+
+            if (!msg.tts_audio) {
+                // Audio not ready yet, keep polling
+                setTimeout(poll, POLL_INTERVAL_MS);
+                return;
+            }
+
+            // Audio is ready — inject the player into the DOM
+            console.log('[TTS] Audio ready for message:', messageId, '→', msg.tts_audio);
+            injectChatMessageAudio(messageId, msg.tts_audio, audioConversationType, messagesContainerId, messages.indexOf(msg));
+
+        } catch (err) {
+            console.error('[TTS] Poll error:', err);
+            setTimeout(poll, POLL_INTERVAL_MS);
+        }
+    };
+
+    // Start the first poll after a short delay to allow the job to be enqueued
+    setTimeout(poll, POLL_INTERVAL_MS);
+}
+
+/**
+ * Inject (or replace) the audio player element inside the message DOM element.
+ * If an audio player already exists for this message it won't be duplicated.
+ *
+ * @param {string} messageId          - data-message-id on the message element
+ * @param {string} audioPath          - relative audio path stored in tts_audio
+ * @param {string} conversationType   - 'chat' | 'story' | 'autochat'
+ * @param {string} containerId        - ID of the messages container element
+ * @param {number} messageIndex       - index of the message in the session array
+ */
+function injectChatMessageAudio(messageId, audioPath, conversationType, containerId, messageIndex) {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.warn('[TTS] Messages container not found:', containerId);
+        return;
+    }
+
+    // Locate the message element. Chat uses data-message-id; story uses data-message-id too;
+    // autochat uses data-response-id as well.
+    let messageEl = container.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageEl) {
+        messageEl = container.querySelector(`[data-response-id="${messageId}"]`);
+    }
+
+    if (!messageEl) {
+        console.warn('[TTS] Could not find message element for:', messageId);
+        return;
+    }
+
+    const wrapper = messageEl.querySelector('.chat-message-wrapper');
+    if (!wrapper) {
+        console.warn('[TTS] Could not find .chat-message-wrapper inside message element');
+        return;
+    }
+
+    // Don't add a duplicate if one already exists
+    if (wrapper.querySelector('.chat-message-audio')) {
+        console.log('[TTS] Audio player already present in message, skipping injection');
+        return;
+    }
+
+    // Use createConversationAudioElement if available (chat.js), otherwise fall back to HTML builder
+    let audioEl = null;
+    if (typeof createConversationAudioElement === 'function') {
+        audioEl = createConversationAudioElement(conversationType, audioPath, messageIndex);
+    }
+
+    if (audioEl) {
+        // Insert before the actions div (or at end of wrapper if no actions div)
+        const actionsDiv = wrapper.querySelector('.chat-message-actions');
+        if (actionsDiv) {
+            wrapper.insertBefore(audioEl, actionsDiv);
+        } else {
+            wrapper.appendChild(audioEl);
+        }
+        console.log('[TTS] Audio player injected for message:', messageId);
+    } else if (typeof buildConversationAudioHtml === 'function') {
+        // Fallback: use HTML string builder (e.g. autochat/story)
+        const html = buildConversationAudioHtml(conversationType, audioPath, messageIndex);
+        if (html) {
+            const actionsDiv = wrapper.querySelector('.chat-message-actions');
+            if (actionsDiv) {
+                actionsDiv.insertAdjacentHTML('beforebegin', html);
+            } else {
+                wrapper.insertAdjacentHTML('beforeend', html);
+            }
+            console.log('[TTS] Audio player HTML injected for message:', messageId);
+        }
     }
 }
 
