@@ -99,9 +99,9 @@ DATA_DIR = OUTPUT_DIR / "data"
 THUMBNAILS_DIR = DATA_DIR / "thumbnails"
 METADATA_FILE = OUTPUT_DIR / "metadata.json"
 QUEUE_FILE = OUTPUT_DIR / "queue_state.json"
-CHATS_FILE = OUTPUT_DIR / "chats" / "chats.json"
-STORIES_FILE = OUTPUT_DIR / "chats" / "stories.json"
-AUTOCHAT_FILE = OUTPUT_DIR / "chats" / "autochat.json"
+CHATS_DIR = OUTPUT_DIR / "chats" / "chat"
+STORIES_DIR = OUTPUT_DIR / "chats" / "story"
+AUTOCHAT_DIR = OUTPUT_DIR / "chats" / "autochat"
 
 # Workflows directory
 WORKFLOWS_DIR = Path(os.getenv('WORKFLOWS_DIR', 'workflows'))
@@ -124,10 +124,50 @@ DOCS_DIR = Path(os.getenv('DOCS_DIR', 'docs'))
 (OUTPUT_DIR / "videos").mkdir(exist_ok=True)
 (OUTPUT_DIR / "audio").mkdir(exist_ok=True)
 (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
+CHATS_DIR.mkdir(parents=True, exist_ok=True)
+STORIES_DIR.mkdir(parents=True, exist_ok=True)
+AUTOCHAT_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(exist_ok=True)
 THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 TTS_AUDIO_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _migrate_legacy_chat_files():
+    """One-time migration: split legacy monolithic JSON chat files into per-session files."""
+    legacy_map = [
+        (OUTPUT_DIR / "chats" / "chats.json",    CHATS_DIR,    'chat'),
+        (OUTPUT_DIR / "chats" / "stories.json",  STORIES_DIR,  'story'),
+        (OUTPUT_DIR / "chats" / "autochat.json", AUTOCHAT_DIR, 'autochat'),
+    ]
+    for legacy_file, target_dir, label in legacy_map:
+        if not legacy_file.exists():
+            continue
+        try:
+            with open(legacy_file, 'r', encoding='utf-8') as f:
+                sessions = json.load(f)
+            if not isinstance(sessions, list):
+                continue
+            migrated = 0
+            for session in sessions:
+                session_id = session.get('session_id')
+                if not session_id:
+                    continue
+                dest = target_dir / f"{session_id}.json"
+                if dest.exists():
+                    continue  # already migrated, skip
+                with open(dest, 'w', encoding='utf-8') as f:
+                    json.dump(session, f, indent=2, ensure_ascii=False)
+                migrated += 1
+            print(f"[MIGRATE] {label}: migrated {migrated} sessions from {legacy_file.name}")
+            # Rename legacy file so migration won't re-run
+            legacy_file.rename(legacy_file.with_suffix('.json.bak'))
+            print(f"[MIGRATE] Renamed {legacy_file.name} -> {legacy_file.name}.bak")
+        except Exception as e:
+            print(f"[MIGRATE] Error migrating {legacy_file}: {e}")
+
+
+_migrate_legacy_chat_files()
 
 # ── Smart media index (built once from metadata.json, then kept in sync) ──────
 # Replaces per-request full-JSON scans with O(1) directory lookups.
@@ -673,25 +713,64 @@ def _flush_index_to_disk():
 
 
 def load_chats():
-    """Load chat sessions from file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
-    if CHATS_FILE.exists():
+    """Load all chat sessions from individual per-session JSON files."""
+    CHATS_DIR.mkdir(parents=True, exist_ok=True)
+    sessions = []
+    for path in sorted(CHATS_DIR.glob("*.json")):
         try:
-            with open(CHATS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(path, 'r', encoding='utf-8') as f:
+                sessions.append(json.load(f))
         except Exception as e:
-            print(f"Error loading chats: {e}")
-    return []
+            print(f"Error loading chat session {path.name}: {e}")
+    return sessions
 
 
 def save_chats(chats):
-    """Save chat sessions to file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
+    """Save chat sessions – each session gets its own JSON file."""
+    CHATS_DIR.mkdir(parents=True, exist_ok=True)
+    for session in chats:
+        session_id = session.get('session_id')
+        if not session_id:
+            continue
+        path = CHATS_DIR / f"{session_id}.json"
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(session, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving chat session {session_id}: {e}")
+
+
+def save_chat_session(session):
+    """Save a single chat session to its own JSON file."""
+    CHATS_DIR.mkdir(parents=True, exist_ok=True)
+    session_id = session.get('session_id')
+    if not session_id:
+        return
+    path = CHATS_DIR / f"{session_id}.json"
     try:
-        with open(CHATS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(chats, f, indent=2, ensure_ascii=False)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(session, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print(f"Error saving chats: {e}")
+        print(f"Error saving chat session {session_id}: {e}")
+
+
+def load_chat_session(session_id):
+    """Load a single chat session by ID. Returns None if not found."""
+    path = CHATS_DIR / f"{session_id}.json"
+    if path.exists():
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading chat session {session_id}: {e}")
+    return None
+
+
+def delete_chat_session_file(session_id):
+    """Delete the JSON file for a single chat session."""
+    path = CHATS_DIR / f"{session_id}.json"
+    if path.exists():
+        path.unlink()
 
 
 def resolve_audio_output_path(path_hint):
@@ -802,33 +881,40 @@ def get_session_store(session_type):
     return load_chats, save_chats, 'chat_name', 'chat'
 
 
+def _get_single_session_store(session_type):
+    """Return (load_single_fn, save_single_fn, normalized_type) for per-session-file I/O."""
+    normalized = (session_type or 'chat').lower()
+    if normalized == 'story':
+        return load_story_session, save_story_session, 'story'
+    if normalized == 'autochat':
+        return load_autochat_session, save_autochat_session, 'autochat'
+    return load_chat_session, save_chat_session, 'chat'
+
+
 def attach_audio_to_session_message(session_type, session_id, message_id, relative_path, batch_id):
     """Attach merged TTS audio metadata to a specific message in a session."""
     if not session_id or not message_id:
         return False
 
-    load_fn, save_fn, _, normalized_type = get_session_store(session_type)
+    load_single, save_single, normalized_type = _get_single_session_store(session_type)
 
     with chat_lock:
-        sessions = load_fn()
+        session = load_single(session_id)
+        if not session:
+            return False
+
         updated = False
-
-        for session in sessions:
-            if session.get('session_id') != session_id:
-                continue
-
-            for message in session.get('messages', []):
-                msg_id = message.get('message_id') or message.get('response_id')
-                if msg_id == message_id:
-                    message['tts_audio'] = relative_path
-                    message['tts_batch_id'] = batch_id
-                    updated = True
-                    print(f"[MERGE] Attached {normalized_type} audio to message: {relative_path}")
-                    break
-            break
+        for message in session.get('messages', []):
+            msg_id = message.get('message_id') or message.get('response_id')
+            if msg_id == message_id:
+                message['tts_audio'] = relative_path
+                message['tts_batch_id'] = batch_id
+                updated = True
+                print(f"[MERGE] Attached {normalized_type} audio to message: {relative_path}")
+                break
 
         if updated:
-            save_fn(sessions)
+            save_single(session)
 
         return updated
 
@@ -911,9 +997,11 @@ def merge_and_send_session_audio(session_type, session_id):
             'error': 'Audio merging requires ffmpeg to be installed on your system. Download from https://ffmpeg.org/download.html and add to PATH.'
         }), 500
 
-    load_fn, _, name_field, normalized_type = get_session_store(session_type)
-    sessions = load_fn()
-    session_data = next((s for s in sessions if s.get('session_id') == session_id), None)
+    load_single, _, normalized_type = _get_single_session_store(session_type)
+    name_field_map = {'story': 'story_name', 'autochat': 'session_name', 'chat': 'chat_name'}
+    name_field = name_field_map.get(normalized_type, 'chat_name')
+
+    session_data = load_single(session_id)
     if not session_data:
         return jsonify({'success': False, 'error': 'Session not found'}), 404
 
@@ -965,51 +1053,125 @@ def merge_and_send_session_audio(session_type, session_id):
 
 
 def load_stories():
-    """Load story sessions from file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
-    (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
-    if STORIES_FILE.exists():
+    """Load all story sessions from individual per-session JSON files."""
+    STORIES_DIR.mkdir(parents=True, exist_ok=True)
+    sessions = []
+    for path in sorted(STORIES_DIR.glob("*.json")):
         try:
-            with open(STORIES_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(path, 'r', encoding='utf-8') as f:
+                sessions.append(json.load(f))
         except Exception as e:
-            print(f"Error loading stories: {e}")
-    return []
+            print(f"Error loading story session {path.name}: {e}")
+    return sessions
 
 
 def save_stories(stories):
-    """Save story sessions to file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)  # Ensure directory exists
-    (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
+    """Save story sessions – each session gets its own JSON file."""
+    STORIES_DIR.mkdir(parents=True, exist_ok=True)
+    for session in stories:
+        session_id = session.get('session_id')
+        if not session_id:
+            continue
+        path = STORIES_DIR / f"{session_id}.json"
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(session, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving story session {session_id}: {e}")
+
+
+def save_story_session(session):
+    """Save a single story session to its own JSON file."""
+    STORIES_DIR.mkdir(parents=True, exist_ok=True)
+    session_id = session.get('session_id')
+    if not session_id:
+        return
+    path = STORIES_DIR / f"{session_id}.json"
     try:
-        with open(STORIES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(stories, f, indent=2, ensure_ascii=False)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(session, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print(f"Error saving stories: {e}")
+        print(f"Error saving story session {session_id}: {e}")
+
+
+def load_story_session(session_id):
+    """Load a single story session by ID. Returns None if not found."""
+    path = STORIES_DIR / f"{session_id}.json"
+    if path.exists():
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading story session {session_id}: {e}")
+    return None
+
+
+def delete_story_session_file(session_id):
+    """Delete the JSON file for a single story session."""
+    path = STORIES_DIR / f"{session_id}.json"
+    if path.exists():
+        path.unlink()
 
 
 def load_autochat():
-    """Load autochat sessions from file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
-    if AUTOCHAT_FILE.exists():
+    """Load all autochat sessions from individual per-session JSON files."""
+    AUTOCHAT_DIR.mkdir(parents=True, exist_ok=True)
+    sessions = []
+    for path in sorted(AUTOCHAT_DIR.glob("*.json")):
         try:
-            with open(AUTOCHAT_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(path, 'r', encoding='utf-8') as f:
+                sessions.append(json.load(f))
         except Exception as e:
-            print(f"Error loading autochat: {e}")
-    return []
+            print(f"Error loading autochat session {path.name}: {e}")
+    return sessions
 
 
 def save_autochat(sessions):
-    """Save autochat sessions to file"""
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    (OUTPUT_DIR / "chats").mkdir(exist_ok=True)
+    """Save autochat sessions – each session gets its own JSON file."""
+    AUTOCHAT_DIR.mkdir(parents=True, exist_ok=True)
+    for session in sessions:
+        session_id = session.get('session_id')
+        if not session_id:
+            continue
+        path = AUTOCHAT_DIR / f"{session_id}.json"
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(session, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving autochat session {session_id}: {e}")
+
+
+def save_autochat_session(session):
+    """Save a single autochat session to its own JSON file."""
+    AUTOCHAT_DIR.mkdir(parents=True, exist_ok=True)
+    session_id = session.get('session_id')
+    if not session_id:
+        return
+    path = AUTOCHAT_DIR / f"{session_id}.json"
     try:
-        with open(AUTOCHAT_FILE, 'w', encoding='utf-8') as f:
-            json.dump(sessions, f, indent=2, ensure_ascii=False)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(session, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print(f"Error saving autochat: {e}")
+        print(f"Error saving autochat session {session_id}: {e}")
+
+
+def load_autochat_session(session_id):
+    """Load a single autochat session by ID. Returns None if not found."""
+    path = AUTOCHAT_DIR / f"{session_id}.json"
+    if path.exists():
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading autochat session {session_id}: {e}")
+    return None
+
+
+def delete_autochat_session_file(session_id):
+    """Delete the JSON file for a single autochat session."""
+    path = AUTOCHAT_DIR / f"{session_id}.json"
+    if path.exists():
+        path.unlink()
 
 
 def build_autochat_context(session, active_persona):
@@ -1157,12 +1319,7 @@ def add_metadata_entry(image_path, prompt, width, height, steps, seed, file_pref
 def auto_generate_first_chat_name(session_id: str, model: str = None):
     """Auto-generate a chat name from the first user+assistant exchange only."""
     with chat_lock:
-        sessions = load_chats()
-        session_data = None
-        for s in sessions:
-            if s.get('session_id') == session_id:
-                session_data = s
-                break
+        session_data = load_chat_session(session_id)
 
         if not session_data:
             return None
@@ -1211,24 +1368,23 @@ def auto_generate_first_chat_name(session_id: str, model: str = None):
         generated_name = generated_name[:50].strip()
 
     with chat_lock:
-        sessions = load_chats()
-        for s in sessions:
-            if s.get('session_id') != session_id:
-                continue
+        session_data = load_chat_session(session_id)
+        if not session_data:
+            return None
 
-            # Recheck completion count to avoid races before updating title.
-            completed_assistant_count = sum(
-                1
-                for m in s.get('messages', [])
-                if m.get('role') == 'assistant' and m.get('completed') and (m.get('content') or '').strip()
-            )
-            if completed_assistant_count != 1:
-                return None
+        # Recheck completion count to avoid races before updating title.
+        completed_assistant_count = sum(
+            1
+            for m in session_data.get('messages', [])
+            if m.get('role') == 'assistant' and m.get('completed') and (m.get('content') or '').strip()
+        )
+        if completed_assistant_count != 1:
+            return None
 
-            s['chat_name'] = generated_name
-            s['updated_at'] = datetime.now().isoformat()
-            save_chats(sessions)
-            return generated_name
+        session_data['chat_name'] = generated_name
+        session_data['updated_at'] = datetime.now().isoformat()
+        save_chat_session(session_data)
+        return generated_name
 
     return None
 
@@ -1682,12 +1838,7 @@ def process_queue():
                     try:
                         # Get session data
                         with chat_lock:
-                            sessions = load_chats()
-                            session_data = None
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    session_data = s
-                                    break
+                            session_data = load_chat_session(session_id)
                         
                         if not session_data:
                             print(f"[NAME_GEN] Session not found: {session_id}")
@@ -1734,13 +1885,11 @@ Session name:"""
                         
                         # Update session name
                         with chat_lock:
-                            sessions = load_chats()
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    s['chat_name'] = generated_name
-                                    s['updated_at'] = datetime.now().isoformat()
-                                    break
-                            save_chats(sessions)
+                            session_data = load_chat_session(session_id)
+                            if session_data:
+                                session_data['chat_name'] = generated_name
+                                session_data['updated_at'] = datetime.now().isoformat()
+                                save_chat_session(session_data)
                         
                         job['generated_name'] = generated_name
                         print(f"[NAME_GEN] Session name updated to: {generated_name}")
@@ -1793,12 +1942,7 @@ Session name:"""
                     # CRITICAL: Reload session from disk to get latest messages
                     # This ensures that if multiple chat jobs are queued, each one
                     # gets the updated context from previously completed responses
-                    sessions = load_chats()
-                    session_data = None
-                    for s in sessions:
-                        if s['session_id'] == session_id:
-                            session_data = s
-                            break
+                    session_data = load_chat_session(session_id)
                     
                     if not session_data:
                         raise Exception(f"Session {session_id} not found")
@@ -1826,12 +1970,10 @@ Session name:"""
                         session_data['messages'].append(assistant_msg)
                         with chat_lock:
                             # Reload to ensure we don't overwrite
-                            sessions = load_chats()
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    s['messages'].append(assistant_msg)
-                                    break
-                            save_chats(sessions)
+                            fresh = load_chat_session(session_id)
+                            if fresh:
+                                fresh['messages'].append(assistant_msg)
+                                save_chat_session(fresh)
                     
                     # Build message context (all messages UP TO this point in sequence)
                     # CRITICAL: Only include messages that come BEFORE this response in the conversation
@@ -1951,12 +2093,7 @@ Session name:"""
                                 # CRITICAL: Reload sessions from disk before saving to avoid overwriting
                                 # newer messages that were added while we're streaming
                                 with chat_lock:
-                                    sessions = load_chats()
-                                    session_data = None
-                                    for s in sessions:
-                                        if s['session_id'] == session_id:
-                                            session_data = s
-                                            break
+                                    session_data = load_chat_session(session_id)
                                     
                                     if session_data:
                                         # Find our assistant message again
@@ -1964,17 +2101,12 @@ Session name:"""
                                             if msg.get('response_id') == response_id:
                                                 msg['content'] = full_response
                                                 break
-                                        save_chats(sessions)
+                                        save_chat_session(session_data)
                         
                         # If error occurred, mark job as failed
                         if has_error:
                             with chat_lock:
-                                sessions = load_chats()
-                                session_data = None
-                                for s in sessions:
-                                    if s['session_id'] == session_id:
-                                        session_data = s
-                                        break
+                                session_data = load_chat_session(session_id)
                                 
                                 if session_data:
                                     for msg in session_data['messages']:
@@ -1983,7 +2115,7 @@ Session name:"""
                                             msg['completed'] = True
                                             msg['error'] = True
                                             break
-                                    save_chats(sessions)
+                                    save_chat_session(session_data)
                             
                             # Mark job as failed
                             with queue_lock:
@@ -1995,12 +2127,7 @@ Session name:"""
                         
                         # Final save with completed status
                         with chat_lock:
-                            sessions = load_chats()
-                            session_data = None
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    session_data = s
-                                    break
+                            session_data = load_chat_session(session_id)
                             
                             if session_data:
                                 # Find our assistant message again
@@ -2013,7 +2140,7 @@ Session name:"""
                                         if cancellation_requested and full_response.strip():
                                             msg['cancelled'] = True
                                         break
-                                save_chats(sessions)
+                                save_chat_session(session_data)
 
                         # Force automatic naming on first completed chat response only.
                         # This runs before the queue item is marked completed.
@@ -2046,13 +2173,7 @@ Session name:"""
                         
                         # Mark the response as failed
                         with chat_lock:
-                            sessions = load_chats()
-                            session_data = None
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    session_data = s
-                                    break
-                            
+                            session_data = load_chat_session(session_id)
                             if session_data:
                                 for msg in session_data['messages']:
                                     if msg.get('response_id') == response_id:
@@ -2060,7 +2181,7 @@ Session name:"""
                                         msg['completed'] = True
                                         msg['error'] = True
                                         break
-                                save_chats(sessions)
+                                save_chat_session(session_data)
                         raise
                 
                 elif job_type == 'autochat':
@@ -2072,12 +2193,7 @@ Session name:"""
                     print(f"[AUTOCHAT] Processing turn for session {session_id}, persona {active_persona}")
                     
                     # Reload session from disk
-                    sessions = load_autochat()
-                    session_data = None
-                    for s in sessions:
-                        if s['session_id'] == session_id:
-                            session_data = s
-                            break
+                    session_data = load_autochat_session(session_id)
                     
                     if not session_data:
                         raise Exception(f"Autochat session {session_id} not found")
@@ -2125,12 +2241,10 @@ Session name:"""
                     }
                     
                     with chat_lock:
-                        sessions = load_autochat()
-                        for s in sessions:
-                            if s['session_id'] == session_id:
-                                s['messages'].append(assistant_msg)
-                                save_autochat(sessions)
-                                break
+                        fresh = load_autochat_session(session_id)
+                        if fresh:
+                            fresh['messages'].append(assistant_msg)
+                            save_autochat_session(fresh)
                     
                     # Build context for this persona
                     messages = build_autochat_context(session_data, active_persona)
@@ -2181,30 +2295,26 @@ Session name:"""
                             # Update periodically (every 10 chunks)
                             if chunk_count % 10 == 0:
                                 with chat_lock:
-                                    sessions = load_autochat()
-                                    for s in sessions:
-                                        if s['session_id'] == session_id:
-                                            for msg in s['messages']:
-                                                if msg.get('response_id') == response_id:
-                                                    msg['content'] = full_response
-                                                    break
-                                            save_autochat(sessions)
-                                            break
+                                    fresh = load_autochat_session(session_id)
+                                    if fresh:
+                                        for msg in fresh['messages']:
+                                            if msg.get('response_id') == response_id:
+                                                msg['content'] = full_response
+                                                break
+                                        save_autochat_session(fresh)
                         
                         # Handle error
                         if has_error:
                             with chat_lock:
-                                sessions = load_autochat()
-                                for s in sessions:
-                                    if s['session_id'] == session_id:
-                                        for msg in s['messages']:
-                                            if msg.get('response_id') == response_id:
-                                                msg['content'] = full_response
-                                                msg['completed'] = True
-                                                msg['error'] = True
-                                                break
-                                        save_autochat(sessions)
-                                        break
+                                fresh = load_autochat_session(session_id)
+                                if fresh:
+                                    for msg in fresh['messages']:
+                                        if msg.get('response_id') == response_id:
+                                            msg['content'] = full_response
+                                            msg['completed'] = True
+                                            msg['error'] = True
+                                            break
+                                    save_autochat_session(fresh)
                             
                             with queue_lock:
                                 if active_generation and active_generation.get('id') == job['id']:
@@ -2215,12 +2325,7 @@ Session name:"""
                         
                         # Final save with completed status
                         with chat_lock:
-                            sessions = load_autochat()
-                            session_data = None
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    session_data = s
-                                    break
+                            session_data = load_autochat_session(session_id)
                             
                             if session_data:
                                 # Update message
@@ -2278,7 +2383,7 @@ Session name:"""
                                         session_data['status'] = 'stopped'
                                         print(f"[AUTOCHAT] Conversation cancelled")
                                 
-                                save_autochat(sessions)
+                                save_autochat_session(session_data)
                         
                         status_text = "cancelled" if cancellation_requested else "completed"
                         print(f"[AUTOCHAT] Response {status_text}: {len(full_response)} characters")
@@ -2296,17 +2401,15 @@ Session name:"""
                         print(f"[AUTOCHAT] Traceback: {traceback.format_exc()}")
                         
                         with chat_lock:
-                            sessions = load_autochat()
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    for msg in s['messages']:
-                                        if msg.get('response_id') == response_id:
-                                            msg['content'] = f"Error: {str(e)}"
-                                            msg['completed'] = True
-                                            msg['error'] = True
-                                            break
-                                    save_autochat(sessions)
-                                    break
+                            fresh = load_autochat_session(session_id)
+                            if fresh:
+                                for msg in fresh['messages']:
+                                    if msg.get('response_id') == response_id:
+                                        msg['content'] = f"Error: {str(e)}"
+                                        msg['completed'] = True
+                                        msg['error'] = True
+                                        break
+                                save_autochat_session(fresh)
                         raise
                 
                 elif job_type == 'story':
@@ -2348,12 +2451,7 @@ Session name:"""
                     print(f"[STORY] Message: {user_message[:100]}...")
                     
                     # CRITICAL: Reload session from disk to get latest messages
-                    sessions = load_stories()
-                    session_data = None
-                    for s in sessions:
-                        if s['session_id'] == session_id:
-                            session_data = s
-                            break
+                    session_data = load_story_session(session_id)
                     
                     if not session_data:
                         raise Exception(f"Story session {session_id} not found")
@@ -2379,12 +2477,10 @@ Session name:"""
                         session_data['messages'].append(assistant_msg)
                         story_lock = threading.Lock()
                         with story_lock:
-                            sessions = load_stories()
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    s['messages'].append(assistant_msg)
-                                    break
-                            save_stories(sessions)
+                            fresh = load_story_session(session_id)
+                            if fresh:
+                                fresh['messages'].append(assistant_msg)
+                                save_story_session(fresh)
                     
                     # ========== LOREBOOK SYSTEM: Keyword Matching & Context Injection ==========
                     lorebook = session_data.get('lorebook', [])
@@ -2688,34 +2784,26 @@ Session name:"""
                             # Update periodically (every 10 chunks)
                             if chunk_count % 10 == 0:
                                 with story_lock:
-                                    sessions = load_stories()
-                                    session_data = None
-                                    for s in sessions:
-                                        if s['session_id'] == session_id:
-                                            session_data = s
-                                            break
-                                    
-                                    if session_data:
-                                        for msg in session_data['messages']:
+                                    fresh = load_story_session(session_id)
+                                    if fresh:
+                                        for msg in fresh['messages']:
                                             if msg.get('response_id') == response_id:
                                                 msg['content'] = full_response
                                                 break
-                                        save_stories(sessions)
+                                        save_story_session(fresh)
                         
                         # Handle errors
                         if has_error:
                             with story_lock:
-                                sessions = load_stories()
-                                for s in sessions:
-                                    if s['session_id'] == session_id:
-                                        for msg in s['messages']:
-                                            if msg.get('response_id') == response_id:
-                                                msg['content'] = full_response
-                                                msg['completed'] = True
-                                                msg['error'] = True
-                                                break
-                                        break
-                                save_stories(sessions)
+                                fresh = load_story_session(session_id)
+                                if fresh:
+                                    for msg in fresh['messages']:
+                                        if msg.get('response_id') == response_id:
+                                            msg['content'] = full_response
+                                            msg['completed'] = True
+                                            msg['error'] = True
+                                            break
+                                    save_story_session(fresh)
                             
                             with queue_lock:
                                 if active_generation and active_generation.get('id') == job['id']:
@@ -2726,20 +2814,18 @@ Session name:"""
                         
                         # Final save with completed status
                         with story_lock:
-                            sessions = load_stories()
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    for msg in s['messages']:
-                                        if msg.get('response_id') == response_id:
-                                            msg['content'] = full_response.strip()
-                                            msg['completed'] = True
-                                            msg['timestamp'] = datetime.now().isoformat()
-                                            # Add cancelled flag if generation was interrupted
-                                            if cancellation_requested and full_response.strip():
-                                                msg['cancelled'] = True
-                                            break
-                                    break
-                            save_stories(sessions)
+                            fresh = load_story_session(session_id)
+                            if fresh:
+                                for msg in fresh['messages']:
+                                    if msg.get('response_id') == response_id:
+                                        msg['content'] = full_response.strip()
+                                        msg['completed'] = True
+                                        msg['timestamp'] = datetime.now().isoformat()
+                                        # Add cancelled flag if generation was interrupted
+                                        if cancellation_requested and full_response.strip():
+                                            msg['cancelled'] = True
+                                        break
+                                save_story_session(fresh)
                         
                         status_text = "cancelled" if cancellation_requested else "completed"
                         print(f"[STORY] Response {status_text}: {len(full_response)} characters")
@@ -2761,17 +2847,15 @@ Session name:"""
                         # Mark as failed
                         story_lock = threading.Lock()
                         with story_lock:
-                            sessions = load_stories()
-                            for s in sessions:
-                                if s['session_id'] == session_id:
-                                    for msg in s['messages']:
-                                        if msg.get('response_id') == response_id:
-                                            msg['content'] = f"Error: {str(e)}"
-                                            msg['completed'] = True
-                                            msg['error'] = True
-                                            break
-                                    break
-                            save_stories(sessions)
+                            fresh = load_story_session(session_id)
+                            if fresh:
+                                for msg in fresh['messages']:
+                                    if msg.get('response_id') == response_id:
+                                        msg['content'] = f"Error: {str(e)}"
+                                        msg['completed'] = True
+                                        msg['error'] = True
+                                        break
+                                save_story_session(fresh)
                         raise
                 
                 else:
@@ -3126,7 +3210,6 @@ def get_chat_sessions():
 def create_chat_session():
     """Create a new chat session"""
     data = request.json
-    sessions = load_chats()
     
     new_session = {
         'session_id': str(uuid.uuid4()),
@@ -3144,8 +3227,7 @@ def create_chat_session():
         'updated_at': datetime.now().isoformat()
     }
     
-    sessions.append(new_session)
-    save_chats(sessions)
+    save_chat_session(new_session)
     
     return jsonify({'success': True, 'session': new_session})
 
@@ -3153,10 +3235,9 @@ def create_chat_session():
 @require_auth
 def get_chat_session(session_id):
     """Get a specific chat session"""
-    sessions = load_chats()
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            return jsonify({'success': True, 'session': session_data})
+    session_data = load_chat_session(session_id)
+    if session_data is not None:
+        return jsonify({'success': True, 'session': session_data})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
 
@@ -3185,48 +3266,44 @@ def download_autochat_session_audio(session_id):
 def update_chat_session(session_id):
     """Update chat session parameters"""
     data = request.json
-    sessions = load_chats()
+    session_data = load_chat_session(session_id)
     
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            # Update only provided fields
-            if 'chat_name' in data:
-                session_data['chat_name'] = data['chat_name']
-            if 'model' in data:
-                session_data['model'] = data['model']
-            if 'system_prompt' in data:
-                session_data['system_prompt'] = data['system_prompt']
-            if 'temperature' in data:
-                session_data['temperature'] = data['temperature']
-            if 'top_p' in data:
-                session_data['top_p'] = data['top_p']
-            if 'top_k' in data:
-                session_data['top_k'] = data['top_k']
-            if 'repeat_penalty' in data:
-                session_data['repeat_penalty'] = data['repeat_penalty']
-            if 'num_ctx' in data:
-                session_data['num_ctx'] = data['num_ctx']
-            if 'seed' in data:
-                session_data['seed'] = data['seed']
-            if 'messages' in data:
-                session_data['messages'] = data['messages']
-            
-            session_data['updated_at'] = datetime.now().isoformat()
-            save_chats(sessions)
-            return jsonify({'success': True, 'session': session_data})
+    if session_data is None:
+        return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+    # Update only provided fields
+    if 'chat_name' in data:
+        session_data['chat_name'] = data['chat_name']
+    if 'model' in data:
+        session_data['model'] = data['model']
+    if 'system_prompt' in data:
+        session_data['system_prompt'] = data['system_prompt']
+    if 'temperature' in data:
+        session_data['temperature'] = data['temperature']
+    if 'top_p' in data:
+        session_data['top_p'] = data['top_p']
+    if 'top_k' in data:
+        session_data['top_k'] = data['top_k']
+    if 'repeat_penalty' in data:
+        session_data['repeat_penalty'] = data['repeat_penalty']
+    if 'num_ctx' in data:
+        session_data['num_ctx'] = data['num_ctx']
+    if 'seed' in data:
+        session_data['seed'] = data['seed']
+    if 'messages' in data:
+        session_data['messages'] = data['messages']
     
-    return jsonify({'success': False, 'error': 'Session not found'}), 404
+    session_data['updated_at'] = datetime.now().isoformat()
+    save_chat_session(session_data)
+    return jsonify({'success': True, 'session': session_data})
 
 @app.route('/api/chat/sessions/<session_id>', methods=['DELETE'])
 @require_auth
 def delete_chat_session(session_id):
     """Delete a chat session"""
-    sessions = load_chats()
-    original_count = len(sessions)
-    sessions = [s for s in sessions if s['session_id'] != session_id]
-    
-    if len(sessions) < original_count:
-        save_chats(sessions)
+    session = load_chat_session(session_id)
+    if session is not None:
+        delete_chat_session_file(session_id)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
@@ -3238,14 +3315,7 @@ def duplicate_chat_session(session_id):
     copy_settings = data.get('copy_settings', True)
     copy_messages = data.get('copy_messages', False)
     
-    sessions = load_chats()
-    original_session = None
-    
-    # Find the original session
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            original_session = session_data
-            break
+    original_session = load_chat_session(session_id)
     
     if not original_session:
         return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -3285,8 +3355,7 @@ def duplicate_chat_session(session_id):
     else:
         new_session['messages'] = []
     
-    sessions.append(new_session)
-    save_chats(sessions)
+    save_chat_session(new_session)
     
     return jsonify({'success': True, 'session': new_session})
 
@@ -3304,12 +3373,7 @@ def generate_session_name():
         return jsonify({'success': False, 'error': 'Missing session_id'}), 400
     
     # Get session details
-    sessions = load_chats()
-    session_data = None
-    for s in sessions:
-        if s['session_id'] == session_id:
-            session_data = s
-            break
+    session_data = load_chat_session(session_id)
     
     if not session_data:
         print(f"[NAME_GEN] Session not found: {session_id}")
@@ -3389,12 +3453,7 @@ def send_chat_message():
     # Without lock: Thread1 reads session, Thread2 reads session, Thread1 saves, Thread2 saves (overwrites Thread1!)
     with chat_lock:
         # Get session details
-        sessions = load_chats()
-        session_data = None
-        for s in sessions:
-            if s['session_id'] == session_id:
-                session_data = s
-                break
+        session_data = load_chat_session(session_id)
         
         if not session_data:
             return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -3425,7 +3484,7 @@ def send_chat_message():
         session_data['messages'].append(assistant_msg)
         
         session_data['updated_at'] = datetime.now().isoformat()
-        save_chats(sessions)
+        save_chat_session(session_data)
         
         print(f"[CHAT] Added messages to session {session_id}: user={message_id}, assistant={response_id}")
         print(f"[CHAT] Total messages in session: {len(session_data['messages'])}")
@@ -3478,12 +3537,7 @@ def stream_chat_response(session_id, response_id):
             last_content = ""
             
             while time.time() - start_time < max_wait:
-                sessions = load_chats()
-                session_data = None
-                for s in sessions:
-                    if s['session_id'] == session_id:
-                        session_data = s
-                        break
+                session_data = load_chat_session(session_id)
                 
                 if not session_data:
                     yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
@@ -3544,7 +3598,6 @@ def get_autochat_sessions():
 def create_autochat_session():
     """Create a new autochat session"""
     data = request.json
-    sessions = load_autochat()
     
     # Shared model and num_ctx
     shared_model = data.get('model', 'llama3.2')
@@ -3582,8 +3635,7 @@ def create_autochat_session():
         'updated_at': datetime.now().isoformat()
     }
     
-    sessions.append(new_session)
-    save_autochat(sessions)
+    save_autochat_session(new_session)
     
     return jsonify({'success': True, 'session': new_session})
 
@@ -3591,10 +3643,9 @@ def create_autochat_session():
 @require_auth
 def get_autochat_session(session_id):
     """Get a specific autochat session"""
-    sessions = load_autochat()
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            return jsonify({'success': True, 'session': session_data})
+    session_data = load_autochat_session(session_id)
+    if session_data is not None:
+        return jsonify({'success': True, 'session': session_data})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
 @app.route('/api/autochat/sessions/<session_id>', methods=['PUT'])
@@ -3602,54 +3653,50 @@ def get_autochat_session(session_id):
 def update_autochat_session(session_id):
     """Update autochat session parameters"""
     data = request.json
-    sessions = load_autochat()
+    session_data = load_autochat_session(session_id)
     
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            # Update session-level fields
-            if 'session_name' in data:
-                session_data['session_name'] = data['session_name']
-            if 'model' in data:
-                session_data['model'] = data['model']
-            if 'num_ctx' in data:
-                session_data['num_ctx'] = data['num_ctx']
-            if 'max_turns' in data:
-                session_data['max_turns'] = data['max_turns']
-            if 'status' in data:
-                session_data['status'] = data['status']
-            if 'active_perspective' in data:
-                session_data['active_perspective'] = data['active_perspective']
-            if 'current_turn' in data:
-                session_data['current_turn'] = data['current_turn']
-            if 'messages' in data:
-                session_data['messages'] = data['messages']
-            
-            # Update persona A fields
-            if 'persona_a' in data:
-                for key, value in data['persona_a'].items():
-                    session_data['persona_a'][key] = value
-            
-            # Update persona B fields
-            if 'persona_b' in data:
-                for key, value in data['persona_b'].items():
-                    session_data['persona_b'][key] = value
-            
-            session_data['updated_at'] = datetime.now().isoformat()
-            save_autochat(sessions)
-            return jsonify({'success': True, 'session': session_data})
+    if session_data is None:
+        return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+    # Update session-level fields
+    if 'session_name' in data:
+        session_data['session_name'] = data['session_name']
+    if 'model' in data:
+        session_data['model'] = data['model']
+    if 'num_ctx' in data:
+        session_data['num_ctx'] = data['num_ctx']
+    if 'max_turns' in data:
+        session_data['max_turns'] = data['max_turns']
+    if 'status' in data:
+        session_data['status'] = data['status']
+    if 'active_perspective' in data:
+        session_data['active_perspective'] = data['active_perspective']
+    if 'current_turn' in data:
+        session_data['current_turn'] = data['current_turn']
+    if 'messages' in data:
+        session_data['messages'] = data['messages']
     
-    return jsonify({'success': False, 'error': 'Session not found'}), 404
+    # Update persona A fields
+    if 'persona_a' in data:
+        for key, value in data['persona_a'].items():
+            session_data['persona_a'][key] = value
+    
+    # Update persona B fields
+    if 'persona_b' in data:
+        for key, value in data['persona_b'].items():
+            session_data['persona_b'][key] = value
+    
+    session_data['updated_at'] = datetime.now().isoformat()
+    save_autochat_session(session_data)
+    return jsonify({'success': True, 'session': session_data})
 
 @app.route('/api/autochat/sessions/<session_id>', methods=['DELETE'])
 @require_auth
 def delete_autochat_session(session_id):
     """Delete an autochat session"""
-    sessions = load_autochat()
-    original_count = len(sessions)
-    sessions = [s for s in sessions if s['session_id'] != session_id]
-    
-    if len(sessions) < original_count:
-        save_autochat(sessions)
+    session = load_autochat_session(session_id)
+    if session is not None:
+        delete_autochat_session_file(session_id)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
@@ -3661,14 +3708,7 @@ def duplicate_autochat_session(session_id):
     copy_settings = data.get('copy_settings', True)
     copy_messages = data.get('copy_messages', False)
     
-    sessions = load_autochat()
-    original_session = None
-    
-    # Find the original session
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            original_session = session_data
-            break
+    original_session = load_autochat_session(session_id)
     
     if not original_session:
         return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -3727,8 +3767,7 @@ def duplicate_autochat_session(session_id):
     else:
         new_session['messages'] = []
     
-    sessions.append(new_session)
-    save_autochat(sessions)
+    save_autochat_session(new_session)
     
     return jsonify({'success': True, 'session': new_session})
 
@@ -3736,14 +3775,13 @@ def duplicate_autochat_session(session_id):
 @require_auth
 def stop_autochat_session(session_id):
     """Stop an autochat session"""
-    sessions = load_autochat()
+    session_data = load_autochat_session(session_id)
     
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            session_data['status'] = 'stopped'
-            session_data['updated_at'] = datetime.now().isoformat()
-            save_autochat(sessions)
-            return jsonify({'success': True, 'session': session_data})
+    if session_data is not None:
+        session_data['status'] = 'stopped'
+        session_data['updated_at'] = datetime.now().isoformat()
+        save_autochat_session(session_data)
+        return jsonify({'success': True, 'session': session_data})
     
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
@@ -3751,53 +3789,52 @@ def stop_autochat_session(session_id):
 @require_auth
 def continue_autochat_session(session_id):
     """Continue an autochat session"""
-    sessions = load_autochat()
+    session_data = load_autochat_session(session_id)
     
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            # Set status to running
-            session_data['status'] = 'running'
-            session_data['updated_at'] = datetime.now().isoformat()
-            
-            # Determine next persona from last message (opposite of last speaker)
-            messages = session_data.get('messages', [])
-            if messages:
-                last_message = messages[-1]
-                last_persona = last_message.get('persona', 'b')
-                # Continue with opposite persona
-                next_persona = 'b' if last_persona == 'a' else 'a'
-            else:
-                # No messages yet, start with persona A
-                next_persona = 'a'
-            
-            # Update active perspective
-            session_data['active_perspective'] = next_persona
-            save_autochat(sessions)
-            
-            response_id = str(uuid.uuid4())
-            
-            # Get persona data for job display
-            persona_data = session_data[f'persona_{next_persona}']
-            shared_model = session_data.get('model', 'llama3.2')
-            
-            job = {
-                'id': str(uuid.uuid4()),
-                'job_type': 'autochat',
-                'session_id': session_id,
-                'active_persona': next_persona,
-                'persona_name': persona_data.get('name', f'Persona {next_persona.upper()}'),
-                'model': shared_model,
-                'response_id': response_id,
-                'status': 'queued',
-                'created_at': datetime.now().isoformat()
-            }
-            
-            with queue_lock:
-                generation_queue.insert(0, job)
-            
-            print(f"[AUTOCHAT] Continue: Last message from persona {last_persona if messages else 'none'}, queuing persona {next_persona.upper()}")
-            
-            return jsonify({'success': True, 'session': session_data, 'job_id': job['id']})
+    if session_data is not None:
+        # Set status to running
+        session_data['status'] = 'running'
+        session_data['updated_at'] = datetime.now().isoformat()
+        
+        # Determine next persona from last message (opposite of last speaker)
+        messages = session_data.get('messages', [])
+        if messages:
+            last_message = messages[-1]
+            last_persona = last_message.get('persona', 'b')
+            # Continue with opposite persona
+            next_persona = 'b' if last_persona == 'a' else 'a'
+        else:
+            # No messages yet, start with persona A
+            next_persona = 'a'
+        
+        # Update active perspective
+        session_data['active_perspective'] = next_persona
+        save_autochat_session(session_data)
+        
+        response_id = str(uuid.uuid4())
+        
+        # Get persona data for job display
+        persona_data = session_data[f'persona_{next_persona}']
+        shared_model = session_data.get('model', 'llama3.2')
+        
+        job = {
+            'id': str(uuid.uuid4()),
+            'job_type': 'autochat',
+            'session_id': session_id,
+            'active_persona': next_persona,
+            'persona_name': persona_data.get('name', f'Persona {next_persona.upper()}'),
+            'model': shared_model,
+            'response_id': response_id,
+            'status': 'queued',
+            'created_at': datetime.now().isoformat()
+        }
+        
+        with queue_lock:
+            generation_queue.insert(0, job)
+        
+        print(f"[AUTOCHAT] Continue: Last message from persona {last_persona if messages else 'none'}, queuing persona {next_persona.upper()}")
+        
+        return jsonify({'success': True, 'session': session_data, 'job_id': job['id']})
     
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
@@ -3811,12 +3848,7 @@ def start_autochat():
     if not session_id:
         return jsonify({'success': False, 'error': 'Missing session_id'}), 400
     
-    sessions = load_autochat()
-    session_data = None
-    for s in sessions:
-        if s['session_id'] == session_id:
-            session_data = s
-            break
+    session_data = load_autochat_session(session_id)
     
     if not session_data:
         return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -3826,7 +3858,7 @@ def start_autochat():
     session_data['current_turn'] = 0
     session_data['active_perspective'] = 'a'  # Start with persona A
     session_data['updated_at'] = datetime.now().isoformat()
-    save_autochat(sessions)
+    save_autochat_session(session_data)
     
     # Create first job for persona A
     response_id = str(uuid.uuid4())
@@ -3866,12 +3898,7 @@ def autochat_manual_message():
         return jsonify({'success': False, 'error': 'Invalid persona'}), 400
     
     with chat_lock:
-        sessions = load_autochat()
-        session_data = None
-        for s in sessions:
-            if s['session_id'] == session_id:
-                session_data = s
-                break
+        session_data = load_autochat_session(session_id)
         
         if not session_data:
             return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -3888,7 +3915,7 @@ def autochat_manual_message():
         }
         session_data['messages'].append(manual_msg)
         session_data['updated_at'] = datetime.now().isoformat()
-        save_autochat(sessions)
+        save_autochat_session(session_data)
     
     # If session was running, queue response from other persona
     if session_data.get('status') == 'running':
@@ -3925,12 +3952,7 @@ def autochat_stream(session_id, response_id):
     def generate():
         try:
             while True:
-                sessions = load_autochat()
-                session_data = None
-                for s in sessions:
-                    if s['session_id'] == session_id:
-                        session_data = s
-                        break
+                session_data = load_autochat_session(session_id)
                 
                 if not session_data:
                     yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
@@ -3975,7 +3997,6 @@ def get_story_sessions():
 def create_story_session():
     """Create a new story session"""
     data = request.json
-    sessions = load_stories()
     
     new_session = {
         'session_id': str(uuid.uuid4()),
@@ -3998,8 +4019,7 @@ def create_story_session():
         'updated_at': datetime.now().isoformat()
     }
     
-    sessions.append(new_session)
-    save_stories(sessions)
+    save_story_session(new_session)
     
     return jsonify({'success': True, 'session': new_session})
 
@@ -4007,10 +4027,9 @@ def create_story_session():
 @require_auth
 def get_story_session(session_id):
     """Get a specific story session"""
-    sessions = load_stories()
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            return jsonify({'success': True, 'session': session_data})
+    session_data = load_story_session(session_id)
+    if session_data is not None:
+        return jsonify({'success': True, 'session': session_data})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
 @app.route('/api/story/sessions/<session_id>', methods=['PUT'])
@@ -4025,65 +4044,61 @@ def update_story_session(session_id):
         for char in data['characters']:
             print(f"[STORY]   - Character: {char.get('name', 'unnamed')}")
     
-    sessions = load_stories()
+    session_data = load_story_session(session_id)
     
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            # Update only provided fields
-            if 'story_name' in data:
-                session_data['story_name'] = data['story_name']
-            if 'model' in data:
-                session_data['model'] = data['model']
-            if 'system_prompt' in data:
-                session_data['system_prompt'] = data['system_prompt']
-            if 'character_card' in data:
-                session_data['character_card'] = data['character_card']
-            if 'characters' in data:
-                session_data['characters'] = data['characters']
-                print(f"[STORY] Characters updated successfully in session data")
-            if 'active_character_id' in data:
-                session_data['active_character_id'] = data['active_character_id']
-                print(f"[STORY] Active character ID set to: {data['active_character_id']}")
-            if 'user_persona_id' in data:
-                session_data['user_persona_id'] = data['user_persona_id']
-                print(f"[STORY] User persona ID set to: {data['user_persona_id']}")
-            if 'lorebook' in data:
-                session_data['lorebook'] = data['lorebook']
-            if 'authors_note' in data:
-                session_data['authors_note'] = data['authors_note']
-            if 'temperature' in data:
-                session_data['temperature'] = data['temperature']
-            if 'top_p' in data:
-                session_data['top_p'] = data['top_p']
-            if 'top_k' in data:
-                session_data['top_k'] = data['top_k']
-            if 'repeat_penalty' in data:
-                session_data['repeat_penalty'] = data['repeat_penalty']
-            if 'num_ctx' in data:
-                session_data['num_ctx'] = data['num_ctx']
-            if 'seed' in data:
-                session_data['seed'] = data['seed']
-            if 'messages' in data:
-                session_data['messages'] = data['messages']
-            
-            session_data['updated_at'] = datetime.now().isoformat()
-            save_stories(sessions)
-            print(f"[STORY] Session {session_id} saved to disk successfully")
-            return jsonify({'success': True, 'session': session_data})
+    if session_data is None:
+        print(f"[STORY] ERROR: Session {session_id} not found!")
+        return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+    # Update only provided fields
+    if 'story_name' in data:
+        session_data['story_name'] = data['story_name']
+    if 'model' in data:
+        session_data['model'] = data['model']
+    if 'system_prompt' in data:
+        session_data['system_prompt'] = data['system_prompt']
+    if 'character_card' in data:
+        session_data['character_card'] = data['character_card']
+    if 'characters' in data:
+        session_data['characters'] = data['characters']
+        print(f"[STORY] Characters updated successfully in session data")
+    if 'active_character_id' in data:
+        session_data['active_character_id'] = data['active_character_id']
+        print(f"[STORY] Active character ID set to: {data['active_character_id']}")
+    if 'user_persona_id' in data:
+        session_data['user_persona_id'] = data['user_persona_id']
+        print(f"[STORY] User persona ID set to: {data['user_persona_id']}")
+    if 'lorebook' in data:
+        session_data['lorebook'] = data['lorebook']
+    if 'authors_note' in data:
+        session_data['authors_note'] = data['authors_note']
+    if 'temperature' in data:
+        session_data['temperature'] = data['temperature']
+    if 'top_p' in data:
+        session_data['top_p'] = data['top_p']
+    if 'top_k' in data:
+        session_data['top_k'] = data['top_k']
+    if 'repeat_penalty' in data:
+        session_data['repeat_penalty'] = data['repeat_penalty']
+    if 'num_ctx' in data:
+        session_data['num_ctx'] = data['num_ctx']
+    if 'seed' in data:
+        session_data['seed'] = data['seed']
+    if 'messages' in data:
+        session_data['messages'] = data['messages']
     
-    print(f"[STORY] ERROR: Session {session_id} not found!")
-    return jsonify({'success': False, 'error': 'Session not found'}), 404
+    session_data['updated_at'] = datetime.now().isoformat()
+    save_story_session(session_data)
+    print(f"[STORY] Session {session_id} saved to disk successfully")
+    return jsonify({'success': True, 'session': session_data})
 
 @app.route('/api/story/sessions/<session_id>', methods=['DELETE'])
 @require_auth
 def delete_story_session(session_id):
     """Delete a story session"""
-    sessions = load_stories()
-    original_count = len(sessions)
-    sessions = [s for s in sessions if s['session_id'] != session_id]
-    
-    if len(sessions) < original_count:
-        save_stories(sessions)
+    session = load_story_session(session_id)
+    if session is not None:
+        delete_story_session_file(session_id)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Session not found'}), 404
 
@@ -4095,14 +4110,7 @@ def duplicate_story_session(session_id):
     copy_settings = data.get('copy_settings', True)
     copy_messages = data.get('copy_messages', False)
     
-    sessions = load_stories()
-    original_session = None
-    
-    # Find the original session
-    for session_data in sessions:
-        if session_data['session_id'] == session_id:
-            original_session = session_data
-            break
+    original_session = load_story_session(session_id)
     
     if not original_session:
         return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -4155,8 +4163,7 @@ def duplicate_story_session(session_id):
     else:
         new_session['messages'] = []
     
-    sessions.append(new_session)
-    save_stories(sessions)
+    save_story_session(new_session)
     
     return jsonify({'success': True, 'session': new_session})
 
@@ -4186,12 +4193,7 @@ def send_story_message():
     story_lock = threading.Lock()
     with story_lock:
         # Get session details
-        sessions = load_stories()
-        session_data = None
-        for s in sessions:
-            if s['session_id'] == session_id:
-                session_data = s
-                break
+        session_data = load_story_session(session_id)
         
         if not session_data:
             return jsonify({'success': False, 'error': 'Session not found'}), 404
@@ -4222,7 +4224,7 @@ def send_story_message():
         session_data['messages'].append(assistant_msg)
         
         session_data['updated_at'] = datetime.now().isoformat()
-        save_stories(sessions)
+        save_story_session(session_data)
         
         print(f"[STORY] Added messages to session {session_id}: user={message_id}, assistant={response_id}")
     
@@ -4274,12 +4276,7 @@ def stream_story_response(session_id, response_id):
             last_content = ""
             
             while time.time() - start_time < max_wait:
-                sessions = load_stories()
-                session_data = None
-                for s in sessions:
-                    if s['session_id'] == session_id:
-                        session_data = s
-                        break
+                session_data = load_story_session(session_id)
                 
                 if not session_data:
                     yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
