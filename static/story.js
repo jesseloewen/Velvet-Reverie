@@ -679,6 +679,42 @@ function createStoryMessageElement(message, messageIndex = -1) {
     
     // Assemble the message
     wrapper.appendChild(header);
+    
+    // Add thinking section for assistant messages if thinking content exists
+    if (message.role === 'assistant') {
+        const hasThinking = message.thinking || (isLoading && message.role === 'assistant');
+        if (hasThinking) {
+            const thinkingSection = document.createElement('div');
+            thinkingSection.className = 'chat-thinking-section';
+            
+            const thinkingHeader = document.createElement('div');
+            thinkingHeader.className = 'chat-thinking-header';
+            thinkingHeader.onclick = function() {
+                const tc = this.nextElementSibling;
+                const chevron = this.querySelector('.chat-thinking-chevron');
+                const isOpen = tc.style.display !== 'none';
+                tc.style.display = isOpen ? 'none' : 'block';
+                chevron.textContent = isOpen ? '▶' : '▼';
+            };
+            
+            const thinkingDone = message.thinking_completed || (message.thinking && !isLoading);
+            thinkingHeader.innerHTML = `
+                <span class="chat-thinking-chevron">▶</span>
+                <span class="chat-thinking-label">Thinking</span>
+                ${!thinkingDone ? '<span class="chat-thinking-status">thinking...</span>' : ''}
+            `;
+            
+            const thinkingContent = document.createElement('div');
+            thinkingContent.className = 'chat-thinking-content';
+            thinkingContent.style.display = 'none';
+            thinkingContent.innerHTML = message.thinking ? formatChatMessage(message.thinking) : '<em>Thinking...</em>';
+            
+            thinkingSection.appendChild(thinkingHeader);
+            thinkingSection.appendChild(thinkingContent);
+            wrapper.appendChild(thinkingSection);
+        }
+    }
+    
     wrapper.appendChild(contentDiv);
 
     if (message.tts_audio) {
@@ -1003,6 +1039,10 @@ function startStoryStreamingPolling(responseId) {
                 updateStoryMessageContent(responseId, data.full_content || '');
             }
             
+            if (data.thinking !== undefined) {
+                updateStoryMessageThinking(responseId, data.thinking, data.thinking_completed);
+            }
+            
             if (data.done) {
                 eventSource.close();
                 delete storyPollingIntervals[responseId];
@@ -1091,6 +1131,75 @@ function updateStoryMessageContent(responseId, content) {
     
     if (storyAutoScrollEnabled) {
         scrollStoryToBottom();
+    }
+}
+
+function updateStoryMessageThinking(responseId, thinking, thinkingCompleted) {
+    if (!currentStorySession) return;
+    
+    const msg = currentStorySession.messages.find(m => m.response_id === responseId);
+    if (msg) {
+        msg.thinking = thinking;
+        msg.thinking_completed = thinkingCompleted;
+    }
+    
+    const container = document.getElementById('storyMessages');
+    if (container) {
+        const messageElements = container.querySelectorAll('.chat-message.assistant');
+        for (const messageEl of messageElements) {
+            const index = Array.from(container.children).indexOf(messageEl);
+            const sessionMsg = currentStorySession.messages[index];
+            
+            if (sessionMsg && sessionMsg.response_id === responseId) {
+                let thinkingSection = messageEl.querySelector('.chat-thinking-section');
+                
+                if (thinking) {
+                    if (!thinkingSection) {
+                        const wrapper = messageEl.querySelector('.chat-message-wrapper');
+                        const contentEl = messageEl.querySelector('.chat-message-content');
+                        if (wrapper && contentEl) {
+                            thinkingSection = document.createElement('div');
+                            thinkingSection.className = 'chat-thinking-section';
+                            
+                            const thinkingHeader = document.createElement('div');
+                            thinkingHeader.className = 'chat-thinking-header';
+                            thinkingHeader.onclick = function() {
+                                const tc = this.nextElementSibling;
+                                const chevron = this.querySelector('.chat-thinking-chevron');
+                                const isOpen = tc.style.display !== 'none';
+                                tc.style.display = isOpen ? 'none' : 'block';
+                                chevron.textContent = isOpen ? '▶' : '▼';
+                            };
+                            
+                            thinkingHeader.innerHTML = `
+                                <span class="chat-thinking-chevron">▶</span>
+                                <span class="chat-thinking-label">Thinking</span>
+                                ${!thinkingCompleted ? '<span class="chat-thinking-status">thinking...</span>' : ''}
+                            `;
+                            
+                            const thinkingContent = document.createElement('div');
+                            thinkingContent.className = 'chat-thinking-content';
+                            thinkingContent.style.display = 'none';
+                            thinkingContent.innerHTML = formatChatMessage(thinking);
+                            
+                            thinkingSection.appendChild(thinkingHeader);
+                            thinkingSection.appendChild(thinkingContent);
+                            wrapper.insertBefore(thinkingSection, contentEl);
+                        }
+                    } else {
+                        const thinkingContent = thinkingSection.querySelector('.chat-thinking-content');
+                        if (thinkingContent) {
+                            thinkingContent.innerHTML = formatChatMessage(thinking);
+                        }
+                        if (thinkingCompleted) {
+                            const statusEl = thinkingSection.querySelector('.chat-thinking-status');
+                            if (statusEl) statusEl.remove();
+                        }
+                    }
+                }
+                break;
+            }
+        }
     }
 }
 

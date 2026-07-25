@@ -1363,6 +1363,42 @@ function createChatMessageElement(message, messageIndex = -1, isLoading = false,
     }
     
     wrapper.appendChild(header);
+    
+    // Add thinking section for assistant messages if thinking content exists
+    if (message.role === 'assistant') {
+        const hasThinking = message.thinking || (isLoading && message.role === 'assistant');
+        if (hasThinking) {
+            const thinkingSection = document.createElement('div');
+            thinkingSection.className = 'chat-thinking-section';
+            
+            const thinkingHeader = document.createElement('div');
+            thinkingHeader.className = 'chat-thinking-header';
+            thinkingHeader.onclick = function() {
+                const content = this.nextElementSibling;
+                const chevron = this.querySelector('.chat-thinking-chevron');
+                const isOpen = content.style.display !== 'none';
+                content.style.display = isOpen ? 'none' : 'block';
+                chevron.textContent = isOpen ? '▶' : '▼';
+            };
+            
+            const thinkingDone = message.thinking_completed || (message.thinking && !isLoading);
+            thinkingHeader.innerHTML = `
+                <span class="chat-thinking-chevron">▶</span>
+                <span class="chat-thinking-label">Thinking</span>
+                ${!thinkingDone ? '<span class="chat-thinking-status">thinking...</span>' : ''}
+            `;
+            
+            const thinkingContent = document.createElement('div');
+            thinkingContent.className = 'chat-thinking-content';
+            thinkingContent.style.display = 'none';
+            thinkingContent.innerHTML = message.thinking ? formatChatMessage(message.thinking) : '<em>Thinking...</em>';
+            
+            thinkingSection.appendChild(thinkingHeader);
+            thinkingSection.appendChild(thinkingContent);
+            wrapper.appendChild(thinkingSection);
+        }
+    }
+    
     wrapper.appendChild(content);
     
     // Add audio player if message has TTS audio
@@ -1890,6 +1926,7 @@ function startChatStreamingPolling(responseId) {
     
     const sessionId = currentChatSession.session_id;
     let lastContent = '';
+    let lastThinking = '';
     let pollCount = 0;
     const startTime = Date.now();
     const MAX_POLL_DURATION = 10 * 60 * 1000; // 10 minutes timeout
@@ -1963,7 +2000,9 @@ function startChatStreamingPolling(responseId) {
             }
             
             const currentContent = message.content || '';
+            const currentThinking = message.thinking || '';
             const contentChanged = currentContent !== lastContent;
+            const thinkingChanged = currentThinking !== (lastThinking || '');
             
             // Update DOM intelligently - sync all messages from backend without full re-render
             const messagesContainer = document.getElementById('chatMessages');
@@ -2000,32 +2039,88 @@ function startChatStreamingPolling(responseId) {
                                 `;
                             }
                         }
+                    }
+                    
+                    // Update thinking section independently from content
+                    if (thinkingChanged || pollCount === 1) {
+                        lastThinking = currentThinking;
                         
-                        // Update token count and context bar during streaming
-                        const totalTokens = calculateTotalTokens(currentChatSession.messages);
-                        const maxContext = currentChatSession.num_ctx || 2048;
-                        const contextUsage = (totalTokens / maxContext) * 100;
+                        const thinkingSection = messageEl.querySelector('.chat-thinking-section');
                         
-                        const tokenDisplay = document.getElementById('chatTotalTokens');
-                        if (tokenDisplay) {
-                            tokenDisplay.textContent = `Total: ${totalTokens.toLocaleString()} tokens`;
-                        }
-                        
-                        const contextBar = document.getElementById('chatContextBar');
-                        const contextLabel = document.getElementById('chatContextLabel');
-                        if (contextBar && contextLabel) {
-                            contextBar.style.width = `${Math.min(contextUsage, 100)}%`;
-                            
-                            if (contextUsage < 70) {
-                                contextBar.style.backgroundColor = 'var(--success-color, #34d399)';
-                            } else if (contextUsage < 90) {
-                                contextBar.style.backgroundColor = 'var(--warning-color, #fbbf24)';
+                        if (currentThinking) {
+                            if (!thinkingSection) {
+                                // Create thinking section if it appeared mid-stream
+                                const wrapper = messageEl.querySelector('.chat-message-wrapper');
+                                const contentEl = messageEl.querySelector('.chat-message-content');
+                                if (wrapper && contentEl) {
+                                    const newThinkingSection = document.createElement('div');
+                                    newThinkingSection.className = 'chat-thinking-section';
+                                    
+                                    const thinkingHeader = document.createElement('div');
+                                    thinkingHeader.className = 'chat-thinking-header';
+                                    thinkingHeader.onclick = function() {
+                                        const tc = this.nextElementSibling;
+                                        const chevron = this.querySelector('.chat-thinking-chevron');
+                                        const isOpen = tc.style.display !== 'none';
+                                        tc.style.display = isOpen ? 'none' : 'block';
+                                        chevron.textContent = isOpen ? '▶' : '▼';
+                                    };
+                                    
+                                    const thinkingDone = message.thinking_completed;
+                                    thinkingHeader.innerHTML = `
+                                        <span class="chat-thinking-chevron">▶</span>
+                                        <span class="chat-thinking-label">Thinking</span>
+                                        ${!thinkingDone ? '<span class="chat-thinking-status">thinking...</span>' : ''}
+                                    `;
+                                    
+                                    const thinkingContent = document.createElement('div');
+                                    thinkingContent.className = 'chat-thinking-content';
+                                    thinkingContent.style.display = 'none';
+                                    thinkingContent.innerHTML = formatChatMessage(currentThinking);
+                                    
+                                    newThinkingSection.appendChild(thinkingHeader);
+                                    newThinkingSection.appendChild(thinkingContent);
+                                    wrapper.insertBefore(newThinkingSection, contentEl);
+                                }
                             } else {
-                                contextBar.style.backgroundColor = 'var(--error-color, #ff3b30)';
+                                // Update existing thinking content
+                                const thinkingContent = thinkingSection.querySelector('.chat-thinking-content');
+                                if (thinkingContent) {
+                                    thinkingContent.innerHTML = formatChatMessage(currentThinking);
+                                }
+                                // Update thinking status indicator
+                                if (message.thinking_completed) {
+                                    const statusEl = thinkingSection.querySelector('.chat-thinking-status');
+                                    if (statusEl) statusEl.remove();
+                                }
                             }
-                            
-                            contextLabel.textContent = `${contextUsage.toFixed(1)}% of ${maxContext.toLocaleString()} context`;
                         }
+                    }
+                    
+                    // Update token count and context bar during streaming
+                    const totalTokens = calculateTotalTokens(currentChatSession.messages);
+                    const maxContext = currentChatSession.num_ctx || 2048;
+                    const contextUsage = (totalTokens / maxContext) * 100;
+                    
+                    const tokenDisplay = document.getElementById('chatTotalTokens');
+                    if (tokenDisplay) {
+                        tokenDisplay.textContent = `Total: ${totalTokens.toLocaleString()} tokens`;
+                    }
+                    
+                    const contextBar = document.getElementById('chatContextBar');
+                    const contextLabel = document.getElementById('chatContextLabel');
+                    if (contextBar && contextLabel) {
+                        contextBar.style.width = `${Math.min(contextUsage, 100)}%`;
+                        
+                        if (contextUsage < 70) {
+                            contextBar.style.backgroundColor = 'var(--success-color, #34d399)';
+                        } else if (contextUsage < 90) {
+                            contextBar.style.backgroundColor = 'var(--warning-color, #fbbf24)';
+                        } else {
+                            contextBar.style.backgroundColor = 'var(--error-color, #ff3b30)';
+                        }
+                        
+                        contextLabel.textContent = `${contextUsage.toFixed(1)}% of ${maxContext.toLocaleString()} context`;
                     }
                     
                     // Check for any NEW messages from backend that aren't in DOM yet

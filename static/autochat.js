@@ -516,6 +516,16 @@ function createAutoMessageElement(msg, index) {
                         <span class="chat-message-time">${timestamp}</span>
                     </span>
                 </div>
+                ${msg.thinking ? `
+                <div class="chat-thinking-section">
+                    <div class="chat-thinking-header" onclick="var c=this.nextElementSibling;var v=this.querySelector('.chat-thinking-chevron');var o=c.style.display!=='none';c.style.display=o?'none':'block';v.textContent=o?'▶':'▼';">
+                        <span class="chat-thinking-chevron">▶</span>
+                        <span class="chat-thinking-label">Thinking</span>
+                        ${msg.thinking_completed ? '' : '<span class="chat-thinking-status">thinking...</span>'}
+                    </div>
+                    <div class="chat-thinking-content" style="display:none">${formatChatMessage(msg.thinking)}</div>
+                </div>
+                ` : ''}
                 <div class="chat-message-content">${isLoading ? '<div class="typing-indicator"><span></span><span></span><span></span></div>' : formatChatMessage(msg.content || '')}</div>
                 ${audioHtml}
                 ${!isLoading ? `
@@ -838,6 +848,10 @@ function startMessageStreaming(responseId) {
                 // Update message content in real-time
                 updateMessageContent(responseId, data.content);
             }
+            
+            if (data.thinking !== undefined) {
+                updateMessageThinking(responseId, data.thinking, data.thinking_completed);
+            }
         } catch (error) {
             console.error('[AUTOCHAT] Stream parse error:', error);
         }
@@ -887,6 +901,69 @@ function updateMessageContent(responseId, content) {
     // Auto-scroll only if enabled
     if (autochatAutoScrollEnabled) {
         container.scrollTop = container.scrollHeight;
+    }
+}
+
+function updateMessageThinking(responseId, thinking, thinkingCompleted) {
+    if (!currentAutoSession) return;
+    
+    const messageIndex = currentAutoSession.messages.findIndex(m => m.response_id === responseId);
+    if (messageIndex < 0) return;
+    
+    currentAutoSession.messages[messageIndex].thinking = thinking;
+    currentAutoSession.messages[messageIndex].thinking_completed = thinkingCompleted;
+    
+    const container = document.getElementById('autochatMessages');
+    if (!container) return;
+    
+    const messageEl = container.querySelector(`[data-response-id="${responseId}"]`);
+    if (!messageEl) return;
+    
+    let thinkingSection = messageEl.querySelector('.chat-thinking-section');
+    
+    if (thinking) {
+        if (!thinkingSection) {
+            const wrapper = messageEl.querySelector('.chat-message-wrapper');
+            const contentEl = messageEl.querySelector('.chat-message-content');
+            if (wrapper && contentEl) {
+                thinkingSection = document.createElement('div');
+                thinkingSection.className = 'chat-thinking-section';
+                
+                const thinkingHeader = document.createElement('div');
+                thinkingHeader.className = 'chat-thinking-header';
+                thinkingHeader.onclick = function() {
+                    const tc = this.nextElementSibling;
+                    const chevron = this.querySelector('.chat-thinking-chevron');
+                    const isOpen = tc.style.display !== 'none';
+                    tc.style.display = isOpen ? 'none' : 'block';
+                    chevron.textContent = isOpen ? '▶' : '▼';
+                };
+                
+                thinkingHeader.innerHTML = `
+                    <span class="chat-thinking-chevron">▶</span>
+                    <span class="chat-thinking-label">Thinking</span>
+                    ${!thinkingCompleted ? '<span class="chat-thinking-status">thinking...</span>' : ''}
+                `;
+                
+                const thinkingContent = document.createElement('div');
+                thinkingContent.className = 'chat-thinking-content';
+                thinkingContent.style.display = 'none';
+                thinkingContent.innerHTML = formatChatMessage(thinking);
+                
+                thinkingSection.appendChild(thinkingHeader);
+                thinkingSection.appendChild(thinkingContent);
+                wrapper.insertBefore(thinkingSection, contentEl);
+            }
+        } else {
+            const thinkingContent = thinkingSection.querySelector('.chat-thinking-content');
+            if (thinkingContent) {
+                thinkingContent.innerHTML = formatChatMessage(thinking);
+            }
+            if (thinkingCompleted) {
+                const statusEl = thinkingSection.querySelector('.chat-thinking-status');
+                if (statusEl) statusEl.remove();
+            }
+        }
     }
 }
 

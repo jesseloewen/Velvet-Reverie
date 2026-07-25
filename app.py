@@ -1359,7 +1359,7 @@ def auto_generate_first_chat_name(session_id: str, model: str = None):
         messages=[{'role': 'user', 'content': name_prompt}],
         stream=False
     )
-    generated_name = ''.join(response_gen).strip().strip('"\' ')
+    generated_name = ''.join(chunk['content'] for chunk in response_gen).strip().strip('"\' ')
 
     if not generated_name:
         return None
@@ -1874,7 +1874,7 @@ Session name:"""
                         )
                         
                         # Get the response from generator (even with stream=False it returns a generator)
-                        generated_name = ''.join(response_gen).strip()
+                        generated_name = ''.join(chunk['content'] for chunk in response_gen).strip()
                         
                         # Clean up - remove quotes and limit length
                         generated_name = generated_name.strip('"\'\'""')
@@ -2059,6 +2059,7 @@ Session name:"""
                     # Stream response from Ollama
                     try:
                         full_response = ''
+                        full_thinking = ''
                         chunk_count = 0
                         has_error = False
                         
@@ -2072,34 +2073,35 @@ Session name:"""
                             num_ctx=num_ctx,
                             stream=True
                         ):
+                            content = chunk['content']
+                            thinking = chunk.get('thinking', '')
+                            
                             # Check if cancellation was requested
                             if cancellation_requested:
                                 print(f"[CHAT] Cancellation detected, stopping stream at {len(full_response)} characters")
                                 break
                             
-                            # Check if chunk is an error message
-                            if chunk.startswith('Error'):
+                            # Check if content is an error message
+                            if content.startswith('Error'):
                                 has_error = True
-                                full_response = chunk
-                                print(f"[CHAT] Ollama returned error: {chunk}")
+                                full_response = content
+                                print(f"[CHAT] Ollama returned error: {content}")
                                 break
                             
-                            full_response += chunk
+                            full_response += content
+                            full_thinking += thinking
                             chunk_count += 1
                             
                             # Update the assistant message in session periodically (every 10 chunks)
-                            # This reduces file I/O while keeping updates reasonably real-time
                             if chunk_count % 10 == 0:
-                                # CRITICAL: Reload sessions from disk before saving to avoid overwriting
-                                # newer messages that were added while we're streaming
                                 with chat_lock:
                                     session_data = load_chat_session(session_id)
                                     
                                     if session_data:
-                                        # Find our assistant message again
                                         for msg in session_data['messages']:
                                             if msg.get('response_id') == response_id:
                                                 msg['content'] = full_response
+                                                msg['thinking'] = full_thinking
                                                 break
                                         save_chat_session(session_data)
                         
@@ -2112,7 +2114,9 @@ Session name:"""
                                     for msg in session_data['messages']:
                                         if msg.get('response_id') == response_id:
                                             msg['content'] = full_response
+                                            msg['thinking'] = full_thinking
                                             msg['completed'] = True
+                                            msg['thinking_completed'] = True
                                             msg['error'] = True
                                             break
                                     save_chat_session(session_data)
@@ -2134,6 +2138,8 @@ Session name:"""
                                 for msg in session_data['messages']:
                                     if msg.get('response_id') == response_id:
                                         msg['content'] = full_response.strip()
+                                        msg['thinking'] = full_thinking.strip()
+                                        msg['thinking_completed'] = True
                                         msg['completed'] = True
                                         msg['timestamp'] = datetime.now().isoformat()
                                         # Add cancelled flag if generation was interrupted
@@ -2178,6 +2184,8 @@ Session name:"""
                                 for msg in session_data['messages']:
                                     if msg.get('response_id') == response_id:
                                         msg['content'] = f"Error: {str(e)}"
+                                        msg['thinking'] = full_thinking if 'full_thinking' in dir() else ''
+                                        msg['thinking_completed'] = True
                                         msg['completed'] = True
                                         msg['error'] = True
                                         break
@@ -2263,6 +2271,7 @@ Session name:"""
                     # Stream response from Ollama
                     try:
                         full_response = ''
+                        full_thinking = ''
                         chunk_count = 0
                         has_error = False
                         
@@ -2277,19 +2286,23 @@ Session name:"""
                             seed=seed,
                             stream=True
                         ):
+                            content = chunk['content']
+                            thinking = chunk.get('thinking', '')
+                            
                             # Check if cancellation was requested
                             if cancellation_requested:
                                 print(f"[AUTOCHAT] Cancellation detected")
                                 break
                             
-                            # Check if chunk is an error message
-                            if chunk.startswith('Error'):
+                            # Check if content is an error message
+                            if content.startswith('Error'):
                                 has_error = True
-                                full_response = chunk
-                                print(f"[AUTOCHAT] Ollama returned error: {chunk}")
+                                full_response = content
+                                print(f"[AUTOCHAT] Ollama returned error: {content}")
                                 break
                             
-                            full_response += chunk
+                            full_response += content
+                            full_thinking += thinking
                             chunk_count += 1
                             
                             # Update periodically (every 10 chunks)
@@ -2300,6 +2313,7 @@ Session name:"""
                                         for msg in fresh['messages']:
                                             if msg.get('response_id') == response_id:
                                                 msg['content'] = full_response
+                                                msg['thinking'] = full_thinking
                                                 break
                                         save_autochat_session(fresh)
                         
@@ -2311,7 +2325,9 @@ Session name:"""
                                     for msg in fresh['messages']:
                                         if msg.get('response_id') == response_id:
                                             msg['content'] = full_response
+                                            msg['thinking'] = full_thinking
                                             msg['completed'] = True
+                                            msg['thinking_completed'] = True
                                             msg['error'] = True
                                             break
                                     save_autochat_session(fresh)
@@ -2332,6 +2348,8 @@ Session name:"""
                                 for msg in session_data['messages']:
                                     if msg.get('response_id') == response_id:
                                         msg['content'] = full_response.strip()
+                                        msg['thinking'] = full_thinking.strip()
+                                        msg['thinking_completed'] = True
                                         msg['completed'] = True
                                         msg['timestamp'] = datetime.now().isoformat()
                                         if cancellation_requested and full_response.strip():
@@ -2406,6 +2424,8 @@ Session name:"""
                                 for msg in fresh['messages']:
                                     if msg.get('response_id') == response_id:
                                         msg['content'] = f"Error: {str(e)}"
+                                        msg['thinking'] = full_thinking if 'full_thinking' in dir() else ''
+                                        msg['thinking_completed'] = True
                                         msg['completed'] = True
                                         msg['error'] = True
                                         break
@@ -2752,6 +2772,7 @@ Session name:"""
                     # Stream response from Ollama
                     try:
                         full_response = ''
+                        full_thinking = ''
                         chunk_count = 0
                         has_error = False
                         story_lock = threading.Lock()
@@ -2767,18 +2788,22 @@ Session name:"""
                             seed=seed,
                             stream=True
                         ):
+                            content = chunk['content']
+                            thinking = chunk.get('thinking', '')
+                            
                             # Check if cancellation was requested
                             if cancellation_requested:
                                 print(f"[STORY] Cancellation detected, stopping stream at {len(full_response)} characters")
                                 break
                             
-                            if chunk.startswith('Error'):
+                            if content.startswith('Error'):
                                 has_error = True
-                                full_response = chunk
-                                print(f"[STORY] Ollama returned error: {chunk}")
+                                full_response = content
+                                print(f"[STORY] Ollama returned error: {content}")
                                 break
                             
-                            full_response += chunk
+                            full_response += content
+                            full_thinking += thinking
                             chunk_count += 1
                             
                             # Update periodically (every 10 chunks)
@@ -2789,6 +2814,7 @@ Session name:"""
                                         for msg in fresh['messages']:
                                             if msg.get('response_id') == response_id:
                                                 msg['content'] = full_response
+                                                msg['thinking'] = full_thinking
                                                 break
                                         save_story_session(fresh)
                         
@@ -2800,7 +2826,9 @@ Session name:"""
                                     for msg in fresh['messages']:
                                         if msg.get('response_id') == response_id:
                                             msg['content'] = full_response
+                                            msg['thinking'] = full_thinking
                                             msg['completed'] = True
+                                            msg['thinking_completed'] = True
                                             msg['error'] = True
                                             break
                                     save_story_session(fresh)
@@ -2819,6 +2847,8 @@ Session name:"""
                                 for msg in fresh['messages']:
                                     if msg.get('response_id') == response_id:
                                         msg['content'] = full_response.strip()
+                                        msg['thinking'] = full_thinking.strip()
+                                        msg['thinking_completed'] = True
                                         msg['completed'] = True
                                         msg['timestamp'] = datetime.now().isoformat()
                                         # Add cancelled flag if generation was interrupted
@@ -2852,6 +2882,8 @@ Session name:"""
                                 for msg in fresh['messages']:
                                     if msg.get('response_id') == response_id:
                                         msg['content'] = f"Error: {str(e)}"
+                                        msg['thinking'] = full_thinking if 'full_thinking' in dir() else ''
+                                        msg['thinking_completed'] = True
                                         msg['completed'] = True
                                         msg['error'] = True
                                         break
@@ -3961,7 +3993,7 @@ def autochat_stream(session_id, response_id):
                 # Find message with response_id
                 for msg in session_data['messages']:
                     if msg.get('response_id') == response_id:
-                        yield f"data: {json.dumps({'content': msg.get('content', ''), 'done': msg.get('completed', False)})}\n\n"
+                        yield f"data: {json.dumps({'content': msg.get('content', ''), 'thinking': msg.get('thinking', ''), 'thinking_completed': msg.get('thinking_completed', False), 'done': msg.get('completed', False)})}\n\n"
                         
                         if msg.get('completed'):
                             return
@@ -4274,6 +4306,7 @@ def stream_story_response(session_id, response_id):
             max_wait = 300  # 5 minutes timeout
             start_time = time.time()
             last_content = ""
+            last_thinking = ""
             
             while time.time() - start_time < max_wait:
                 session_data = load_story_session(session_id)
@@ -4292,16 +4325,29 @@ def stream_story_response(session_id, response_id):
                 
                 if response_msg:
                     content = response_msg.get('content', '')
-                    if content != last_content:
-                        # New content available - send the delta
-                        delta = content[len(last_content):]
-                        if delta:
-                            yield f"data: {json.dumps({'chunk': delta, 'full_content': content})}\n\n"
+                    thinking = response_msg.get('thinking', '')
+                    
+                    content_changed = content != last_content
+                    thinking_changed = thinking != last_thinking
+                    
+                    if content_changed or thinking_changed:
+                        # Send the delta
+                        send_data = {}
+                        if content_changed:
+                            delta = content[len(last_content):]
+                            send_data['chunk'] = delta
+                            send_data['full_content'] = content
                             last_content = content
+                        if thinking_changed:
+                            send_data['thinking'] = thinking
+                            send_data['thinking_completed'] = response_msg.get('thinking_completed', False)
+                            last_thinking = thinking
+                        
+                        yield f"data: {json.dumps(send_data)}\n\n"
                     
                     # Check if message is complete
                     if response_msg.get('completed', False):
-                        yield f"data: {json.dumps({'done': True, 'full_content': content})}\n\n"
+                        yield f"data: {json.dumps({'done': True, 'full_content': content, 'thinking': thinking, 'thinking_completed': True})}\n\n"
                         break
                 
                 time.sleep(0.3)  # Poll every 300ms

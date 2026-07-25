@@ -63,7 +63,7 @@ class OllamaClient:
              num_ctx: int = 2048,
              seed: Optional[int] = None,
              stream: bool = False,
-             keep_alive: int = -1) -> Generator[str, None, None]:
+             keep_alive: int = -1) -> Generator[dict, None, None]:
         """
         Send a chat request to Ollama
         
@@ -81,7 +81,7 @@ class OllamaClient:
             keep_alive: Duration to keep model loaded (-1 = indefinitely, 0 = unload immediately)
             
         Yields:
-            Response content chunks if streaming, else single response
+            Dicts with 'content' and 'thinking' keys for each chunk
         """
         payload = {
             "model": model,
@@ -119,19 +119,23 @@ class OllamaClient:
             
             with urllib.request.urlopen(req, timeout=300) as response:
                 if stream:
-                    # Stream response line by line
                     for line in response:
                         if line:
                             chunk = json.loads(line.decode('utf-8'))
                             if 'message' in chunk and 'content' in chunk['message']:
-                                yield chunk['message']['content']
+                                yield {
+                                    'content': chunk['message']['content'],
+                                    'thinking': chunk['message'].get('thinking', '')
+                                }
                             if chunk.get('done', False):
                                 break
                 else:
-                    # Single response
                     result = json.loads(response.read().decode('utf-8'))
                     if 'message' in result and 'content' in result['message']:
-                        yield result['message']['content']
+                        yield {
+                            'content': result['message']['content'],
+                            'thinking': result['message'].get('thinking', '')
+                        }
         
         except urllib.error.HTTPError as e:
             error_msg = f"HTTP Error {e.code}: {e.reason}"
@@ -156,18 +160,18 @@ class OllamaClient:
             print(f"[OLLAMA] HTTP Error: {full_error}")
             print(f"[OLLAMA] Model attempted: {model}")
             print(f"[OLLAMA] Hint: Check if model is properly pulled with 'ollama pull {model}'")
-            yield f"Error communicating with Ollama: {full_error}"
+            yield {'content': f"Error communicating with Ollama: {full_error}", 'thinking': ''}
         
         except urllib.error.URLError as e:
             error_msg = f"Connection error: {e.reason}"
             print(f"[OLLAMA] URL Error: {error_msg}")
             print(f"[OLLAMA] Hint: Is Ollama server running? Check with 'ollama list'")
-            yield f"Cannot connect to Ollama server: {error_msg}"
+            yield {'content': f"Cannot connect to Ollama server: {error_msg}", 'thinking': ''}
         
         except Exception as e:
             print(f"[OLLAMA] Unexpected error: {type(e).__name__}: {e}")
             print(f"[OLLAMA] Model: {model}")
-            yield f"Unexpected error: {str(e)}"
+            yield {'content': f"Unexpected error: {str(e)}", 'thinking': ''}
     
     def generate(self, 
                  model: str, 

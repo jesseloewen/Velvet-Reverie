@@ -151,6 +151,88 @@
     color: var(--text-primary);
 }
 
+/* Thinking section styles */
+.chat-thinking-section {
+    margin-bottom: 0.5rem;
+}
+
+.chat-thinking-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    transition: background 0.15s ease;
+}
+
+.chat-thinking-header:hover {
+    background: rgba(251, 191, 36, 0.18);
+}
+
+.chat-thinking-chevron {
+    font-size: 0.625rem;
+    transition: none;
+    flex-shrink: 0;
+    width: 12px;
+    text-align: center;
+}
+
+.chat-thinking-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.chat-thinking-status {
+    margin-left: 0.5rem;
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+.chat-thinking-content {
+    padding: 0.625rem 0.75rem;
+    margin-top: 0.25rem;
+    border-radius: 6px;
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    word-wrap: break-word;
+}
+
+.chat-thinking-content code {
+    background: rgba(251, 191, 36, 0.15);
+    padding: 0.125rem 0.25rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+.chat-thinking-content pre {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.5rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.75rem;
+}
+
+.chat-thinking-content pre code {
+    background: none;
+    padding: 0;
+}
+
 .chat-input-container {
     display: flex;
     gap: 1rem;
