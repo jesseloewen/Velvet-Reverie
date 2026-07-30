@@ -95,6 +95,7 @@ let selectedItems = new Set();
 let allItems = [];
 let selectionMode = false;
 let lastSeenCompletedIds = new Set();
+let notificationSoundPlaying = false;
 
 // Queue filter state
 let queueFilters = {
@@ -1913,28 +1914,39 @@ function showNotification(message, title = 'Notice', type = 'info', duration = 5
 }
 
 // Play Notification Sound
+let notificationAudioContext = null;
+
 function playNotificationSound() {
+    if (notificationSoundPlaying) return;
+    notificationSoundPlaying = true;
     try {
-        // Create audio context if not exists
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!notificationAudioContext) {
+            notificationAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (notificationAudioContext.state === 'suspended') {
+            notificationAudioContext.resume();
+        }
         
-        // Simple notification sound using Web Audio API (pleasant chime)
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        const oscillator = notificationAudioContext.createOscillator();
+        const gainNode = notificationAudioContext.createGain();
         
         oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(notificationAudioContext.destination);
         
-        // Play two notes for a pleasant chime effect
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
+        oscillator.frequency.setValueAtTime(800, notificationAudioContext.currentTime);
+        oscillator.frequency.setValueAtTime(1000, notificationAudioContext.currentTime + 0.1);
         
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+        gainNode.gain.setValueAtTime(0.3, notificationAudioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, notificationAudioContext.currentTime + 0.3);
         
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.3);
+        oscillator.start(notificationAudioContext.currentTime);
+        oscillator.stop(notificationAudioContext.currentTime + 0.3);
+        
+        oscillator.onended = () => {
+            notificationSoundPlaying = false;
+        };
     } catch (error) {
+        notificationSoundPlaying = false;
         console.error('Error playing notification sound:', error);
     }
 }

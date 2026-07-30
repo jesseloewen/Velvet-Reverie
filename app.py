@@ -1219,7 +1219,10 @@ def load_queue_state():
         try:
             with open(QUEUE_FILE, 'r') as f:
                 data = json.load(f)
-                return data.get('queue', []), data.get('completed', []), data.get('active')
+                completed = data.get('completed', [])
+                for job in completed:
+                    job.pop('refresh_folder', None)
+                return data.get('queue', []), completed, data.get('active')
         except Exception as e:
             print(f"Error loading queue state: {e}")
     return [], [], None

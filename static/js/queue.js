@@ -329,9 +329,12 @@ function updateLiveTimers() {
     });
 }
 
+let initialQueueLoad = true;
+
 function startQueueUpdates() {
     // Clear tracking on startup to allow folder refresh for existing completions
     lastSeenCompletedIds.clear();
+    initialQueueLoad = true;
     
     // Start polling queue
     updateQueue();
@@ -365,13 +368,20 @@ async function updateQueue() {
         const completedJobs = data.completed || [];
         let shouldRefreshFolder = false;
         
-        for (const job of completedJobs) {
-            if (job.status === 'completed' && job.refresh_folder && !lastSeenCompletedIds.has(job.id)) {
+        if (initialQueueLoad) {
+            initialQueueLoad = false;
+            for (const job of completedJobs) {
                 lastSeenCompletedIds.add(job.id);
-                shouldRefreshFolder = true;
-                
-                // Send browser notification if enabled
-                sendBrowserNotification(job);
+            }
+        } else {
+            for (const job of completedJobs) {
+                if (job.status === 'completed' && job.refresh_folder && !lastSeenCompletedIds.has(job.id)) {
+                    lastSeenCompletedIds.add(job.id);
+                    shouldRefreshFolder = true;
+                    
+                    // Send browser notification if enabled
+                    sendBrowserNotification(job);
+                }
             }
         }
 
