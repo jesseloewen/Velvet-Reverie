@@ -366,7 +366,17 @@ function setupTTSModalRangeListeners() {
 }
 
 function closeChatTTSModal() {
-    document.getElementById('chatTTSModal').style.display = 'none';
+    // Reset modal to normal mode if it was used in auto-config mode
+    const modal = document.getElementById('chatTTSModal');
+    if (modal.dataset.autoMode === 'true') {
+        modal.dataset.autoMode = 'false';
+        const submitBtn = modal.querySelector('.btn-primary');
+        if (submitBtn) {
+            submitBtn.textContent = 'Generate TTS';
+            submitBtn.setAttribute('onclick', 'submitChatTTS()');
+        }
+    }
+    modal.style.display = 'none';
 }
 
 function openAudioBrowserForModal() {
@@ -801,7 +811,6 @@ function renderAudioBatch(batch) {
                 <div class="audio-player-section">
                     <div class="audio-player-speed-row">
                         <span class="audio-player-speed-label">Speed</span>
-                        <span class="audio-speed-badge"></span>
                         <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed" title="Audio playback speed (global)">
                             <option value="0.5">0.5x</option>
                             <option value="0.75">0.75x</option>

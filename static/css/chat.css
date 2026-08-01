@@ -1127,16 +1127,7 @@
     box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
 }
 
-.audio-speed-badge {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: var(--accent-primary);
-    letter-spacing: 0.02em;
-    min-width: 2rem;
-    text-align: center;
-    pointer-events: none;
-    user-select: none;
-}
+
 
 .audio-speed-select {
     appearance: none;
@@ -1144,7 +1135,7 @@
     background: transparent;
     border: none;
     outline: none;
-    color: var(--text-secondary);
+    color: var(--accent-primary);
     font-size: 0.7rem;
     font-weight: 600;
     cursor: pointer;
@@ -1178,14 +1169,72 @@
     padding: 0.25rem 0.5rem;
 }
 
-.audio-player-speed-row .audio-speed-badge {
-    font-size: 0.75rem;
-    min-width: 2.2rem;
-}
+
 
 .audio-player-speed-row .audio-speed-select {
     font-size: 0.75rem;
     width: 3rem;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* ─── Auto-TTS Toggle (in chat input bar) ─────────────────────────────────── */
+.chat-auto-tts-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.chat-auto-tts-toggle input {
+    display: none;
+}
+
+.chat-auto-tts-slider {
+    width: 32px;
+    height: 18px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 9px;
+    position: relative;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chat-auto-tts-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.chat-auto-tts-toggle input:checked + .chat-auto-tts-slider {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.chat-auto-tts-toggle input:checked + .chat-auto-tts-slider::after {
+    transform: translateX(14px);
+    background: #fff;
+}
+
+.chat-auto-tts-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+}
+
+.chat-auto-tts-toggle input:checked ~ .chat-auto-tts-label {
+    color: var(--accent-primary);
 }
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -1936,9 +1985,7 @@
         height: 2.1rem;
     }
 
-    .audio-speed-badge {
-        display: none;
-    }
+    
 
     .audio-speed-select {
         width: 3rem;

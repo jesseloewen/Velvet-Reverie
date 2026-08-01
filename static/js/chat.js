@@ -535,6 +535,9 @@ function loadChatUI() {
     // Show input container
     const inputContainer = document.getElementById('chatInputContainer');
     if (inputContainer) inputContainer.style.display = 'flex';
+
+    // Sync auto-TTS toggle state from session
+    syncAutoTTSToggle('chat', currentChatSession);
 }
 
 function isScrolledToBottom(container, threshold = 50) {
@@ -2198,6 +2201,11 @@ function startChatStreamingPolling(responseId) {
                             console.log('[CHAT] Message element re-created with action buttons for:', responseId);
                         }
                     }
+                }
+
+                // Auto-TTS: check the whole session for any completed messages needing TTS
+                if (currentChatSession && currentChatSession.auto_tts && currentChatSession.auto_tts.enabled) {
+                    queueCompletedMessageTTS('chat', currentChatSession);
                 }
             }
         } catch (error) {

@@ -3345,6 +3345,17 @@ def create_chat_session():
         'num_ctx': data.get('num_ctx', 2048),
         'seed': data.get('seed', None),
         'messages': [],
+        'auto_tts': {
+            'enabled': False,
+            'voice': '',
+            'engine': 'ChatterboxTTS',
+            'format': 'wav',
+            'temperature': 0.8,
+            'exaggeration': 0.5,
+            'cfg_weight': 0.5,
+            'language': 'en',
+            'subfolder': ''
+        },
         'created_at': datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat()
     }
@@ -3414,6 +3425,8 @@ def update_chat_session(session_id):
         session_data['seed'] = data['seed']
     if 'messages' in data:
         session_data['messages'] = data['messages']
+    if 'auto_tts' in data:
+        session_data['auto_tts'] = data['auto_tts']
     
     session_data['updated_at'] = datetime.now().isoformat()
     save_chat_session(session_data)
@@ -3753,6 +3766,17 @@ def create_autochat_session():
         'status': 'stopped',
         'active_perspective': 'a',
         'messages': [],
+        'auto_tts': {
+            'enabled': False,
+            'voice': '',
+            'engine': 'ChatterboxTTS',
+            'format': 'wav',
+            'temperature': 0.8,
+            'exaggeration': 0.5,
+            'cfg_weight': 0.5,
+            'language': 'en',
+            'subfolder': ''
+        },
         'created_at': datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat()
     }
@@ -3797,6 +3821,8 @@ def update_autochat_session(session_id):
         session_data['current_turn'] = data['current_turn']
     if 'messages' in data:
         session_data['messages'] = data['messages']
+    if 'auto_tts' in data:
+        session_data['auto_tts'] = data['auto_tts']
     
     # Update persona A fields
     if 'persona_a' in data:
@@ -4137,6 +4163,17 @@ def create_story_session():
         'num_ctx': data.get('num_ctx', 4096),
         'seed': data.get('seed', None),
         'messages': [],
+        'auto_tts': {
+            'enabled': False,
+            'voice': '',
+            'engine': 'ChatterboxTTS',
+            'format': 'wav',
+            'temperature': 0.8,
+            'exaggeration': 0.5,
+            'cfg_weight': 0.5,
+            'language': 'en',
+            'subfolder': ''
+        },
         'created_at': datetime.now().isoformat(),
         'updated_at': datetime.now().isoformat()
     }
@@ -4208,6 +4245,8 @@ def update_story_session(session_id):
         session_data['seed'] = data['seed']
     if 'messages' in data:
         session_data['messages'] = data['messages']
+    if 'auto_tts' in data:
+        session_data['auto_tts'] = data['auto_tts']
     
     session_data['updated_at'] = datetime.now().isoformat()
     save_story_session(session_data)

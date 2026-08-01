@@ -371,6 +371,9 @@ function populateAutochatUI() {
     // Show manual input section
     document.getElementById('autochatManualSection').style.display = 'block';
     document.getElementById('flipDisplayLabel').style.display = 'flex';
+
+    // Sync auto-TTS toggle state from session
+    syncAutoTTSToggle('autochat', currentAutoSession);
     
     // Update flip display UI (send-as label)
     updateFlipDisplayUI();
@@ -843,6 +846,11 @@ function startMessageStreaming(responseId) {
                             wrapper.insertAdjacentHTML('beforeend', actionsHTML);
                         }
                     }
+                }
+
+                // Auto-TTS: check the whole session for any completed messages needing TTS
+                if (currentAutoSession && currentAutoSession.auto_tts && currentAutoSession.auto_tts.enabled) {
+                    queueCompletedMessageTTS('autochat', currentAutoSession);
                 }
             } else if (data.content !== undefined) {
                 // Update message content in real-time

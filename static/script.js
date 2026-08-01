@@ -13,7 +13,6 @@ function setGlobalAudioPlaybackSpeed(speed) {
     localStorage.setItem('audioPlaybackSpeed', String(parsed));
     document.querySelectorAll('audio').forEach(el => { el.playbackRate = parsed; });
     document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = String(parsed); });
-    document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = parsed + 'x'; });
     console.log('[Audio] Global playback speed set to', parsed + 'x');
 }
 
@@ -28,7 +27,6 @@ function initializeAudioSpeedControls() {
     // Set initial values on all existing widgets
     const speedStr = String(globalAudioPlaybackSpeed);
     document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = speedStr; });
-    document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = globalAudioPlaybackSpeed + 'x'; });
 
     // Apply speed to any <audio> elements already in the DOM
     document.querySelectorAll('audio').forEach(el => { el.playbackRate = globalAudioPlaybackSpeed; });
@@ -44,14 +42,12 @@ function initializeAudioSpeedControls() {
                 node.querySelectorAll && node.querySelectorAll('audio').forEach(a => applyGlobalAudioSpeed(a));
                 // New speed widgets
                 if (node.classList && node.classList.contains('audio-speed-select')) needsWidgetSync = true;
-                if (node.classList && node.classList.contains('audio-speed-badge')) needsWidgetSync = true;
-                node.querySelectorAll && node.querySelectorAll('.audio-speed-select, .audio-speed-badge').forEach(() => { needsWidgetSync = true; });
+                node.querySelectorAll && node.querySelectorAll('.audio-speed-select').forEach(() => { needsWidgetSync = true; });
             });
         });
         if (needsWidgetSync) {
             const s = String(globalAudioPlaybackSpeed);
             document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = s; });
-            document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = globalAudioPlaybackSpeed + 'x'; });
         }
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -10333,7 +10329,6 @@ function renderAudioBatch(batch) {
                 <div class="audio-player-section">
                     <div class="audio-player-speed-row">
                         <span class="audio-player-speed-label">Speed</span>
-                        <span class="audio-speed-badge"></span>
                         <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed" title="Audio playback speed (global)">
                             <option value="0.5">0.5x</option>
                             <option value="0.75">0.75x</option>

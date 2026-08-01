@@ -40,7 +40,6 @@
                                         <span class="chat-audio-autoplay-text">Auto Play</span>
                                     </label>
                                     <div class="audio-speed-control" title="Audio playback speed (global)">
-                                        <span class="audio-speed-badge"></span>
                                         <select class="audio-speed-select" onchange="setGlobalAudioPlaybackSpeed(this.value)" aria-label="Audio playback speed">
                                             <option value="0.5">0.5x</option>
                                             <option value="0.75">0.75x</option>
@@ -98,6 +97,11 @@
 
                             <div class="chat-input-container" id="storyInputContainer" style="display: none;">
                                 <textarea id="storyInput" class="chat-input" placeholder="Type your story prompt..." rows="1"></textarea>
+                                <label class="chat-auto-tts-toggle" title="Auto-TTS: automatically generate speech for AI responses">
+                                    <input type="checkbox" id="storyAutoTTSToggle" onchange="toggleAutoTTS('story', this.checked)">
+                                    <span class="chat-auto-tts-slider"></span>
+                                    <span class="chat-auto-tts-label">TTS</span>
+                                </label>
                                 <button id="storySendBtn" class="chat-send-btn" title="Send message">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <line x1="22" y1="2" x2="11" y2="13"></line>

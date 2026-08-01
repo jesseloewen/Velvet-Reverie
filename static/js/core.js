@@ -14,7 +14,6 @@ function setGlobalAudioPlaybackSpeed(speed) {
     localStorage.setItem('audioPlaybackSpeed', String(parsed));
     document.querySelectorAll('audio').forEach(el => { el.playbackRate = parsed; });
     document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = String(parsed); });
-    document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = parsed + 'x'; });
     console.log('[Audio] Global playback speed set to', parsed + 'x');
 }
 
@@ -29,7 +28,6 @@ function initializeAudioSpeedControls() {
     // Set initial values on all existing widgets
     const speedStr = String(globalAudioPlaybackSpeed);
     document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = speedStr; });
-    document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = globalAudioPlaybackSpeed + 'x'; });
 
     // Apply speed to any <audio> elements already in the DOM
     document.querySelectorAll('audio').forEach(el => { el.playbackRate = globalAudioPlaybackSpeed; });
@@ -45,17 +43,252 @@ function initializeAudioSpeedControls() {
                 node.querySelectorAll && node.querySelectorAll('audio').forEach(a => applyGlobalAudioSpeed(a));
                 // New speed widgets
                 if (node.classList && node.classList.contains('audio-speed-select')) needsWidgetSync = true;
-                if (node.classList && node.classList.contains('audio-speed-badge')) needsWidgetSync = true;
-                node.querySelectorAll && node.querySelectorAll('.audio-speed-select, .audio-speed-badge').forEach(() => { needsWidgetSync = true; });
+                node.querySelectorAll && node.querySelectorAll('.audio-speed-select').forEach(() => { needsWidgetSync = true; });
             });
         });
         if (needsWidgetSync) {
             const s = String(globalAudioPlaybackSpeed);
             document.querySelectorAll('.audio-speed-select').forEach(sel => { sel.value = s; });
-            document.querySelectorAll('.audio-speed-badge').forEach(badge => { badge.textContent = globalAudioPlaybackSpeed + 'x'; });
         }
     });
     observer.observe(document.body, { childList: true, subtree: true });
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ─── Auto-TTS ─────────────────────────────────────────────────────────────────
+/** 
+ * Globally store the most recent auto-TTS settings by session type.
+ * Used to avoid PUT-ing settings to the server on every keystroke.
+ */
+const autoTTSSessionSettings = { chat: null, story: null, autochat: null };
+
+/**
+ * Queue a TTS job using stored auto-TTS settings (no modal interaction).
+ * Called automatically when a message completes streaming and auto_tts.enabled is true.
+ */
+async function queueAutoTTS(messageText, messageId, sessionId, sessionType, ttsSettings) {
+    if (!messageText || !messageId || !sessionId || !ttsSettings) {
+        console.warn('[AutoTTS] Missing required parameters, skipping');
+        return;
+    }
+
+    const refAudio = ttsSettings.voice || '';
+    if (!refAudio) {
+        console.warn('[AutoTTS] No voice configured, skipping');
+        return;
+    }
+
+    const filePrefix = { chat: 'chat_tts', story: 'story_tts', autochat: 'autochat_tts' }[sessionType] || 'chat_tts';
+
+    try {
+        const response = await fetch('/api/queue/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: messageText,
+                ref_audio: refAudio,
+                seed: null,
+                file_prefix: filePrefix,
+                subfolder: ttsSettings.subfolder || '',
+                tts_engine: ttsSettings.engine || 'ChatterboxTTS',
+                audio_format: ttsSettings.format || 'wav',
+                temperature: ttsSettings.temperature || 0.8,
+                exaggeration: ttsSettings.exaggeration || 0.5,
+                cfg_weight: ttsSettings.cfg_weight || 0.5,
+                chunk_size: 300,
+                language: ttsSettings.language || 'en',
+                repetition_penalty: 2.0,
+                chat_message_id: messageId,
+                session_id: sessionId,
+                session_type: sessionType
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('[AutoTTS] Queued TTS for message:', messageId, '—', data.total_sentences, 'sentence(s)');
+            if (typeof pollForChatTTSAudio === 'function') {
+                pollForChatTTSAudio(messageId, sessionId, sessionType);
+            }
+        } else {
+            console.error('[AutoTTS] Queue failed:', data.error);
+        }
+    } catch (error) {
+        console.error('[AutoTTS] Error queuing TTS:', error);
+    }
+}
+
+/**
+ * Handle toggling the auto-TTS switch in any chat tab.
+ * When turned ON, opens the TTS settings modal in auto-config mode.
+ * When turned OFF, saves `enabled: false` to the session.
+ */
+async function toggleAutoTTS(sessionType, enabled) {
+    const currentSession = sessionType === 'autochat' ? currentAutoSession : 
+                            sessionType === 'story' ? currentStorySession : currentChatSession;
+
+    if (!currentSession || !currentSession.session_id) {
+        showNotification('No active session', 'Error', 'error');
+        return;
+    }
+
+    // Ensure auto_tts exists on session
+    if (!currentSession.auto_tts) {
+        currentSession.auto_tts = {
+            enabled: false, voice: '', engine: 'ChatterboxTTS', format: 'wav',
+            temperature: 0.8, exaggeration: 0.5, cfg_weight: 0.5, language: 'en', subfolder: ''
+        };
+    }
+
+    if (enabled) {
+        currentSession.auto_tts.enabled = true;
+        // Open modal in auto-config mode
+        showAutoTTSConfigModal(sessionType, currentSession);
+    } else {
+        currentSession.auto_tts.enabled = false;
+        await saveAutoTTSToSession(sessionType, currentSession);
+    }
+}
+
+/**
+ * Open the TTS settings modal in auto-config mode. 
+ * Reuses #chatTTSModal but changes button to "Save Settings".
+ */
+function showAutoTTSConfigModal(sessionType, session) {
+    const settings = session.auto_tts || {};
+
+    // Use existing modal, pre-fill with session's auto_tts settings
+    const refAudio = settings.voice || getPreferredTtsReferenceAudio();
+    document.getElementById('modalTTSVoice').value = refAudio;
+    document.getElementById('modalTTSEngine').value = settings.engine || 'ChatterboxTTS';
+    document.getElementById('modalTTSFormat').value = settings.format || 'wav';
+    document.getElementById('modalTTSTemperature').value = settings.temperature || 0.8;
+    document.getElementById('modalTTSTemperatureValue').textContent = (settings.temperature || 0.8).toFixed(1);
+    document.getElementById('modalTTSExaggeration').value = settings.exaggeration || 0.5;
+    document.getElementById('modalTTSExaggerationValue').textContent = (settings.exaggeration || 0.5).toFixed(1);
+    document.getElementById('modalTTSCfgWeight').value = settings.cfg_weight || 0.5;
+    document.getElementById('modalTTSCfgWeightValue').textContent = (settings.cfg_weight || 0.5).toFixed(1);
+    document.getElementById('modalTTSLanguage').value = settings.language || 'en';
+    document.getElementById('modalTTSSubfolder').value = settings.subfolder || '';
+
+    // Clear message-specific hidden fields
+    document.getElementById('modalTTSMessageText').value = '';
+    document.getElementById('modalTTSMessageId').value = '';
+
+    // Change button to auto-config mode
+    const submitBtn = document.querySelector('#chatTTSModal .btn-primary');
+    if (submitBtn) {
+        submitBtn.textContent = 'Save Settings';
+        submitBtn.setAttribute('onclick', '');
+        submitBtn.addEventListener('click', function handler() {
+            saveAutoTTSSettings(sessionType, session);
+        }, { once: true });
+    }
+
+    // Store context for cleanup
+    document.getElementById('chatTTSModal').dataset.autoMode = 'true';
+    document.getElementById('chatTTSModal').dataset.sessionType = sessionType;
+
+    // Show modal
+    document.getElementById('chatTTSModal').style.display = 'flex';
+    setupTTSModalRangeListeners();
+}
+
+/**
+ * Save auto-TTS settings from the modal to the session.
+ */
+async function saveAutoTTSSettings(sessionType, session) {
+    if (!session || !session.session_id) return;
+
+    const settings = {
+        enabled: true,
+        voice: document.getElementById('modalTTSVoice').value.trim(),
+        engine: document.getElementById('modalTTSEngine').value,
+        format: document.getElementById('modalTTSFormat').value,
+        temperature: parseFloat(document.getElementById('modalTTSTemperature').value),
+        exaggeration: parseFloat(document.getElementById('modalTTSExaggeration').value),
+        cfg_weight: parseFloat(document.getElementById('modalTTSCfgWeight').value),
+        language: document.getElementById('modalTTSLanguage').value,
+        subfolder: document.getElementById('modalTTSSubfolder').value.trim()
+    };
+
+    const refAudio = settings.voice;
+    if (refAudio && typeof rememberTtsReferenceAudio === 'function') {
+        rememberTtsReferenceAudio(refAudio);
+    }
+
+    session.auto_tts = settings;
+    await saveAutoTTSToSession(sessionType, session);
+    closeChatTTSModal();
+
+    // Retroactively queue TTS for any completed messages that don't have audio
+    queueCompletedMessageTTS(sessionType, session);
+}
+
+/**
+ * Retroactively queue TTS for all completed assistant messages in the session
+ * that don't already have tts_audio. Called after saving auto-TTS settings.
+ */
+function queueCompletedMessageTTS(sessionType, session) {
+    if (!session || !session.messages || !session.auto_tts || !session.auto_tts.enabled) return;
+    if (!session.auto_tts.voice) return;
+
+    const messages = session.messages || [];
+    for (const msg of messages) {
+        if (msg.role !== 'assistant') continue;
+        if (!msg.completed) continue;
+        if (!msg.content) continue;
+        if (msg.tts_audio) continue;
+
+        const msgId = msg.message_id || msg.response_id;
+        if (!msgId) continue;
+
+        console.log('[AutoTTS] Queuing retroactive TTS for completed message:', msgId);
+        queueAutoTTS(msg.content, msgId, session.session_id, sessionType, session.auto_tts);
+    }
+}
+
+/**
+ * PUT auto_tts settings to the server for the given session.
+ */
+async function saveAutoTTSToSession(sessionType, session) {
+    const endpointMap = {
+        chat: `/api/chat/sessions/${session.session_id}`,
+        story: `/api/story/sessions/${session.session_id}`,
+        autochat: `/api/autochat/sessions/${session.session_id}`
+    };
+    const endpoint = endpointMap[sessionType];
+    if (!endpoint) return;
+
+    try {
+        await fetch(endpoint, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auto_tts: session.auto_tts })
+        });
+    } catch (error) {
+        console.error('[AutoTTS] Failed to save settings:', error);
+    }
+}
+
+/**
+ * Sync the auto-TTS toggle checkbox to match the session's stored state.
+ * Called from loadChatUI / loadStoryUI / loadAutoUI when a session is loaded.
+ */
+function syncAutoTTSToggle(sessionType, session) {
+    const toggleMap = { chat: 'chatAutoTTSToggle', story: 'storyAutoTTSToggle', autochat: 'autochatAutoTTSToggle' };
+    const toggleId = toggleMap[sessionType];
+    if (!toggleId) return;
+
+    const toggle = document.getElementById(toggleId);
+    if (!toggle) return;
+
+    if (session && session.auto_tts) {
+        toggle.checked = session.auto_tts.enabled === true;
+    } else {
+        toggle.checked = false;
+    }
 }
 // ──────────────────────────────────────────────────────────────────────────────
 

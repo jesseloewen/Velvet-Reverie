@@ -518,6 +518,9 @@ function loadStoryUI() {
     document.getElementById('storySeed').disabled = false;
     document.getElementById('storySeedValue').textContent = currentStorySession.seed ? currentStorySession.seed : 'Random';
     document.getElementById('clearStorySeedBtn').disabled = false;
+
+    // Sync auto-TTS toggle state from session
+    syncAutoTTSToggle('story', currentStorySession);
 }
 
 async function renderStoryMessages() {
@@ -1049,6 +1052,11 @@ function startStoryStreamingPolling(responseId) {
                 
                 // Reload session to get final state (this will re-render with buttons)
                 selectStorySession(sessionId, true);
+
+                // Auto-TTS: check the whole session for any completed messages needing TTS
+                if (currentStorySession && currentStorySession.auto_tts && currentStorySession.auto_tts.enabled) {
+                    queueCompletedMessageTTS('story', currentStorySession);
+                }
             }
         } catch (error) {
             console.error('[STORY] Error parsing stream:', error);
