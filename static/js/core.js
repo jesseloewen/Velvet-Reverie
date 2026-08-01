@@ -413,33 +413,44 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✓ Media blur setting initialized');
     } catch (e) { console.error('✗ Media blur setting failed:', e); }
     
-    // Initialize auto-unload models setting
+    // Initialize auto-unload mode setting (server-side, synced across clients)
     try {
-        const autoUnloadCheckbox = document.getElementById('autoUnloadModels');
+        const autoUnloadSelect = document.getElementById('autoUnloadMode');
         
-        // Load saved preference from localStorage (default: true)
-        const savedAutoUnload = localStorage.getItem('autoUnloadModels');
-        if (savedAutoUnload !== null) {
-            autoUnloadCheckbox.checked = savedAutoUnload === 'true';
-        }
+        const modeLabels = {
+            'never': 'Never unload',
+            'always': 'Unload every generation',
+            'queue_empty': 'Unload when queue empty'
+        };
         
-        // Send initial setting to backend
-        updateAutoUnloadSetting(autoUnloadCheckbox.checked);
+        (async () => {
+            try {
+                const response = await fetch('/api/settings/auto-unload');
+                const data = await response.json();
+                autoUnloadSelect.value = data.auto_unload_mode;
+            } catch(e) {
+                console.error('Failed to fetch auto-unload mode:', e);
+            }
+        })();
         
-        // Listen for changes
-        autoUnloadCheckbox.addEventListener('change', function() {
-            const enabled = this.checked;
-            localStorage.setItem('autoUnloadModels', enabled.toString());
-            updateAutoUnloadSetting(enabled);
-            showNotification(
-                enabled ? 'Models will be unloaded after each generation' : 'Models will stay loaded for faster repeat generations',
-                'Auto-Unload ' + (enabled ? 'Enabled' : 'Disabled'),
-                'info',
-                3000
-            );
+        autoUnloadSelect.addEventListener('change', function() {
+            const mode = this.value;
+            updateAutoUnloadSetting(mode);
+            showNotification(modeLabels[mode] || mode, 'Auto-Unload', 'info', 3000);
         });
-        console.log('✓ Auto-unload models setting initialized');
-    } catch (e) { console.error('✗ Auto-unload models setting failed:', e); }
+        
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/settings/auto-unload');
+                const data = await response.json();
+                if (autoUnloadSelect.value !== data.auto_unload_mode) {
+                    autoUnloadSelect.value = data.auto_unload_mode;
+                }
+            } catch(e) {}
+        }, 3000);
+        
+        console.log('✓ Auto-unload mode setting initialized');
+    } catch (e) { console.error('✗ Auto-unload mode setting failed:', e); }
     
     // Initialize notification type setting
     try {
@@ -501,6 +512,49 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         console.log('✓ Notification type setting initialized');
     } catch (e) { console.error('✗ Notification type setting failed:', e); }
+    
+    // Initialize Pushover notification setting (server-side, synced across clients)
+    try {
+        const pushoverSelect = document.getElementById('pushoverMode');
+        
+        const pushoverLabels = {
+            'off': 'Pushover notifications disabled',
+            'every_completion': 'Pushover: every completion',
+            'queue_empty': 'Pushover: when queue empty'
+        };
+        
+        (async () => {
+            try {
+                const response = await fetch('/api/settings/pushover');
+                const data = await response.json();
+                pushoverSelect.value = data.pushover_mode;
+            } catch(e) {
+                console.error('Failed to fetch pushover mode:', e);
+            }
+        })();
+        
+        pushoverSelect.addEventListener('change', function() {
+            const mode = this.value;
+            fetch('/api/settings/pushover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+            showNotification(pushoverLabels[mode] || mode, 'Pushover', 'success', 3000);
+        });
+        
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/settings/pushover');
+                const data = await response.json();
+                if (pushoverSelect.value !== data.pushover_mode) {
+                    pushoverSelect.value = data.pushover_mode;
+                }
+            } catch(e) {}
+        }, 3000);
+        
+        console.log('✓ Pushover notification setting initialized');
+    } catch (e) { console.error('✗ Pushover notification setting failed:', e); }
     
     // Restore header collapsed state from localStorage
     try {
@@ -2259,12 +2313,12 @@ function startHardwareMonitoring() {
     hardwareUpdateInterval = setInterval(updateHardwareStats, 2000);
 }
 
-async function updateAutoUnloadSetting(enabled) {
+async function updateAutoUnloadSetting(mode) {
     try {
         await fetch('/api/settings/auto-unload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: enabled })
+            body: JSON.stringify({ mode: mode })
         });
     } catch (error) {
         console.error('Error updating auto-unload setting:', error);

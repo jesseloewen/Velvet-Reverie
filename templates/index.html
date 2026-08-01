@@ -128,28 +128,37 @@
             <div class="hardware-monitor" id="hardwareMonitor">
                 <!-- Auto-Unload Models Setting -->
                 <div class="hw-setting">
-                    <label class="checkbox-label" style="margin: 0; padding: 0.5rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                        <input type="checkbox" id="autoUnloadModels" class="checkbox-input" checked>
-                        <span style="font-size: 0.875rem;">Auto-Unload Models After Generation</span>
+                    <label style="display: block; padding: 0.2rem 0.35rem;">
+                        <span style="font-size: 0.7rem; font-weight: 500; display: block; margin-bottom: 0.15rem;">Auto-Unload</span>
+                        <select id="autoUnloadMode" class="form-control" style="width: 100%; padding: 0.15rem 0.25rem; font-size: 0.7rem;">
+                            <option value="never">Never</option>
+                            <option value="always">Every Generation</option>
+                            <option value="queue_empty">Queue Empty</option>
+                        </select>
                     </label>
-                    <small style="color: var(--text-muted); display: block; padding: 0 0.5rem 0.5rem; font-size: 0.75rem;">
-                        When enabled, frees RAM/VRAM after each job (slower but prevents memory issues)
-                    </small>
                 </div>
                 <!-- Notification Type Setting -->
                 <div class="hw-setting">
-                    <label style="display: block; padding: 0.5rem;">
-                        <span style="font-size: 0.875rem; font-weight: 500; display: block; margin-bottom: 0.5rem;">Completion Alerts</span>
-                        <select id="notificationType" class="form-control" style="width: 100%; padding: 0.5rem; font-size: 0.875rem;">
+                    <label style="display: block; padding: 0.2rem 0.35rem;">
+                        <span style="font-size: 0.7rem; font-weight: 500; display: block; margin-bottom: 0.15rem;">Alerts</span>
+                        <select id="notificationType" class="form-control" style="width: 100%; padding: 0.15rem 0.25rem; font-size: 0.7rem;">
                             <option value="none">None</option>
-                            <option value="notification">Desktop Notification</option>
-                            <option value="sound" selected>Sound Only</option>
+                            <option value="notification">Desktop</option>
+                            <option value="sound" selected>Sound</option>
                             <option value="both">Both</option>
                         </select>
                     </label>
-                    <small style="color: var(--text-muted); display: block; padding: 0 0.5rem 0.5rem; font-size: 0.75rem;">
-                        Choose how to be alerted when generations complete
-                    </small>
+                </div>
+                <!-- Pushover Notification Setting -->
+                <div class="hw-setting">
+                    <label style="display: block; padding: 0.2rem 0.35rem;">
+                        <span style="font-size: 0.7rem; font-weight: 500; display: block; margin-bottom: 0.15rem;">Pushover</span>
+                        <select id="pushoverMode" class="form-control" style="width: 100%; padding: 0.15rem 0.25rem; font-size: 0.7rem;">
+                            <option value="off" selected>Off</option>
+                            <option value="every_completion">Every Completion</option>
+                            <option value="queue_empty">Queue Empty</option>
+                        </select>
+                    </label>
                 </div>
                 <div class="hw-stat">
                     <div class="hw-label">

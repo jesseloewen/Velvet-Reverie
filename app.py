@@ -17,6 +17,8 @@ from pathlib import Path
 import uuid
 import mimetypes
 import hashlib
+import urllib.request
+import urllib.parse
 from functools import wraps
 import wave
 from dotenv import load_dotenv
@@ -206,7 +208,14 @@ last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 't
 cancellation_requested = False
 
 # Global setting for auto-unload models (controlled via web UI)
-auto_unload_models = False
+auto_unload_mode = "never"  # "never" | "always" | "queue_empty"
+
+# Global setting for Pushover notifications (controlled via web UI)
+pushover_mode = "off"  # "off" | "every_completion" | "queue_empty"
+
+# Pushover API credentials
+PUSHOVER_USER_KEY = os.getenv('PUSHOVER_USER_KEY', '')
+PUSHOVER_APP_KEY = os.getenv('PUSHOVER_APP_KEY', '')
 
 # Public endpoints that must remain reachable before authentication.
 PUBLIC_PATHS = {
@@ -3010,9 +3019,74 @@ Session name:"""
                 active_generation = None
                 # Don't reset timer here - let it continue if queue is empty
             
-            # Conditionally unload models based on auto_unload_models setting
-            if auto_unload_models:
-                print("[CLEANUP] Auto-unload enabled: Unloading all models after job completion...")
+            # Pushover notification
+            if pushover_mode != "off" and PUSHOVER_USER_KEY and PUSHOVER_APP_KEY:
+                should_pushover = False
+                if pushover_mode == "every_completion":
+                    should_pushover = True
+                elif pushover_mode == "queue_empty":
+                    with queue_lock:
+                        if not generation_queue:
+                            should_pushover = True
+                
+                if should_pushover:
+                    try:
+                        job_type = job.get('job_type', 'unknown')
+                        title = "Velvet Reverie"
+                        if pushover_mode == "queue_empty":
+                            message = "Queue finished"
+                        else:
+                            message = f"{job_type.replace('_', ' ').title()} complete"
+                        push_data = urllib.parse.urlencode({
+                            "token": PUSHOVER_APP_KEY,
+                            "user": PUSHOVER_USER_KEY,
+                            "title": title,
+                            "message": message,
+                        }).encode()
+                        req = urllib.request.Request(
+                            "https://api.pushover.net/1/messages.json",
+                            data=push_data,
+                            method="POST"
+                        )
+                        urllib.request.urlopen(req, timeout=5)
+                        print(f"[PUSHOVER] Notification sent for {job_type}")
+                    except Exception as e:
+                        print(f"[PUSHOVER] Failed to send: {e}")
+            
+            # Determine if models should be unloaded
+            def _backend_category(job):
+                jt = job.get('job_type', 'image')
+                if jt in ('image', 'video'):
+                    return 'comfyui'
+                elif jt == 'tts':
+                    return 'tts'
+                return 'ollama'
+            
+            should_unload = False
+            unload_reason = ""
+            
+            # Rule 1: Force unload if next job changes backend type
+            with queue_lock:
+                if generation_queue:
+                    current_backend = _backend_category(job)
+                    next_backend = _backend_category(generation_queue[-1])
+                    if current_backend != next_backend:
+                        should_unload = True
+                        unload_reason = f"backend change ({current_backend} -> {next_backend})"
+            
+            # Rule 2: Mode-based unload
+            if not should_unload:
+                if auto_unload_mode == "always":
+                    should_unload = True
+                    unload_reason = "mode: always"
+                elif auto_unload_mode == "queue_empty":
+                    with queue_lock:
+                        if not generation_queue:
+                            should_unload = True
+                            unload_reason = "mode: queue empty"
+            
+            if should_unload:
+                print(f"[CLEANUP] Unloading all models ({unload_reason})...")
                 try:
                     comfyui_client.unload_models()
                     comfyui_client.clear_cache()
@@ -3033,10 +3107,10 @@ Session name:"""
                     print(f"[CLEANUP] Error unloading Gradio TTS: {e}")
                 
                 print("[CLEANUP] Waiting for RAM/VRAM to clear...")
-                time.sleep(5)  # Give time for complete cleanup
+                time.sleep(5)
                 print("[CLEANUP] Ready for next job")
             else:
-                print("[CLEANUP] Auto-unload disabled: Keeping models loaded for faster repeat generations")
+                print("[CLEANUP] Keeping models loaded")
             
             # Save queue state after job completes
             save_queue_state()
@@ -3191,14 +3265,27 @@ def get_story_instructions():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/settings/auto-unload', methods=['POST'])
-def update_auto_unload_setting():
-    """Update auto-unload models setting"""
-    global auto_unload_models
+@app.route('/api/settings/auto-unload', methods=['GET', 'POST'])
+def auto_unload_setting():
+    """Get or update auto-unload models setting"""
+    global auto_unload_mode
+    if request.method == 'GET':
+        return jsonify({'auto_unload_mode': auto_unload_mode})
     data = request.json
-    auto_unload_models = bool(data.get('enabled', True))
-    print(f"[SETTINGS] Auto-unload models: {auto_unload_models}")
-    return jsonify({'success': True, 'auto_unload_models': auto_unload_models})
+    auto_unload_mode = data.get('mode', 'never')
+    print(f"[SETTINGS] Auto-unload mode: {auto_unload_mode}")
+    return jsonify({'success': True, 'auto_unload_mode': auto_unload_mode})
+
+@app.route('/api/settings/pushover', methods=['GET', 'POST'])
+def pushover_setting():
+    """Get or update Pushover notification setting"""
+    global pushover_mode
+    if request.method == 'GET':
+        return jsonify({'pushover_mode': pushover_mode})
+    data = request.json
+    pushover_mode = data.get('mode', 'off')
+    print(f"[SETTINGS] Pushover mode: {pushover_mode}")
+    return jsonify({'success': True, 'pushover_mode': pushover_mode})
 
 # ============================================================================
 # CHAT ENDPOINTS
