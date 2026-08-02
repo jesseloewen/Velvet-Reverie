@@ -844,39 +844,72 @@ def ensure_merged_audio_file(input_files, output_dir, filename_prefix, silence_s
     return output_path, False
 
 
-def merge_audio_files_with_ffmpeg(input_files, output_path, silence_seconds=0.1):
-    """Merge audio files with a short silence gap between each file."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+MAX_MERGE_BATCH_SIZE = 150
 
+def _merge_with_concat_demuxer(input_files, output_path, silence_seconds=0.1):
+    """Merge a batch of audio files using ffmpeg's concat demuxer.
+
+    Writes a temporary playlist file listing each input file interspersed with
+    a single silence clip. This avoids command-line argument length limits and
+    filter_complex graph limits, scaling to thousands of files safely.
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     silence_path = OUTPUT_DIR / "audio" / f"silence_temp_{timestamp}.wav"
 
     try:
-        # Create silence clip to insert between message audio segments.
         silence_cmd = [
             'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
             '-t', str(silence_seconds), '-y', str(silence_path)
         ]
         subprocess.run(silence_cmd, check=True, capture_output=True)
 
-        inputs = []
-        for index, file_path in enumerate(input_files):
-            inputs.extend(['-i', str(file_path)])
-            if index < len(input_files) - 1:
-                inputs.extend(['-i', str(silence_path)])
+        list_path = output_path.parent / f"{output_path.stem}_playlist_{timestamp}.txt"
+        try:
+            with open(list_path, 'w') as f:
+                for i, file_path in enumerate(input_files):
+                    f.write(f"file '{file_path}'\n")
+                    if i < len(input_files) - 1:
+                        f.write(f"file '{silence_path}'\n")
 
-        stream_count = len(input_files) + (len(input_files) - 1)
-        filter_str = ''.join([f'[{i}:a]' for i in range(stream_count)]) + f'concat=n={stream_count}:v=0:a=1[out]'
-
-        merge_cmd = ['ffmpeg'] + inputs + [
-            '-filter_complex', filter_str,
-            '-map', '[out]',
-            '-y', str(output_path)
-        ]
-        subprocess.run(merge_cmd, check=True, capture_output=True)
+            merge_cmd = [
+                'ffmpeg', '-f', 'concat', '-safe', '0',
+                '-i', str(list_path), '-y', str(output_path)
+            ]
+            subprocess.run(merge_cmd, check=True, capture_output=True)
+        finally:
+            if list_path.exists():
+                list_path.unlink()
     finally:
         if silence_path.exists():
             silence_path.unlink()
+
+
+def merge_audio_files_with_ffmpeg(input_files, output_path, silence_seconds=0.1):
+    """Merge audio files with a short silence gap between each file.
+
+    For large file collections (> MAX_MERGE_BATCH_SIZE), files are merged in
+    chunks to intermediate temporary files which are then merged together.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if len(input_files) <= MAX_MERGE_BATCH_SIZE:
+        _merge_with_concat_demuxer(input_files, output_path, silence_seconds)
+        return
+
+    temp_files = []
+    try:
+        for chunk_idx in range(0, len(input_files), MAX_MERGE_BATCH_SIZE):
+            chunk = input_files[chunk_idx:chunk_idx + MAX_MERGE_BATCH_SIZE]
+            part_idx = chunk_idx // MAX_MERGE_BATCH_SIZE
+            temp_output = output_path.parent / f"{output_path.stem}_part{part_idx:04d}.wav"
+            _merge_with_concat_demuxer(chunk, temp_output, silence_seconds)
+            temp_files.append(temp_output)
+
+        _merge_with_concat_demuxer(temp_files, output_path, silence_seconds)
+    finally:
+        for tf in temp_files:
+            if tf.exists():
+                tf.unlink()
 
 def get_session_store(session_type):
     """Return loader/saver/name-key helpers for supported conversation session types."""
