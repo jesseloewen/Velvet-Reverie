@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
+import re
 import mimetypes
 import hashlib
 import urllib.request
@@ -1029,6 +1030,129 @@ def merge_tts_batch_for_session(batch_id, message_id, session_id, session_type='
 def merge_tts_batch_for_chat(batch_id, chat_message_id, session_id):
     """Backward-compatible wrapper for chat session merge/attach flow."""
     return merge_tts_batch_for_session(batch_id, chat_message_id, session_id, session_type='chat')
+
+
+TITLE_PATTERNS = [
+    (r'\bMr\.', '<!MR!>', 'Mr.'),
+    (r'\bMrs\.', '<!MRS!>', 'Mrs.'),
+    (r'\bMs\.', '<!MS!>', 'Ms.'),
+    (r'\bMiss\.', '<!MISS!>', 'Miss.'),
+    (r'\bDr\.', '<!DR!>', 'Dr.'),
+    (r'\bProf\.', '<!PROF!>', 'Prof.'),
+    (r'\bSr\.', '<!SR!>', 'Sr.'),
+    (r'\bJr\.', '<!JR!>', 'Jr.'),
+    (r'\bSt\.', '<!ST!>', 'St.'),
+    (r'\bRev\.', '<!REV!>', 'Rev.'),
+    (r'\bGen\.', '<!GEN!>', 'Gen.'),
+    (r'\bCol\.', '<!COL!>', 'Col.'),
+    (r'\bLt\.', '<!LT!>', 'Lt.'),
+    (r'\bSgt\.', '<!SGT!>', 'Sgt.'),
+    (r'\bCpt\.', '<!CPT!>', 'Cpt.'),
+    (r'\bCmdr\.', '<!CMDR!>', 'Cmdr.'),
+    (r'\bAve\.', '<!AVE!>', 'Ave.'),
+    (r'\bBlvd\.', '<!BLVD!>', 'Blvd.'),
+    (r'\bNo\.', '<!NO!>', 'No.'),
+    (r'\bVol\.', '<!VOL!>', 'Vol.'),
+    (r'\bVs\.', '<!VS!>', 'Vs.'),
+    (r'\bEtc\.', '<!ETC!>', 'Etc.'),
+    (r'\bInc\.', '<!INC!>', 'Inc.'),
+    (r'\bLtd\.', '<!LTD!>', 'Ltd.'),
+    (r'\bCo\.', '<!CO!>', 'Co.'),
+    (r'\bCorp\.', '<!CORP!>', 'Corp.')
+]
+
+
+def split_text_into_sentences(text: str) -> list:
+    """Split text into sentences, protecting abbreviations and ellipsis."""
+    text_protected = text.replace('...', '<!ELLIPSIS!>')
+    for pattern, placeholder, _ in TITLE_PATTERNS:
+        text_protected = re.sub(pattern, placeholder, text_protected, flags=re.IGNORECASE)
+    sentences = re.split(r'([.!?]["\'»]?\s+|[.!?]["\'»]?$)', text_protected)
+    clean_sentences = []
+    i = 0
+    while i < len(sentences):
+        if i + 1 < len(sentences) and re.match(r'[.!?]', sentences[i + 1]):
+            combined = (sentences[i] + sentences[i + 1]).strip()
+            combined = combined.replace('<!ELLIPSIS!>', '...')
+            for _, placeholder, original_text in TITLE_PATTERNS:
+                combined = combined.replace(placeholder, original_text)
+            clean_sentences.append(combined)
+            i += 2
+        else:
+            if sentences[i].strip() and not re.match(r'^[.!?]', sentences[i]):
+                restored = sentences[i].strip().replace('<!ELLIPSIS!>', '...')
+                for _, placeholder, original_text in TITLE_PATTERNS:
+                    restored = restored.replace(placeholder, original_text)
+                clean_sentences.append(restored)
+            i += 1
+    return [s for s in clean_sentences if s]
+
+
+def queue_auto_tts_for_message(session_data, msg, session_type):
+    """Check auto_tts settings on a session and queue a TTS job for a completed message.
+
+    Called from process_queue() after marking a message completed.  This is the
+    backend-side auto-TTS trigger that works even when the client is disconnected.
+    """
+    auto_tts = session_data.get('auto_tts', {}) if isinstance(session_data, dict) else {}
+    if not auto_tts.get('enabled'):
+        return False
+    voice = auto_tts.get('voice', '').strip()
+    if not voice:
+        return False
+    if msg.get('tts_queued'):
+        return False
+    content = msg.get('content', '').strip()
+    if not content:
+        return False
+
+    msg_id = msg.get('message_id') or msg.get('response_id')
+    session_id = session_data.get('session_id')
+    if not msg_id or not session_id:
+        return False
+
+    sentences = split_text_into_sentences(content)
+    if not sentences:
+        return False
+
+    batch_id = str(uuid.uuid4())
+    file_prefix_map = {'chat': 'chat_tts', 'story': 'story_tts', 'autochat': 'autochat_tts'}
+    file_prefix = file_prefix_map.get(session_type, 'chat_tts')
+
+    job = {
+        'id': str(uuid.uuid4()),
+        'job_type': 'tts',
+        'text': content,
+        'sentences': sentences,
+        'ref_audio': voice,
+        'tts_engine': auto_tts.get('engine', 'ChatterboxTTS'),
+        'audio_format': auto_tts.get('format', 'wav'),
+        'seed': None,
+        'file_prefix': file_prefix,
+        'subfolder': auto_tts.get('subfolder', ''),
+        'batch_id': batch_id,
+        'total_sentences': len(sentences),
+        'completed_sentences': 0,
+        'status': 'queued',
+        'added_at': datetime.now().isoformat(),
+        'temperature': auto_tts.get('temperature', 0.8),
+        'exaggeration': auto_tts.get('exaggeration', 0.5),
+        'cfg_weight': auto_tts.get('cfg_weight', 0.5),
+        'chunk_size': 300,
+        'language': auto_tts.get('language', 'en'),
+        'repetition_penalty': 2.0,
+        'emotion_description': '',
+        'chat_message_id': msg_id,
+        'session_id': session_id,
+        'session_type': session_type
+    }
+
+    with queue_lock:
+        generation_queue.insert(0, job)
+    save_queue_state()
+
+    msg['tts_queued'] = True
+    return True
 
 
 def merge_and_send_session_audio(session_type, session_id):
@@ -2191,6 +2315,10 @@ Session name:"""
                                         if cancellation_requested and full_response.strip():
                                             msg['cancelled'] = True
                                         break
+                                
+                                if not has_error and not cancellation_requested and full_response.strip():
+                                    queue_auto_tts_for_message(session_data, msg, 'chat')
+                                
                                 save_chat_session(session_data)
 
                         # Force automatic naming on first completed chat response only.
@@ -2445,6 +2573,9 @@ Session name:"""
                                     elif cancellation_requested:
                                         session_data['status'] = 'stopped'
                                         print(f"[AUTOCHAT] Conversation cancelled")
+                                
+                                if not has_error and not cancellation_requested and full_response.strip():
+                                    queue_auto_tts_for_message(session_data, msg, 'autochat')
                                 
                                 save_autochat_session(session_data)
                         
@@ -2900,6 +3031,10 @@ Session name:"""
                                         if cancellation_requested and full_response.strip():
                                             msg['cancelled'] = True
                                         break
+                                
+                                if not has_error and not cancellation_requested and full_response.strip():
+                                    queue_auto_tts_for_message(fresh, msg, 'story')
+                                
                                 save_story_session(fresh)
                         
                         status_text = "cancelled" if cancellation_requested else "completed"
@@ -3186,6 +3321,28 @@ TAB_ROUTES = {
     '/tts': 'tts',
     '/audio': 'audio',
 }
+
+# Routes with path parameters for deep-linked sessions (chat/story/autochat)
+SESSION_ROUTES = [
+    ('/chat/<session_id>', 'chat'),
+    ('/story/<session_id>', 'story'),
+    ('/autochat/<session_id>', 'autochat'),
+]
+
+for _route, _tab in SESSION_ROUTES:
+    def _make_session_view(tab_name):
+        def session_view(session_id):
+            if session.get('authenticated'):
+                return render_template('index.html', active_tab=tab_name)
+            remember_token = request.cookies.get('remember_token')
+            if remember_token and remember_token == get_remember_token():
+                session['authenticated'] = True
+                session.permanent = True
+                return render_template('index.html', active_tab=tab_name)
+            return render_template('login.html')
+        session_view.__name__ = f'session_{tab_name}'
+        return session_view
+    app.add_url_rule(_route, view_func=_make_session_view(_tab))
 
 for _route, _tab in TAB_ROUTES.items():
     def _make_tab_view(tab_name):
@@ -4903,81 +5060,7 @@ def add_tts_to_queue():
         return jsonify({'success': False, 'error': 'Text is required'}), 400
     
     try:
-        # Split text into sentences
-        import re
-        
-        # Custom sentence splitting that:
-        # - Does NOT split on ellipsis (...)
-        # - Does NOT split on titles (Mr., Mrs., Ms., Miss., Dr., Prof., etc.)
-        # - DOES split on period, question mark, exclamation mark (even inside quotes)
-        # - Handles quoted dialog properly
-        
-        # Replace ellipsis temporarily to protect them from splitting
-        text_protected = text.replace('...', '<!ELLIPSIS!>')
-        
-        # Protect common titles from being split (case-insensitive)
-        # Map of regex patterns to placeholders and their original text
-        titles_map = [
-            (r'\bMr\.', '<!MR!>', 'Mr.'),
-            (r'\bMrs\.', '<!MRS!>', 'Mrs.'),
-            (r'\bMs\.', '<!MS!>', 'Ms.'),
-            (r'\bMiss\.', '<!MISS!>', 'Miss.'),
-            (r'\bDr\.', '<!DR!>', 'Dr.'),
-            (r'\bProf\.', '<!PROF!>', 'Prof.'),
-            (r'\bSr\.', '<!SR!>', 'Sr.'),
-            (r'\bJr\.', '<!JR!>', 'Jr.'),
-            (r'\bSt\.', '<!ST!>', 'St.'),
-            (r'\bRev\.', '<!REV!>', 'Rev.'),
-            (r'\bGen\.', '<!GEN!>', 'Gen.'),
-            (r'\bCol\.', '<!COL!>', 'Col.'),
-            (r'\bLt\.', '<!LT!>', 'Lt.'),
-            (r'\bSgt\.', '<!SGT!>', 'Sgt.'),
-            (r'\bCpt\.', '<!CPT!>', 'Cpt.'),
-            (r'\bCmdr\.', '<!CMDR!>', 'Cmdr.'),
-            (r'\bAve\.', '<!AVE!>', 'Ave.'),
-            (r'\bBlvd\.', '<!BLVD!>', 'Blvd.'),
-            (r'\bNo\.', '<!NO!>', 'No.'),
-            (r'\bVol\.', '<!VOL!>', 'Vol.'),
-            (r'\bVs\.', '<!VS!>', 'Vs.'),
-            (r'\bEtc\.', '<!ETC!>', 'Etc.'),
-            (r'\bInc\.', '<!INC!>', 'Inc.'),
-            (r'\bLtd\.', '<!LTD!>', 'Ltd.'),
-            (r'\bCo\.', '<!CO!>', 'Co.'),
-            (r'\bCorp\.', '<!CORP!>', 'Corp.')
-        ]
-        
-        # Apply title protection (case-insensitive)
-        for pattern, placeholder, _ in titles_map:
-            text_protected = re.sub(pattern, placeholder, text_protected, flags=re.IGNORECASE)
-        
-        # Split on sentence endings: . ! ? followed by space/quote/end
-        # This pattern catches punctuation followed by optional closing quotes, then space or end
-        sentences = re.split(r'([.!?]["\'Â»]?\s+|[.!?]["\'Â»]?$)', text_protected)
-        
-        # Recombine sentences with their punctuation
-        clean_sentences = []
-        i = 0
-        while i < len(sentences):
-            if i + 1 < len(sentences) and re.match(r'[.!?]', sentences[i+1]):
-                combined = (sentences[i] + sentences[i+1]).strip()
-                # Restore ellipsis
-                combined = combined.replace('<!ELLIPSIS!>', '...')
-                # Restore titles
-                for pattern, placeholder, original_text in titles_map:
-                    combined = combined.replace(placeholder, original_text)
-                clean_sentences.append(combined)
-                i += 2
-            else:
-                if sentences[i].strip() and not re.match(r'^[.!?]', sentences[i]):
-                    restored = sentences[i].strip().replace('<!ELLIPSIS!>', '...')
-                    # Restore titles
-                    for pattern, placeholder, original_text in titles_map:
-                        restored = restored.replace(placeholder, original_text)
-                    clean_sentences.append(restored)
-                i += 1
-        
-        # Filter empty
-        clean_sentences = [s for s in clean_sentences if s]
+        clean_sentences = split_text_into_sentences(text)
         
         if not clean_sentences:
             return jsonify({'success': False, 'error': 'No valid sentences found in text'}), 400

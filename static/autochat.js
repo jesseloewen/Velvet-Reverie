@@ -319,6 +319,9 @@ async function selectAutoSession(sessionId) {
                 stopConversationAudioPlayback('autochat', { hard: true });
             }
             currentAutoSession = data.session;
+            if (typeof updateUrlState === 'function') {
+                updateUrlState({ tab: 'autochat', sessionId: sessionId });
+            }
             populateAutochatUI();
             autochatAutoScrollEnabled = true;
             setAutochatScrollButtonVisibility(false);
@@ -1242,6 +1245,9 @@ async function deleteAutoSession(sessionId) {
         if (data.success) {
             if (currentAutoSession && currentAutoSession.session_id === sessionId) {
                 currentAutoSession = null;
+                if (typeof updateUrlState === 'function') {
+                    updateUrlState({ tab: 'autochat' });
+                }
                 clearAutoUI();
             }
             await loadAutoSessions();

@@ -56,6 +56,21 @@ let selectedVideoBatchFolder = '';
 let currentVideoBrowserFolder = 'input'; // 'input' or 'output'
 let currentVideoBrowserSubpath = ''; // Current subfolder path
 
+function isBrowserTabActive() {
+    const tab = document.getElementById('browserTab');
+    return tab && tab.classList.contains('active');
+}
+
+function isVideosTabActive() {
+    const tab = document.getElementById('videosTab');
+    return tab && tab.classList.contains('active');
+}
+
+function isViewerTabActive() {
+    const tab = document.getElementById('viewerTab');
+    return tab && tab.classList.contains('active');
+}
+
 function ensureLoadingOverlay(containerId, overlayId) {
     const container = document.getElementById(containerId);
     if (!container || !container.parentElement) return null;
@@ -1590,6 +1605,10 @@ async function browseFolder(path) {
 
         browserLastLoadedPath = currentPath || 'images';
         browserLastLoadedAt = Date.now();
+
+        if (isBrowserTabActive() && typeof updateUrlState === 'function') {
+            updateUrlState({ tab: 'browser', path: currentPath || 'images' });
+        }
 
         if (isFullscreenActive) {
             syncFullscreenAfterDataRefresh('browser');
@@ -3697,6 +3716,10 @@ async function loadVideos(path) {
 
         videosLastLoadedPath = videosCurrentPath || 'videos';
         videosLastLoadedAt = Date.now();
+
+        if (isVideosTabActive() && typeof updateUrlState === 'function') {
+            updateUrlState({ tab: 'videos', path: videosCurrentPath || 'videos' });
+        }
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
@@ -4111,6 +4134,26 @@ function navigateViewer(direction) {
         counter.textContent = `${viewerCurrentIndex + 1} / ${viewerAllFiles.length}`;
     }
     
+    resetViewerInactivity();
+
+    if (isViewerTabActive() && typeof updateUrlState === 'function') {
+        const identity = getMediaIdentityKey(viewerCurrentData);
+        if (identity) {
+            updateUrlState({ tab: 'viewer', media: identity });
+        }
+    }
+}
+
+function navigateViewerDirect(idx) {
+    if (idx < 0 || idx >= viewerAllFiles.length) return;
+    viewerCurrentIndex = idx;
+    viewerCurrentData = viewerAllFiles[viewerCurrentIndex];
+    displayViewerContent(viewerCurrentData);
+    renderViewerMetadata(viewerCurrentData);
+    const counter = document.getElementById('viewerCounter');
+    if (counter) {
+        counter.textContent = `${viewerCurrentIndex + 1} / ${viewerAllFiles.length}`;
+    }
     resetViewerInactivity();
 }
 

@@ -348,6 +348,9 @@ async function selectChatSession(sessionId, skipPollingResume = false) {
                 stopWholeChatAudioPlayback(false);
             }
             currentChatSession = data.session;
+            if (typeof updateUrlState === 'function') {
+                updateUrlState({ tab: 'chat', sessionId: sessionId });
+            }
             chatAutoScrollEnabled = true;
             setChatScrollButtonVisibility(false);
             console.log('[CHAT] currentChatSession set to:', currentChatSession);
@@ -2408,6 +2411,9 @@ async function deleteChatSession(sessionId) {
             // If we deleted the current session, clear it
             if (currentChatSession && currentChatSession.session_id === sessionId) {
                 currentChatSession = null;
+                if (typeof updateUrlState === 'function') {
+                    updateUrlState({ tab: 'chat' });
+                }
                 chatAutoScrollEnabled = true;
                 setChatScrollButtonVisibility(false);
                 

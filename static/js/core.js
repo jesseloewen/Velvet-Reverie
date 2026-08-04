@@ -240,6 +240,7 @@ function queueCompletedMessageTTS(sessionType, session) {
         if (!msg.completed) continue;
         if (!msg.content) continue;
         if (msg.tts_audio) continue;
+        if (msg.tts_queued) continue;
 
         const msgId = msg.message_id || msg.response_id;
         if (!msgId) continue;
@@ -842,6 +843,20 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (e) { console.error('✗ Prompt history failed:', e); }
 
     console.log('DOMContentLoaded - Initialization complete');
+
+    // Apply URL sub-state after all modules are initialized
+    try {
+        const parsed = parseUrl();
+        if (parsed) {
+            const activeBtn = document.querySelector('.tab-btn.active');
+            const activeTab = activeBtn ? activeBtn.getAttribute('data-tab') : null;
+            if (parsed.tab !== activeTab) {
+                applyUrlState(parsed);
+            } else if (parsed.sessionId || parsed.path || parsed.media) {
+                applyUrlState(parsed);
+            }
+        }
+    } catch (e) { console.error('✗ URL state application failed:', e); }
 });
 function updateTTSLanguageState(engineId, languageId) {
     const engineSelect = document.getElementById(engineId);
@@ -1997,39 +2012,125 @@ const TAB_URLS = {
     'audio': '/audio',
 };
 
+// Reverse map: URL path → tab name
+const URL_TO_TAB = {};
+Object.entries(TAB_URLS).forEach(([tab, url]) => { URL_TO_TAB[url] = tab; });
+
+// Tabs that support path-parameter session IDs
+const SESSION_TABS = new Set(['chat', 'story', 'autochat']);
+
+function buildUrl(state) {
+    if (!state || !state.tab) return '/';
+    const base = TAB_URLS[state.tab];
+    if (!base) return '/';
+    if (state.sessionId) {
+        return base + '/' + encodeURIComponent(state.sessionId);
+    }
+    const params = new URLSearchParams();
+    if (state.path) params.set('path', state.path);
+    if (state.media) params.set('media', state.media);
+    const qs = params.toString();
+    return qs ? base + '?' + qs : base;
+}
+
+function parseUrl() {
+    const pathname = window.location.pathname;
+    const searchParams = new URLSearchParams(window.location.search);
+
+    // Match /tab/sessionId pattern for session tabs
+    for (const [url, tab] of Object.entries(URL_TO_TAB)) {
+        if (SESSION_TABS.has(tab)) {
+            const prefix = url + '/';
+            if (pathname.startsWith(prefix)) {
+                const sessionId = pathname.substring(prefix.length);
+                if (sessionId && sessionId.indexOf('/') === -1) {
+                    return { tab, sessionId: decodeURIComponent(sessionId) };
+                }
+            }
+        }
+    }
+
+    // Match exact tab URLs
+    if (URL_TO_TAB[pathname]) {
+        const tab = URL_TO_TAB[pathname];
+        const state = { tab };
+        const pathParam = searchParams.get('path');
+        if (pathParam) state.path = pathParam;
+        const mediaParam = searchParams.get('media');
+        if (mediaParam) state.media = mediaParam;
+        return state;
+    }
+
+    return null;
+}
+
+function updateUrlState(state) {
+    if (!state || !state.tab) return;
+    const url = buildUrl(state);
+    if (window.history && window.history.pushState) {
+        window.history.pushState(state, '', url);
+    }
+}
+
+function applyUrlState(state) {
+    if (!state || !state.tab) return;
+    switchTab(state.tab, true, true);
+
+    if (state.path) {
+        if (state.tab === 'browser') {
+            browseFolder(state.path);
+        } else if (state.tab === 'videos') {
+            loadVideos(state.path);
+        }
+    }
+
+    if (state.sessionId) {
+        if (state.tab === 'chat' && typeof selectChatSession === 'function') {
+            selectChatSession(state.sessionId);
+        } else if (state.tab === 'story' && typeof selectStorySession === 'function') {
+            selectStorySession(state.sessionId);
+        } else if (state.tab === 'autochat' && typeof selectAutoSession === 'function') {
+            selectAutoSession(state.sessionId);
+        }
+    }
+
+    if (state.media && state.tab === 'viewer' && typeof loadRecentGeneration === 'function') {
+        loadRecentGeneration().then(() => {
+            if (typeof viewerAllFiles !== 'undefined') {
+                const identity = String(state.media);
+                const idx = viewerAllFiles.findIndex(item => getMediaIdentityKey(item) === identity);
+                if (idx >= 0 && typeof navigateViewerDirect === 'function') {
+                    navigateViewerDirect(idx);
+                }
+            }
+        }).catch(() => {});
+    }
+}
+
 function initializeTabs() {
     const tabButtons = document.querySelectorAll('.tab-btn');
 
     tabButtons.forEach(button => {
         button.addEventListener('click', (e) => {
-            // Intercept <a> link navigation and handle in-page
             if (button.tagName === 'A') e.preventDefault();
             const targetTab = button.getAttribute('data-tab');
             switchTab(targetTab, true);
-            // Update the browser URL without a full reload
-            const url = TAB_URLS[targetTab];
-            if (url && window.history && window.history.pushState) {
-                window.history.pushState({ tab: targetTab }, '', url);
-            }
+            const urlState = { tab: targetTab };
+            updateUrlState(urlState);
         });
     });
 
-    // Handle browser back/forward navigation
     window.addEventListener('popstate', (e) => {
         if (e.state && e.state.tab) {
-            switchTab(e.state.tab);
+            applyUrlState(e.state);
         }
     });
 }
 
-function switchTab(tabName, _skipHistory) {
+function switchTab(tabName, _skipHistory, _skipContentLoad) {
     const currentActiveTabId = document.querySelector('.tab-content.active')?.id;
-    // Update browser URL unless called from initializeTabs (which does it itself)
     if (!_skipHistory) {
-        const url = TAB_URLS[tabName];
-        if (url && window.history && window.history.pushState) {
-            window.history.pushState({ tab: tabName }, '', url);
-        }
+        updateUrlState({ tab: tabName });
     }
 
     // Update button states
@@ -2097,6 +2198,7 @@ function switchTab(tabName, _skipHistory) {
     }
     
     // Load content based on tab
+    if (!_skipContentLoad) {
     if (tabName === 'browser') {
         const targetPath = currentPath || 'images';
         const now = Date.now();
@@ -2146,6 +2248,7 @@ function switchTab(tabName, _skipHistory) {
         if (typeof initializeAutoChat === 'function') {
             initializeAutoChat();
         }
+    }
     }
 }
 

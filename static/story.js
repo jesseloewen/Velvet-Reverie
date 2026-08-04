@@ -969,7 +969,10 @@ function editStoryMessage(messageDiv, messageIndex) {
             
             const data = await response.json();
             if (data.success) {
-                currentStorySession = data.session;
+currentStorySession = data.session;
+        if (typeof updateUrlState === 'function') {
+            updateUrlState({ tab: 'story', sessionId: sessionId });
+        }
                 await renderStoryMessages();
                 showNotification('Message updated', 'Success', 'success');
             } else {
@@ -1248,6 +1251,9 @@ async function deleteStorySession(sessionId) {
         // If we deleted the current session, clear it
         if (currentStorySession && currentStorySession.session_id === sessionId) {
             currentStorySession = null;
+            if (typeof updateUrlState === 'function') {
+                updateUrlState({ tab: 'story' });
+            }
             document.getElementById('storyInputContainer').style.display = 'none';
             document.getElementById('storyMessages').innerHTML = `
                 <div class="chat-empty-state">
