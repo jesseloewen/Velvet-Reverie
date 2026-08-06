@@ -14,6 +14,25 @@ function openAudioBrowser(mode) {
     const targetFolder = currentAudioBrowserFolder || 'input';
     const targetSubpath = currentAudioBrowserSubpath || '';
     loadAudioBrowserFolder(targetFolder, targetSubpath);
+
+    if (typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'tts';
+        const urlState = { tab: tab, modal: 'audio-browse', imode: mode, afolder: targetFolder, asub: targetSubpath };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
+}
+
+function openAudioBrowserFromUrl(mode, folder, subpath) {
+    audioBrowserMode = mode;
+    currentAudioBrowserFolder = folder;
+    currentAudioBrowserSubpath = subpath;
+    const modal = document.getElementById('audioBrowserModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    loadAudioBrowserFolder(folder, subpath);
 }
 
 function closeAudioBrowser() {
@@ -31,11 +50,29 @@ function closeAudioBrowser() {
     }
     
     modal.style.display = 'none';
+
+    if (!window._applyingUrlState && typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'tts';
+        const urlState = { tab: tab, modal: '' };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
 }
 
 async function loadAudioBrowserFolder(folder, subpath) {
     currentAudioBrowserFolder = folder;
     currentAudioBrowserSubpath = subpath || '';
+
+    if (typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'tts';
+        const urlState = { tab: tab, modal: 'audio-browse', imode: audioBrowserMode, afolder: folder, asub: currentAudioBrowserSubpath };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
     
     // Update tab active state
     document.querySelectorAll('.audio-browser-tab').forEach(tab => {

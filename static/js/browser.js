@@ -12,6 +12,67 @@ let cachedImageDimensions = {};
 
 // Browser last-loaded tracking lives in core.js (browserLastLoadedPath, browserLastLoadedAt, etc.)
 
+// Thumbnail size state
+let imageThumbnailSize = 'small';
+let videoThumbnailSize = 'small';
+
+function getThumbnailGridStyle(size) {
+    const isMobile = window.innerWidth <= 768;
+    switch (size) {
+        case 'small': return isMobile ? 'repeat(auto-fill, minmax(70px, 1fr))'  : 'repeat(auto-fill, minmax(100px, 1fr))';
+        case 'med':   return isMobile ? 'repeat(auto-fill, minmax(100px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))';
+        case 'large': return isMobile ? 'repeat(auto-fill, minmax(200px, 1fr))' : 'repeat(auto-fill, minmax(320px, 1fr))';
+        default:      return isMobile ? 'repeat(auto-fill, minmax(70px, 1fr))'  : 'repeat(auto-fill, minmax(100px, 1fr))';
+    }
+}
+
+function applyThumbnailSize(mode, size) {
+    const gridId = mode === 'videos' ? 'videosGrid' : 'galleryGrid';
+    const selectId = mode === 'videos' ? 'videoThumbnailSizeSelect' : 'imageThumbnailSizeSelect';
+    const grid = document.getElementById(gridId);
+    const select = document.getElementById(selectId);
+
+    if (grid && grid.style.display === 'grid') {
+        grid.style.gridTemplateColumns = getThumbnailGridStyle(size);
+    }
+    if (select && select.value !== size) {
+        select.value = size;
+    }
+
+    if (mode === 'videos') {
+        videoThumbnailSize = size;
+    } else {
+        imageThumbnailSize = size;
+    }
+    localStorage.setItem(`thumbnailSize_${mode}`, size);
+}
+
+function initThumbnailSize() {
+    const isMobile = window.innerWidth <= 768;
+    const defaultSize = isMobile ? 'med' : 'small';
+
+    const imageSelect = document.getElementById('imageThumbnailSizeSelect');
+    const videoSelect = document.getElementById('videoThumbnailSizeSelect');
+
+    if (imageSelect) {
+        const saved = localStorage.getItem('thumbnailSize_images') || defaultSize;
+        imageSelect.value = saved;
+        imageThumbnailSize = saved;
+        imageSelect.addEventListener('change', () => {
+            applyThumbnailSize('images', imageSelect.value);
+        });
+    }
+
+    if (videoSelect) {
+        const saved = localStorage.getItem('thumbnailSize_videos') || defaultSize;
+        videoSelect.value = saved;
+        videoThumbnailSize = saved;
+        videoSelect.addEventListener('change', () => {
+            applyThumbnailSize('videos', videoSelect.value);
+        });
+    }
+}
+
 // ─── Image dimension helpers ────────────────────────────────────────────────
 
 async function getImageDimensions(src) {
@@ -338,6 +399,33 @@ function openImageBrowser(mode) {
     const targetFolder = currentBrowserFolder || 'input';
     const targetSubpath = currentBrowserSubpath || '';
     loadImageBrowserFolder(targetFolder, targetSubpath);
+
+    if (typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'single';
+        const urlState = { tab: tab, modal: 'img-browse', imode: mode, ifolder: targetFolder, isub: targetSubpath };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
+}
+
+function openImageBrowserFromUrl(mode, folder, subpath) {
+    imageBrowserMode = mode;
+    const modal = document.getElementById('imageBrowserModal');
+    if (!modal) return;
+    const modalTitle = modal.querySelector('h3');
+    if (modalTitle) {
+        if (mode === 'image-batch' || mode === 'video-batch') {
+            modalTitle.textContent = 'Choose Input Folder';
+        } else {
+            modalTitle.textContent = 'Browse Images';
+        }
+    }
+    currentBrowserFolder = folder;
+    currentBrowserSubpath = subpath;
+    modal.style.display = 'flex';
+    loadImageBrowserFolder(folder, subpath);
 }
 
 // ============================================================================
@@ -396,8 +484,52 @@ function openVideoBrowser() {
         };
     }
     
+    if (typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'frame-edit';
+        const urlState = { tab: tab, modal: 'vid-browse', vfolder: 'input', vsub: '' };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
+    
     // Load input folder by default
     loadVideoBrowserFolder('input', '');
+}
+
+function openVideoBrowserFromUrl(folder, subpath) {
+    currentVideoBrowserFolder = folder;
+    currentVideoBrowserSubpath = subpath || '';
+    const modal = document.getElementById('videoBrowserModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    const gridView = document.getElementById('videoBrowserGridView');
+    const previewContainer = document.getElementById('videoPreviewContainer');
+    if (gridView) gridView.style.display = 'flex';
+    if (previewContainer) previewContainer.style.display = 'none';
+
+    const tabs = modal.querySelectorAll('.video-browser-tab');
+    tabs.forEach(tab => {
+        tab.onclick = () => {
+            const f = tab.dataset.folder;
+            loadVideoBrowserFolder(f, '');
+        };
+    });
+
+    const closeBtn = document.getElementById('closeVideoBrowserBtn');
+    if (closeBtn) closeBtn.onclick = closeVideoBrowser;
+    const closePreviewBtn = document.getElementById('closeVideoPreviewBtn');
+    if (closePreviewBtn) closePreviewBtn.onclick = closeVideoBrowser;
+    const backBtn = document.getElementById('backToVideosGridBtn');
+    if (backBtn) {
+        backBtn.onclick = () => {
+            if (previewContainer) previewContainer.style.display = 'none';
+            if (gridView) gridView.style.display = 'flex';
+            if (window.videoPreviewPlayer) window.videoPreviewPlayer.unloadVideo();
+        };
+    }
+
+    loadVideoBrowserFolder(folder, subpath || '');
 }
 
 function closeVideoBrowser() {
@@ -415,12 +547,31 @@ function closeVideoBrowser() {
     if (gridView) gridView.style.display = 'flex';
     
     modal.style.display = 'none';
+
+    if (!window._applyingUrlState && typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'frame-edit';
+        const urlState = { tab: tab, modal: '' };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
 }
 
 async function loadVideoBrowserFolder(folder, subpath) {
     const requestToken = ++videoBrowserRequestToken;
     currentVideoBrowserFolder = folder;
     currentVideoBrowserSubpath = subpath || '';
+
+    if (typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'frame-edit';
+        const urlState = { tab: tab, modal: 'vid-browse', vfolder: folder, vsub: currentVideoBrowserSubpath };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
+
     let quickRenderCompleted = false;
     
     // Update tab active state
@@ -1078,6 +1229,14 @@ function closeImageBrowser() {
     modal.style.display = 'none';
     const useBtn = document.getElementById('useThisFolderBtn');
     if (useBtn) useBtn.style.display = 'none';
+    if (!window._applyingUrlState && typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'single';
+        const urlState = { tab: tab, modal: '' };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
 }
 
 function renderImageBrowserGridContent(folder, subpath, data) {
@@ -1200,6 +1359,16 @@ async function loadImageBrowserFolder(folder, subpath) {
     const requestToken = ++imageBrowserRequestToken;
     currentBrowserFolder = folder;
     currentBrowserSubpath = subpath || '';
+
+    if (typeof updateUrlState === 'function') {
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const tab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'single';
+        const urlState = { tab: tab, modal: 'img-browse', imode: imageBrowserMode, ifolder: folder, isub: currentBrowserSubpath };
+        if (tab === 'browser') urlState.path = currentPath || 'images';
+        if (tab === 'videos') urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
+    }
+
     let quickRenderCompleted = false;
     
     // Update tab active state
@@ -1673,7 +1842,7 @@ function renderGallery(folders, files) {
         html += `
             <div class="gallery-item folder-item" onclick="browseFolder('${finalParentPath}')">
                 <div class="folder-icon">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
                 </div>
@@ -1697,7 +1866,7 @@ function renderGallery(folders, files) {
                  data-type="folder"
                  onclick="${clickHandler}">
                 <div class="folder-icon">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                     </svg>
                 </div>
@@ -1754,6 +1923,7 @@ function renderGallery(folders, files) {
     if (html) {
         galleryGrid.innerHTML = html;
         galleryGrid.style.display = 'grid';
+        galleryGrid.style.gridTemplateColumns = getThumbnailGridStyle(imageThumbnailSize);
         galleryEmpty.style.display = 'none';
     } else {
         galleryGrid.style.display = 'none';
@@ -1762,13 +1932,6 @@ function renderGallery(folders, files) {
 }
 
 function toggleItemSelection(event, path) {
-    // Check if this is a folder - if so, always navigate instead of selecting
-    const item = document.querySelector(`[data-path="${path}"]`);
-    if (item && item.dataset.type === 'folder') {
-        browseFolder(path);
-        return;
-    }
-    
     event.stopPropagation();
     
     if (selectedItems.has(path)) {
@@ -1777,10 +1940,26 @@ function toggleItemSelection(event, path) {
         selectedItems.add(path);
     }
     
-    // Update UI
+    const item = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
     if (item) {
         item.classList.toggle('selected');
     }
+    
+    updateSelectionButtons();
+}
+
+function selectAllItems() {
+    const grid = document.getElementById('galleryGrid');
+    if (!grid) return;
+    
+    const items = grid.querySelectorAll('.gallery-item[data-path]');
+    items.forEach(item => {
+        const path = item.dataset.path;
+        if (path) {
+            selectedItems.add(path);
+            item.classList.add('selected');
+        }
+    });
     
     updateSelectionButtons();
 }
@@ -1804,10 +1983,12 @@ function toggleSelectionMode() {
 function updateSelectionButtons() {
     const moveBtn = document.getElementById('moveBtn');
     const deleteBtn = document.getElementById('deleteBtn');
+    const selectAllBtn = document.getElementById('selectAllBtn');
     const hasSelection = selectedItems.size > 0 && selectionMode;
     
     moveBtn.style.display = hasSelection ? 'inline-flex' : 'none';
     deleteBtn.style.display = hasSelection ? 'inline-flex' : 'none';
+    if (selectAllBtn) selectAllBtn.style.display = selectionMode ? 'inline-flex' : 'none';
 }
 
 // Folder Management
@@ -1838,40 +2019,17 @@ async function createNewFolder() {
     }
 }
 
-async function setOutputFolder() {
-    // Set output folder
-    document.getElementById('subfolder').value = currentPath;
-    showNotification(`Output folder set to: ${currentPath || 'Root'}`, 'Output Folder Set', 'success', 3000);
-}
+let movePickerRoot = '';
+let movePickerCallback = null;
+let movePickerItems = [];
 
 async function moveSelectedItems() {
     if (selectedItems.size === 0) return;
-    
-    const target = await showPrompt('Enter target folder path (leave empty for root):', '', 'Move Items');
-    if (target === null) return; // Cancelled
-    
-    try {
-        const response = await fetch('/api/move', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                items: Array.from(selectedItems),
-                target: target
-            })
-        });
-        
-        const result = await response.json();
-        if (result.errors.length > 0) {
-            showNotification('Errors occurred:\n' + result.errors.join('\n'), 'Move Errors', 'error');
-        } else if (result.moved.length > 0) {
-            showNotification(`Moved ${result.moved.length} item(s) successfully`, 'Moved', 'success', 3000);
-        }
-        
+    movePickerItems = Array.from(selectedItems);
+    openMoveFolderPicker('images', async (target) => {
+        await executeMove(movePickerItems, target);
         browseFolder(currentPath);
-    } catch (error) {
-        console.error('Error moving items:', error);
-        showNotification('Error moving items', 'Error', 'error');
-    }
+    });
 }
 
 async function deleteSelectedItems() {
@@ -1904,6 +2062,137 @@ async function deleteSelectedItems() {
     }
 }
 
+// Move Folder Picker Modal
+function openMoveFolderPicker(root, callback) {
+    movePickerRoot = root;
+    movePickerCallback = callback;
+    const modal = document.getElementById('moveFolderPickerModal');
+    const title = document.getElementById('moveFolderPickerTitle');
+    if (title) title.textContent = root === 'videos' ? 'Move Videos to Folder' : 'Move Images to Folder';
+    if (modal) modal.style.display = 'flex';
+    renderMoveFolderPickerGrid(root);
+}
+
+function closeMoveFolderPicker() {
+    const modal = document.getElementById('moveFolderPickerModal');
+    if (modal) modal.style.display = 'none';
+    movePickerCallback = null;
+    movePickerItems = [];
+}
+
+async function confirmMoveFolderPicker() {
+    if (movePickerCallback) {
+        const target = movePickerRoot;
+        await movePickerCallback(target);
+        closeMoveFolderPicker();
+    }
+}
+
+async function renderMoveFolderPickerGrid(path) {
+    const grid = document.getElementById('moveFolderPickerGrid');
+    const pathText = document.getElementById('moveFolderPickerPathText');
+    if (!grid || !pathText) return;
+    
+    try {
+        const response = await fetch(`/api/browse?path=${encodeURIComponent(path)}&root=${encodeURIComponent(movePickerRoot)}&with_counts=0`);
+        const data = await response.json();
+        
+        if (data.success === false) throw new Error(data.error || 'Failed to load folders');
+        
+        movePickerRoot = data.current_path || path;
+        pathText.textContent = '/' + movePickerRoot;
+        
+        const folders = data.folders || [];
+        let html = '';
+        
+        if (movePickerRoot !== 'images' && movePickerRoot !== 'videos') {
+            const parentPath = movePickerRoot.split(/[/\\]/).slice(0, -1).join('/');
+            const finalParentPath = parentPath || (movePickerRoot.startsWith('videos') ? 'videos' : 'images');
+            html += `
+                <div class="gallery-item folder-item" onclick="renderMoveFolderPickerGrid('${escapeJsString(finalParentPath)}')" style="cursor:pointer;">
+                    <div class="folder-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                    </div>
+                    <div class="gallery-item-info">
+                        <div class="gallery-item-prompt">..</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        folders.forEach(folder => {
+            const escapedPath = escapeJsString(folder.path);
+            html += `
+                <div class="gallery-item folder-item" onclick="renderMoveFolderPickerGrid('${escapedPath}')" style="cursor:pointer;">
+                    <div class="folder-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <div class="gallery-item-info">
+                        <div class="gallery-item-prompt">${escapeHtml(folder.name)}</div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        if (!html) {
+            html = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 2rem;">No subfolders</div>';
+        }
+        
+        grid.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading move picker folders:', error);
+        grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-danger); padding: 2rem;">Error loading folders</div>';
+    }
+}
+
+async function createMovePickerFolder() {
+    const name = await showPrompt('Enter folder name:', '', 'Create Folder');
+    if (!name) return;
+    
+    try {
+        const response = await fetch('/api/folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, parent: movePickerRoot })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showNotification('Folder created successfully', 'Created', 'success', 3000);
+            renderMoveFolderPickerGrid(movePickerRoot);
+        } else {
+            showNotification('Error: ' + (result.error || 'Unknown error'), 'Error', 'error');
+        }
+    } catch (error) {
+        console.error('Error creating folder:', error);
+        showNotification('Error creating folder', 'Error', 'error');
+    }
+}
+
+async function executeMove(items, target) {
+    try {
+        const response = await fetch('/api/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: items, target: target })
+        });
+        
+        const result = await response.json();
+        if (result.errors.length > 0) {
+            showNotification('Errors occurred:\n' + result.errors.join('\n'), 'Move Errors', 'error');
+        } else if (result.moved.length > 0) {
+            showNotification(`Moved ${result.moved.length} item(s) successfully`, 'Moved', 'success', 3000);
+        }
+    } catch (error) {
+        console.error('Error moving items:', error);
+        showNotification('Error moving items', 'Error', 'error');
+    }
+}
+
 // Image Modal
 async function openImageModal(imageId) {
     try {
@@ -1915,10 +2204,28 @@ async function openImageModal(imageId) {
                 .map(value => String(value));
             return candidates.includes(idString);
         });
-        if (currentImageIndex === -1) currentImageIndex = 0;
+        if (currentImageIndex === -1) {
+            if (typeof videosItems !== 'undefined') {
+                currentImageIndex = videosItems.findIndex(v => getMediaIdentityKey(v) === idString);
+                if (currentImageIndex >= 0) {
+                    savedImages = images;
+                    images = videosItems;
+                }
+            }
+            if (currentImageIndex === -1) currentImageIndex = 0;
+        }
         
         showImageAtIndex(currentImageIndex);
         document.getElementById('imageModal').classList.add('active');
+
+        const identity = getMediaIdentityKey(images[currentImageIndex]);
+        if (typeof updateUrlState === 'function' && identity) {
+            const tabName = isVideosTabActive() ? 'videos' : 'browser';
+            const urlState = { tab: tabName, modal: 'image', media: identity };
+            if (isBrowserTabActive()) urlState.path = currentPath || 'images';
+            if (isVideosTabActive()) urlState.path = videosCurrentPath || 'videos';
+            updateUrlState(urlState);
+        }
     } catch (error) {
         console.error('Error loading image:', error);
     }
@@ -1930,6 +2237,13 @@ function closeImageModal() {
     if (savedImages !== null) {
         images = savedImages;
         savedImages = null;
+    }
+    if (!window._applyingUrlState && typeof updateUrlState === 'function') {
+        const tabName = isVideosTabActive() ? 'videos' : 'browser';
+        const urlState = { tab: tabName, modal: '' };
+        if (isBrowserTabActive()) urlState.path = currentPath || 'images';
+        if (isVideosTabActive()) urlState.path = videosCurrentPath || 'videos';
+        updateUrlState(urlState);
     }
 }
 
@@ -2209,10 +2523,25 @@ function initializeFullscreenHoverComparison(container) {
 
 function nextImage() {
     showImageAtIndex(currentImageIndex + 1);
+    syncImageModalUrl();
 }
 
 function prevImage() {
     showImageAtIndex(currentImageIndex - 1);
+    syncImageModalUrl();
+}
+
+function syncImageModalUrl() {
+    if (typeof updateUrlState !== 'function') return;
+    const modal = document.getElementById('imageModal');
+    if (!modal || !modal.classList.contains('active')) return;
+    const identity = getMediaIdentityKey(images[currentImageIndex]);
+    if (!identity) return;
+    const tabName = isVideosTabActive() ? 'videos' : 'browser';
+    const urlState = { tab: tabName, modal: 'image', media: identity };
+    if (isBrowserTabActive()) urlState.path = currentPath || 'images';
+    if (isVideosTabActive()) urlState.path = videosCurrentPath || 'videos';
+    updateUrlState(urlState);
 }
 
 
@@ -2496,6 +2825,19 @@ function openFullscreen() {
         viewer.addEventListener('keydown', handleKeyboard);
         viewer.setAttribute('data-keyboard-attached', 'true');
     }
+
+    if (typeof updateUrlState === 'function') {
+        const sourceArray = getFullscreenSourceArray();
+        const item = sourceArray[currentImageIndex];
+        const identity = item ? getMediaIdentityKey(item) : '';
+        const tabMap = { 'browser': 'browser', 'videos': 'videos', 'viewer': 'viewer' };
+        const tab = tabMap[fullscreenSource] || 'browser';
+        const urlState = { tab: tab, modal: 'fullscreen', fs_source: fullscreenSource };
+        if (identity) urlState.media = identity;
+        if (fullscreenSource === 'browser' && currentPath) urlState.path = currentPath;
+        if (fullscreenSource === 'videos' && videosCurrentPath) urlState.path = videosCurrentPath;
+        updateUrlState(urlState);
+    }
 }
 
 function closeFullscreen() {
@@ -2528,6 +2870,7 @@ function closeFullscreen() {
         }
     }
     
+    const savedSource = fullscreenSource;
     fullscreenSource = null; // Clear fullscreen source
     fullscreenAutoFollowEnabled = false;
     fullscreenLockedMediaKey = '';
@@ -2564,6 +2907,19 @@ function closeFullscreen() {
     
     // Reset zoom
     resetZoom();
+
+    if (!window._applyingUrlState && typeof updateUrlState === 'function') {
+        const tabMap = { 'browser': 'browser', 'videos': 'videos', 'viewer': 'viewer' };
+        const tab = tabMap[savedSource] || 'browser';
+        const urlState = { tab: tab, modal: '' };
+        if (savedSource === 'browser') urlState.path = currentPath || 'images';
+        if (savedSource === 'videos') urlState.path = videosCurrentPath || 'videos';
+        if (savedSource === 'viewer') {
+            const identity = viewerCurrentData ? getMediaIdentityKey(viewerCurrentData) : '';
+            if (identity) urlState.media = identity;
+        }
+        updateUrlState(urlState);
+    }
 }
 
 function showFullscreenImage(index) {
@@ -2789,6 +3145,18 @@ function showFullscreenImage(index) {
     
     // Reset zoom when changing images
     resetZoom();
+
+    if (isFullscreenActive && typeof updateUrlState === 'function') {
+        const identity = getMediaIdentityKey(image);
+        if (identity && fullscreenSource) {
+            const tabMap = { 'browser': 'browser', 'videos': 'videos', 'viewer': 'viewer' };
+            const tab = tabMap[fullscreenSource] || 'browser';
+            const urlState = { tab: tab, modal: 'fullscreen', media: identity, fs_source: fullscreenSource };
+            if (fullscreenSource === 'browser') urlState.path = currentPath || 'images';
+            if (fullscreenSource === 'videos') urlState.path = videosCurrentPath || 'videos';
+            updateUrlState(urlState);
+        }
+    }
 }
 
 // Zoom Functions
@@ -3588,9 +3956,6 @@ let videosItems = [];
 let currentVideoIndex = 0;
 
 function initializeVideoBrowser() {
-    const refreshBtn = document.getElementById('videosRefreshBtn');
-    if (refreshBtn) refreshBtn.addEventListener('click', () => loadVideos('videos'));
-
     const playToggle = document.getElementById('videosPlayToggle');
     if (playToggle) {
         const savedPlaySetting = localStorage.getItem('videosPlayEnabled');
@@ -3659,8 +4024,10 @@ async function loadVideos(path) {
         
         const quickHydratedFolders = mergeFolderCountsFromSession(folderCountCacheScope, quickData.folders || []);
         videosItems = videoFiles;
+        videoSelectedItems.clear();
         renderVideosBreadcrumb(videosCurrentPath, videoFileCount);
         renderVideosGrid(quickHydratedFolders, videoFiles);
+        updateVideoSelectionButtons();
 
         if (isFullscreenActive) {
             syncFullscreenAfterDataRefresh('videos');
@@ -3782,7 +4149,7 @@ function renderVideosGrid(folders, videos) {
         html += `
             <div class="gallery-item folder-item" onclick="loadVideos('${finalParentPath}')">
                 <div class="folder-icon">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
                 </div>
@@ -3793,15 +4160,20 @@ function renderVideosGrid(folders, videos) {
         `;
     }
     
-    // Render folders
+// Render folders
     folders.forEach(folder => {
         const escapedPath = escapeJsString(folder.path);
+        const isSelected = videoSelectedItems.has(folder.path);
+        const clickHandler = videoSelectionMode ? `toggleVideoItemSelection(event, '${escapedPath}')` : `loadVideos('${escapedPath}')`;
         const fallbackVideoCount = Number.isInteger(folder.video_count) ? folder.video_count : null;
         const folderLabel = formatBrowserFolderLabel(folder.name, folder, fallbackVideoCount);
         html += `
-            <div class="gallery-item folder-item" data-path="${escapeHtml(folder.path)}" onclick="loadVideos('${escapedPath}')">
+            <div class="gallery-item folder-item ${isSelected ? 'selected' : ''} ${videoSelectionMode ? 'selection-mode' : ''}" 
+                 data-path="${escapeHtml(folder.path)}" 
+                 data-type="folder"
+                 onclick="${clickHandler}">
                 <div class="folder-icon">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                     </svg>
                 </div>
@@ -3811,18 +4183,24 @@ function renderVideosGrid(folders, videos) {
             </div>
         `;
     });
-    
+
     // Render videos
     videos.forEach((video, index) => {
         const fullTitle = (video.prompt || video.filename || '').toString();
         const shortTitle = shortenBrowserMediaTitle(fullTitle || 'Untitled video');
+        const videoPath = video.relative_path || video.path || video.filename || '';
+        const isSelected = videoSelectedItems.has(videoPath);
+        const clickHandler = videoSelectionMode ? `toggleVideoItemSelection(event, '${escapeJsString(String(videoPath))}')` : `openVideoModal(${index})`;
         html += `
-            <div class="gallery-item video-hover-preview" onclick="openVideoModal(${index})">
+            <div class="gallery-item video-hover-preview ${isSelected ? 'selected' : ''} ${videoSelectionMode ? 'selection-mode' : ''}" 
+                 data-path="${escapeHtml(videoPath)}"
+                 data-type="file"
+                 onclick="${clickHandler}">
                 <div style="position: relative; width: 100%; height: 100%;">
                     <img src="/api/thumbnail/${video.relative_path}" class="gallery-item-image" style="object-fit: contain; width: 100%; height: 100%; background: var(--bg-secondary);" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                     <video src="/outputs/${video.relative_path}" class="gallery-item-image" style="object-fit: contain; width: 100%; height: 100%; background: var(--bg-secondary); display: none;" playsinline muted loop preload="none"></video>
                     <div class="video-card-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: opacity 0.15s ease;">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="white" opacity="0.8">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="white" opacity="0.8">
                             <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,0.5)"></circle>
                             <polygon points="10 8 16 12 10 16" fill="white"></polygon>
                         </svg>
@@ -3845,6 +4223,7 @@ function renderVideosGrid(folders, videos) {
         bindVideoHoverPreviews(grid);
         applyVideosGridPlaybackMode(grid);
         grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = getThumbnailGridStyle(videoThumbnailSize);
         empty.style.display = 'none';
     } else {
         disposeVideosPlaybackObserver();
@@ -3868,6 +4247,108 @@ function openVideoModal(index) {
     currentImageIndex = index;
     showImageAtIndex(index);
     document.getElementById('imageModal').classList.add('active');
+
+    if (typeof updateUrlState === 'function') {
+        const identity = getMediaIdentityKey(images[currentImageIndex]);
+        if (identity) {
+            updateUrlState({ tab: 'videos', path: videosCurrentPath || 'videos', modal: 'image', media: identity });
+        }
+    }
+}
+
+function toggleVideoSelectionMode() {
+    videoSelectionMode = !videoSelectionMode;
+    const btn = document.getElementById('videoSelectionModeBtn');
+    
+    if (videoSelectionMode) {
+        btn.classList.add('btn-active');
+    } else {
+        btn.classList.remove('btn-active');
+        videoSelectedItems.clear();
+    }
+    
+    loadVideos(videosCurrentPath || 'videos');
+}
+
+function toggleVideoItemSelection(event, path) {
+    event.stopPropagation();
+    
+    if (videoSelectedItems.has(path)) {
+        videoSelectedItems.delete(path);
+    } else {
+        videoSelectedItems.add(path);
+    }
+    
+    const item = document.querySelector(`#videosGrid [data-path="${CSS.escape(path)}"]`);
+    if (item) {
+        item.classList.toggle('selected');
+    }
+    
+    updateVideoSelectionButtons();
+}
+
+function selectAllVideos() {
+    const grid = document.getElementById('videosGrid');
+    if (!grid) return;
+    
+    const items = grid.querySelectorAll('.gallery-item[data-path]');
+    items.forEach(item => {
+        const path = item.dataset.path;
+        if (path) {
+            videoSelectedItems.add(path);
+            item.classList.add('selected');
+        }
+    });
+    
+    updateVideoSelectionButtons();
+}
+
+function updateVideoSelectionButtons() {
+    const moveBtn = document.getElementById('videoMoveBtn');
+    const deleteBtn = document.getElementById('videoDeleteBtn');
+    const selectAllBtn = document.getElementById('videoSelectAllBtn');
+    const hasSelection = videoSelectedItems.size > 0 && videoSelectionMode;
+    
+    if (moveBtn) moveBtn.style.display = hasSelection ? 'inline-flex' : 'none';
+    if (deleteBtn) deleteBtn.style.display = hasSelection ? 'inline-flex' : 'none';
+    if (selectAllBtn) selectAllBtn.style.display = videoSelectionMode ? 'inline-flex' : 'none';
+}
+
+async function moveSelectedVideos() {
+    if (videoSelectedItems.size === 0) return;
+    movePickerItems = Array.from(videoSelectedItems);
+    openMoveFolderPicker('videos', async (target) => {
+        await executeMove(movePickerItems, target);
+        loadVideos(videosCurrentPath || 'videos');
+    });
+}
+
+async function deleteSelectedVideos() {
+    if (videoSelectedItems.size === 0) return;
+    
+    const count = videoSelectedItems.size;
+    const confirmed = await showConfirm(`Delete ${count} item(s)? This cannot be undone.`, 'Confirm Delete');
+    if (!confirmed) return;
+    
+    try {
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: Array.from(videoSelectedItems) })
+        });
+        
+        const result = await response.json();
+        if (result.errors.length > 0) {
+            showNotification('Errors occurred:\n' + result.errors.join('\n'), 'Delete Errors', 'error');
+        } else if (result.deleted.length > 0) {
+            showNotification(`Deleted ${result.deleted.length} item(s) successfully`, 'Deleted', 'success', 3000);
+        }
+        
+        loadVideos(videosCurrentPath || 'videos');
+    } catch (error) {
+        console.error('Error deleting items:', error);
+        showNotification('Error deleting items', 'Error', 'error');
+    }
 }
 
 // ─── Viewer state ───────────────────────────────────────────────────────────

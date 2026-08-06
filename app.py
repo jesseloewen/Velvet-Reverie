@@ -209,7 +209,7 @@ last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 't
 cancellation_requested = False
 
 # Global setting for auto-unload models (controlled via web UI)
-auto_unload_mode = "never"  # "never" | "always" | "queue_empty"
+auto_unload_mode = "never"  # "never" | "always" | "queue_empty" | "shutdown_one" | "shutdown_queue_empty"
 
 # Global setting for Pushover notifications (controlled via web UI)
 pushover_mode = "off"  # "off" | "every_completion" | "queue_empty"
@@ -217,6 +217,39 @@ pushover_mode = "off"  # "off" | "every_completion" | "queue_empty"
 # Pushover API credentials
 PUSHOVER_USER_KEY = os.getenv('PUSHOVER_USER_KEY', '')
 PUSHOVER_APP_KEY = os.getenv('PUSHOVER_APP_KEY', '')
+PUSHOVER_BASE_URL = os.getenv('PUSHOVER_BASE_URL', '')
+
+def _build_pushover_url(job):
+    """Build a URL linking to the completed media/item in the web app."""
+    if not PUSHOVER_BASE_URL or not job:
+        return None
+    base = PUSHOVER_BASE_URL.rstrip('/')
+    jt = job.get('job_type', '')
+    jid = job.get('id', '')
+    url = None
+    if jt == 'image':
+        rp = job.get('relative_path', '')
+        clean = rp.replace('\\', '/')
+        folder = '/'.join(clean.split('/')[:-1]) or 'images'
+        url = f"{base}/browser?path={folder}&modal=image&media={jid}"
+    elif jt == 'video':
+        rp = job.get('relative_path', '')
+        clean = rp.replace('\\', '/')
+        if clean.startswith('videos/'):
+            folder = '/'.join(clean.split('/')[:-1]) or 'videos'
+        else:
+            parts = clean.split('/')
+            folder = 'videos/' + '/'.join(parts[:-1]) if len(parts) > 1 else 'videos'
+        url = f"{base}/video-browser?path={folder}&modal=image&media={jid}"
+    elif jt in ('chat', 'story', 'autochat'):
+        sid = job.get('session_id', '')
+        if sid:
+            url = f"{base}/{jt}/{sid}"
+    elif jt == 'tts':
+        url = f"{base}/audio"
+    if url:
+        url += ("&blur=off" if "?" in url else "?blur=off")
+    return url
 
 # Public endpoints that must remain reachable before authentication.
 PUBLIC_PATHS = {
@@ -3205,21 +3238,100 @@ Session name:"""
                             message = "Queue finished"
                         else:
                             message = f"{job_type.replace('_', ' ').title()} complete"
-                        push_data = urllib.parse.urlencode({
+                        push_data = {
                             "token": PUSHOVER_APP_KEY,
                             "user": PUSHOVER_USER_KEY,
                             "title": title,
                             "message": message,
-                        }).encode()
+                        }
+                        notification_url = _build_pushover_url(job)
+                        if notification_url:
+                            push_data["url"] = notification_url
+                            push_data["url_title"] = "View in Velvet Reverie"
                         req = urllib.request.Request(
                             "https://api.pushover.net/1/messages.json",
-                            data=push_data,
+                            data=urllib.parse.urlencode(push_data).encode(),
                             method="POST"
                         )
                         urllib.request.urlopen(req, timeout=5)
                         print(f"[PUSHOVER] Notification sent for {job_type}")
                     except Exception as e:
                         print(f"[PUSHOVER] Failed to send: {e}")
+                
+                if pushover_mode == "every_completion":
+                    with queue_lock:
+                        queue_empty = not generation_queue
+                    if queue_empty:
+                        def _send_queue_finished():
+                            try:
+                                push_data = {
+                                    "token": PUSHOVER_APP_KEY,
+                                    "user": PUSHOVER_USER_KEY,
+                                    "title": "Velvet Reverie",
+                                    "message": "Queue finished",
+                                }
+                                if PUSHOVER_BASE_URL:
+                                    push_data["url"] = PUSHOVER_BASE_URL.rstrip('/')
+                                    push_data["url_title"] = "Open Velvet Reverie"
+                                req = urllib.request.Request(
+                                    "https://api.pushover.net/1/messages.json",
+                                    data=urllib.parse.urlencode(push_data).encode(),
+                                    method="POST"
+                                )
+                                urllib.request.urlopen(req, timeout=5)
+                                print("[PUSHOVER] Queue finished notification sent")
+                            except Exception as e:
+                                print(f"[PUSHOVER] Failed to send queue finished: {e}")
+                        threading.Timer(3.0, _send_queue_finished).start()
+            
+            # Shutdown handling
+            if auto_unload_mode == "shutdown_one":
+                def _delayed_shutdown_one():
+                    print("[SHUTDOWN] Generation complete, waiting 10s before poweroff...")
+                    time.sleep(10)
+                    if pushover_mode != "off" and PUSHOVER_USER_KEY and PUSHOVER_APP_KEY:
+                        try:
+                            push_data = urllib.parse.urlencode({
+                                "token": PUSHOVER_APP_KEY,
+                                "user": PUSHOVER_USER_KEY,
+                                "title": "Velvet Reverie",
+                                "message": "Shutting down computer",
+                            }).encode()
+                            urllib.request.urlopen(
+                                urllib.request.Request("https://api.pushover.net/1/messages.json", data=push_data, method="POST"),
+                                timeout=5
+                            )
+                            print("[PUSHOVER] Shutdown notification sent")
+                        except Exception as e:
+                            print(f"[PUSHOVER] Failed to send shutdown notification: {e}")
+                    print("[SHUTDOWN] Powering off...")
+                    subprocess.run(["systemctl", "poweroff"])
+                threading.Thread(target=_delayed_shutdown_one, daemon=True).start()
+            elif auto_unload_mode == "shutdown_queue_empty":
+                def _delayed_shutdown_queue():
+                    print("[SHUTDOWN] Queue empty, waiting 10s before poweroff...")
+                    time.sleep(10)
+                    if pushover_mode != "off" and PUSHOVER_USER_KEY and PUSHOVER_APP_KEY:
+                        try:
+                            push_data = urllib.parse.urlencode({
+                                "token": PUSHOVER_APP_KEY,
+                                "user": PUSHOVER_USER_KEY,
+                                "title": "Velvet Reverie",
+                                "message": "Shutting down computer",
+                            }).encode()
+                            urllib.request.urlopen(
+                                urllib.request.Request("https://api.pushover.net/1/messages.json", data=push_data, method="POST"),
+                                timeout=5
+                            )
+                            print("[PUSHOVER] Shutdown notification sent")
+                        except Exception as e:
+                            print(f"[PUSHOVER] Failed to send shutdown notification: {e}")
+                    print("[SHUTDOWN] Powering off...")
+                    subprocess.run(["systemctl", "poweroff"])
+                with queue_lock:
+                    q_empty = not generation_queue
+                if q_empty and not active_generation:
+                    threading.Thread(target=_delayed_shutdown_queue, daemon=True).start()
             
             # Determine if models should be unloaded
             def _backend_category(job):
@@ -3458,11 +3570,21 @@ def get_story_instructions():
 @app.route('/api/settings/auto-unload', methods=['GET', 'POST'])
 def auto_unload_setting():
     """Get or update auto-unload models setting"""
-    global auto_unload_mode
+    global auto_unload_mode, queue_paused
     if request.method == 'GET':
         return jsonify({'auto_unload_mode': auto_unload_mode})
     data = request.json
     auto_unload_mode = data.get('mode', 'never')
+    if auto_unload_mode == "shutdown_one":
+        with queue_lock:
+            queue_paused = True
+        print("[SETTINGS] Shutdown after one generation — queue paused")
+    elif auto_unload_mode == "shutdown_queue_empty":
+        with queue_lock:
+            queue_paused = False
+    elif not data.get('_skip_pause', False):
+        # Switching away from shutdown mode, leave pause state as-is
+        pass
     print(f"[SETTINGS] Auto-unload mode: {auto_unload_mode}")
     return jsonify({'success': True, 'auto_unload_mode': auto_unload_mode})
 

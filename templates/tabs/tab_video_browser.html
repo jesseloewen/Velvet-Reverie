@@ -1,4 +1,4 @@
-                <section class="tab-content" id="videosTab">
+<section class="tab-content" id="videosTab">
                     <div class="gallery-panel">
                         <div class="gallery-header">
                             <h2>Videos Browser <span id="videoBrowserCount" class="gallery-counter">0</span></h2>
@@ -8,14 +8,43 @@
                                     <span class="media-blur-toggle-track" aria-hidden="true"></span>
                                     <span class="media-blur-toggle-text">Play Videos</span>
                                 </label>
-                                <button class="btn btn-sm" id="videosRefreshBtn" title="Refresh">
+                                <button class="btn btn-sm" id="videoSelectionModeBtn" title="Toggle Selection Mode">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polyline points="23 4 23 10 17 10"></polyline>
-                                        <polyline points="1 20 1 14 7 14"></polyline>
-                                        <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"></path>
+                                        <path d="M9 11l3 3L22 4"></path>
+                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                                     </svg>
-                                    <span>Refresh</span>
+                                    <span>Select</span>
                                 </button>
+                                <button class="btn btn-sm" id="videoSelectAllBtn" title="Select All" style="display:none;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M9 11l3 3L22 4"></path>
+                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                    </svg>
+                                    <span>Select All</span>
+                                </button>
+                                <button class="btn btn-sm" id="videoMoveBtn" title="Move Selected" style="display:none;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="5 9 2 12 5 15"></polyline>
+                                        <polyline points="9 5 12 2 15 5"></polyline>
+                                        <polyline points="15 19 12 22 9 19"></polyline>
+                                        <polyline points="19 9 22 12 19 15"></polyline>
+                                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                                        <line x1="12" y1="2" x2="12" y2="22"></line>
+                                    </svg>
+                                    <span>Move Selected</span>
+                                </button>
+                                <button class="btn btn-sm btn-danger" id="videoDeleteBtn" title="Delete Selected" style="display:none;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                    <span>Delete Selected</span>
+                                </button>
+                                <select id="videoThumbnailSizeSelect" class="thumbnail-size-select" title="Thumbnail size">
+                                    <option value="small">Small</option>
+                                    <option value="med">Medium</option>
+                                    <option value="large">Large</option>
+                                </select>
                             </div>
                         </div>
 

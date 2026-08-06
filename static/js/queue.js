@@ -399,6 +399,12 @@ async function updateQueue() {
                 browseFolder(currentPath);
             }, 500);
         }
+        const videosTab = document.getElementById('videosTab');
+        if (shouldRefreshFolder && videosTab && videosTab.classList.contains('active')) {
+            setTimeout(() => {
+                loadVideos(videosCurrentPath);
+            }, 500);
+        }
     } catch (error) {
         console.error('Error updating queue:', error);
     } finally {
@@ -939,7 +945,7 @@ async function getQueueStatus() {
     }
 }
 
-function openCompletedImage(relativePath) {
+async function openCompletedImage(relativePath) {
     // Switch to browser tab and find the image
     switchTab('browser');
     
@@ -948,7 +954,16 @@ function openCompletedImage(relativePath) {
     const folderPath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
     
     // Browse to the folder containing the image
-    browseFolder(folderPath);
+    await browseFolder(folderPath);
+    
+    // Wait for images to load
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Find the image by relative_path in the loaded images array
+    const imageIndex = images.findIndex(img => img.relative_path === relativePath);
+    if (imageIndex !== -1) {
+        openImageModal(images[imageIndex].id || images[imageIndex].relative_path);
+    }
 }
 
 // Navigate to completed queue item in appropriate browser/tab

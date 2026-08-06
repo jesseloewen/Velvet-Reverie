@@ -328,6 +328,8 @@ let currentPath = '';
 let selectedItems = new Set();
 let allItems = [];
 let selectionMode = false;
+let videoSelectedItems = new Set();
+let videoSelectionMode = false;
 let lastSeenCompletedIds = new Set();
 let notificationSoundPlaying = false;
 
@@ -575,6 +577,11 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeVideoBrowser();
         console.log('✓ Videos browser initialized');
     } catch (e) { console.error('✗ Videos browser failed:', e); }
+
+    try {
+        initThumbnailSize();
+        console.log('✓ Thumbnail size initialized');
+    } catch (e) { console.error('✗ Thumbnail size failed:', e); }
     
     try {
         initializeViewer();
@@ -652,9 +659,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const autoUnloadSelect = document.getElementById('autoUnloadMode');
         
         const modeLabels = {
-            'never': 'Never unload',
-            'always': 'Unload every generation',
-            'queue_empty': 'Unload when queue empty'
+'never': 'Never unload',
+'always': 'Unload every generation',
+'queue_empty': 'Unload when queue empty',
+'shutdown_one': 'Shutdown after one generation',
+'shutdown_queue_empty': 'Shutdown after queue empty'
         };
         
         (async () => {
@@ -1828,10 +1837,22 @@ function initializeEventListeners() {
     
     // Folder management
     document.getElementById('newFolderBtn').addEventListener('click', createNewFolder);
-    document.getElementById('setOutputFolderBtn').addEventListener('click', setOutputFolder);
     document.getElementById('selectionModeBtn').addEventListener('click', toggleSelectionMode);
+    document.getElementById('selectAllBtn').addEventListener('click', selectAllItems);
     document.getElementById('moveBtn').addEventListener('click', moveSelectedItems);
     document.getElementById('deleteBtn').addEventListener('click', deleteSelectedItems);
+    
+    // Move folder picker modal
+    document.getElementById('confirmMoveBtn').addEventListener('click', confirmMoveFolderPicker);
+    document.getElementById('cancelMovePickerBtn').addEventListener('click', closeMoveFolderPicker);
+    document.getElementById('movePickerNewFolderBtn').addEventListener('click', createMovePickerFolder);
+    document.getElementById('moveFolderPickerModal').querySelector('.custom-modal-overlay').addEventListener('click', closeMoveFolderPicker);
+    
+    // Video browser selection mode
+    document.getElementById('videoSelectionModeBtn').addEventListener('click', toggleVideoSelectionMode);
+    document.getElementById('videoSelectAllBtn').addEventListener('click', selectAllVideos);
+    document.getElementById('videoMoveBtn').addEventListener('click', moveSelectedVideos);
+    document.getElementById('videoDeleteBtn').addEventListener('click', deleteSelectedVideos);
     
     // Touch support for fullscreen
     initTouchSupport();
@@ -2051,11 +2072,41 @@ function buildUrl(state) {
     const base = TAB_URLS[state.tab];
     if (!base) return '/';
     if (state.sessionId) {
-        return base + '/' + encodeURIComponent(state.sessionId);
+        const baseWithSession = base + '/' + encodeURIComponent(state.sessionId);
+        const sp = new URLSearchParams();
+        if (state.path) sp.set('path', state.path);
+        if (state.media) sp.set('media', state.media);
+        if (state.blur) sp.set('blur', state.blur);
+        if (state.modal) {
+            sp.set('modal', state.modal);
+            if (state.imode) sp.set('imode', state.imode);
+            if (state.ifolder) sp.set('ifolder', state.ifolder);
+            if (state.isub !== undefined) sp.set('isub', state.isub);
+            if (state.vfolder) sp.set('vfolder', state.vfolder);
+            if (state.vsub !== undefined) sp.set('vsub', state.vsub);
+            if (state.afolder) sp.set('afolder', state.afolder);
+            if (state.asub !== undefined) sp.set('asub', state.asub);
+            if (state.media) sp.set('media', state.media);
+        }
+        const qs = sp.toString();
+        return qs ? baseWithSession + '?' + qs : baseWithSession;
     }
     const params = new URLSearchParams();
     if (state.path) params.set('path', state.path);
-    if (state.media) params.set('media', state.media);
+    if (state.media && !state.modal) params.set('media', state.media);
+    if (state.blur) params.set('blur', state.blur);
+    if (state.modal) {
+        params.set('modal', state.modal);
+        if (state.media) params.set('media', state.media);
+        if (state.imode) params.set('imode', state.imode);
+        if (state.ifolder) params.set('ifolder', state.ifolder);
+        if (state.isub !== undefined) params.set('isub', state.isub);
+        if (state.vfolder) params.set('vfolder', state.vfolder);
+        if (state.vsub !== undefined) params.set('vsub', state.vsub);
+        if (state.afolder) params.set('afolder', state.afolder);
+        if (state.asub !== undefined) params.set('asub', state.asub);
+        if (state.fs_source) params.set('fs_source', state.fs_source);
+    }
     const qs = params.toString();
     return qs ? base + '?' + qs : base;
 }
@@ -2085,6 +2136,29 @@ function parseUrl() {
         if (pathParam) state.path = pathParam;
         const mediaParam = searchParams.get('media');
         if (mediaParam) state.media = mediaParam;
+        const blurParam = searchParams.get('blur');
+        if (blurParam) state.blur = blurParam;
+        const modalParam = searchParams.get('modal');
+        if (modalParam) {
+            state.modal = modalParam;
+            if (state.media) state.media = mediaParam;
+            const imode = searchParams.get('imode');
+            if (imode) state.imode = imode;
+            const ifolder = searchParams.get('ifolder');
+            if (ifolder) state.ifolder = ifolder;
+            const isub = searchParams.get('isub');
+            if (isub !== null) state.isub = isub;
+            const vfolder = searchParams.get('vfolder');
+            if (vfolder) state.vfolder = vfolder;
+            const vsub = searchParams.get('vsub');
+            if (vsub !== null) state.vsub = vsub;
+            const afolder = searchParams.get('afolder');
+            if (afolder) state.afolder = afolder;
+            const asub = searchParams.get('asub');
+            if (asub !== null) state.asub = asub;
+            const fs_source = searchParams.get('fs_source');
+            if (fs_source) state.fs_source = fs_source;
+        }
         return state;
     }
 
@@ -2093,21 +2167,47 @@ function parseUrl() {
 
 function updateUrlState(state) {
     if (!state || !state.tab) return;
+    const hState = window.history.state;
+    if (!('modal' in state) && hState && hState.modal && hState.tab === state.tab) {
+        state.modal = hState.modal;
+        if (hState.media) state.media = hState.media;
+        if (hState.imode) state.imode = hState.imode;
+        if (hState.ifolder) state.ifolder = hState.ifolder;
+        if (hState.isub !== undefined) state.isub = hState.isub;
+        if (hState.vfolder) state.vfolder = hState.vfolder;
+        if (hState.vsub !== undefined) state.vsub = hState.vsub;
+        if (hState.afolder) state.afolder = hState.afolder;
+        if (hState.asub !== undefined) state.asub = hState.asub;
+        if (hState.fs_source) state.fs_source = hState.fs_source;
+    }
+    if (!('blur' in state) && hState && hState.blur) {
+        state.blur = hState.blur;
+    }
     const url = buildUrl(state);
     if (window.history && window.history.pushState) {
         window.history.pushState(state, '', url);
     }
 }
 
-function applyUrlState(state) {
+async function applyUrlState(state) {
     if (!state || !state.tab) return;
+    window._applyingUrlState = true;
+    if (!state.modal) {
+        try { closeImageModal(); } catch (_) {}
+        try { closeImageBrowser(); } catch (_) {}
+        try { closeVideoBrowser(); } catch (_) {}
+        try { closeAudioBrowser(); } catch (_) {}
+        try { closeFullscreen(); } catch (_) {}
+    }
+    window._applyingUrlState = false;
+    updateUrlState(state);
     switchTab(state.tab, true, true);
 
     if (state.path) {
         if (state.tab === 'browser') {
-            browseFolder(state.path);
+            await browseFolder(state.path);
         } else if (state.tab === 'videos') {
-            loadVideos(state.path);
+            await loadVideos(state.path);
         }
     }
 
@@ -2131,6 +2231,36 @@ function applyUrlState(state) {
                 }
             }
         }).catch(() => {});
+    }
+
+    if (state.modal === 'image' && state.media) {
+        if (state.tab === 'browser') {
+            openImageModal(state.media);
+        } else if (state.tab === 'videos') {
+            const idx = typeof videosItems !== 'undefined' ? videosItems.findIndex(v => getMediaIdentityKey(v) === String(state.media)) : -1;
+            if (idx >= 0) openVideoModal(idx);
+        }
+    } else if (state.modal === 'fullscreen' && state.media) {
+        if (state.tab === 'browser') {
+            openImageModal(state.media);
+        } else if (state.tab === 'videos') {
+            const idx = typeof videosItems !== 'undefined' ? videosItems.findIndex(v => getMediaIdentityKey(v) === String(state.media)) : -1;
+            if (idx >= 0) openVideoModal(idx);
+        } else if (state.tab === 'viewer') {
+            if (typeof viewerAllFiles !== 'undefined') {
+                const identity = String(state.media);
+                const idx = viewerAllFiles.findIndex(item => getMediaIdentityKey(item) === identity);
+                if (idx >= 0 && typeof navigateViewerDirect === 'function') {
+                    navigateViewerDirect(idx);
+                }
+            }
+        }
+    } else if (state.modal === 'img-browse') {
+        openImageBrowserFromUrl(state.imode || 'single', state.ifolder || currentBrowserFolder || 'input', state.isub || '');
+    } else if (state.modal === 'vid-browse') {
+        openVideoBrowserFromUrl(state.vfolder || 'input', state.vsub || '');
+    } else if (state.modal === 'audio-browse') {
+        openAudioBrowserFromUrl(state.imode || 'tts', state.afolder || 'input', state.asub || '');
     }
 }
 
@@ -2752,7 +2882,8 @@ function updateHardwareBar(type, percent, label) {
 // ============================================================================
 function initializeMediaBlurToggle() {
     const blurMediaToggle = document.getElementById('blurMediaToggle');
-    const blurEnabled = true;
+    const urlParams = new URLSearchParams(window.location.search);
+    const blurEnabled = urlParams.get('blur') !== 'off';
 
     applyMediaBlurSetting(blurEnabled);
 
@@ -2766,6 +2897,14 @@ function initializeMediaBlurToggle() {
     blurMediaToggle.addEventListener('change', function() {
         const enabled = this.checked;
         applyMediaBlurSetting(enabled);
+
+        const url = new URL(window.location);
+        if (enabled) {
+            url.searchParams.delete('blur');
+        } else {
+            url.searchParams.set('blur', 'off');
+        }
+        window.history.replaceState(window.history.state, '', url.toString());
 
         showNotification(
             enabled ? 'All media is now blurred' : 'All media is now visible',
