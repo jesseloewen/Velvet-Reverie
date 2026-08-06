@@ -1,34 +1,30 @@
 """
-media_index.py – Smart in-memory media index for Velvet Reverie.
+media_index.py - Smart in-memory media index for Velvet Reverie.
 
 Problem solved
 --------------
-The outputs/metadata.json file can contain thousands of entries.  Every call to
-/api/browse with with_metadata=1 previously read the entire JSON file from disk,
-iterated over every entry, and matched each one against the requested directory.
-On slow drives (network shares, USB HDDs, spinning rust) this makes the browser
-feel sluggish even for folders with just a handful of images.
+Metadata is now stored as per-folder metadata.json files (e.g.
+images/subfolder/metadata.json, audio/batch_id/metadata.json) instead of a
+single monolithic outputs/metadata.json.  Every call to /api/browse with
+with_metadata=1 previously read the entire JSON file from disk, iterated
+over every entry, and matched each one against the requested directory.
 
 Solution
 --------
-Build a directory-keyed in-memory index once at startup, then keep it perfectly
-synchronised with every write the app makes (add / delete / move).  A browse
-request is now an O(1) dict lookup plus an O(k) sort of the matching entries
-(k = files in that folder).
+Build a directory-keyed in-memory index once at startup by scanning all
+per-folder metadata.json files, then keep it perfectly synchronised with
+every write the app makes (add / delete / move).  A browse request is an
+O(1) dict lookup plus an O(k) sort of the matching entries.
 
 Persistent cache across restarts
 ---------------------------------
 The fully-built index is saved to  outputs/data/index_cache.pkl  after every
-write.  On the next startup the cache is validated against metadata.json using
-its mtime + file-size as a fingerprint:
+write.  On the next startup the cache is validated against a composite
+fingerprint of all per-folder metadata.json files (path + mtime + size):
 
-  • Cache valid   → load the pre-built structures in microseconds (no JSON
-                    parsing, no path resolution, no loop).
-  • Cache invalid → fall back to a full rebuild from metadata.json, then save
-                    a fresh cache so the *next* restart is instant again.
-
-This means the only time the app reads the whole JSON on startup is after files
-were changed while it was not running (external edits, file restores, etc.).
+  - Cache valid   -> load from pickle in microseconds (no JSON parsing).
+  - Cache invalid -> scan all per-folder metadata.json files, build index,
+                     save fresh cache.
 
 Thread safety
 -------------
@@ -40,7 +36,7 @@ Public API
 ----------
     index = MediaIndex(metadata_file_path, output_dir_path)
 
-    # Called once at app startup – uses cache when valid
+    # Called once at app startup - uses cache when valid
     index.rebuild()
 
     # Called by browse_folder() instead of load_metadata()
@@ -64,6 +60,7 @@ Public API
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pickle
@@ -146,9 +143,9 @@ def _resolve_entry_path(entry: dict, output_dir: Path) -> Optional[Path]:
 
 # Cache file format version – bump this whenever the pickle schema changes so
 # old caches are automatically discarded rather than causing subtle bugs.
-# v3: _index_entry now normalises absolute paths to output_dir-relative paths
-#     so relocated installs no longer produce broken dir-index keys.
-_CACHE_VERSION = 3
+# v4: per-folder metadata.json files replace single outputs/metadata.json.
+#     Fingerprint is now a composite hash of all per-folder files.
+_CACHE_VERSION = 4
 
 
 # ── main class ────────────────────────────────────────────────────────────────
@@ -195,16 +192,15 @@ class MediaIndex:
 
         Strategy
         --------
-        1. Read the current fingerprint (mtime_ns + size) of metadata.json.
+        1. Compute a composite fingerprint from all per-folder metadata.json files
+           under images/, videos/, and audio/.
         2. Try loading the pickle cache.  If the cache version matches AND its
            stored fingerprint matches the live fingerprint, restore all three
-           internal dicts directly from the pickle – zero JSON parsing, zero
-           path resolution.  Typical load time: < 5 ms for 10 000 entries.
-        3. If the cache is missing, stale, or corrupt, fall back to a full
-           rebuild from metadata.json, then save a fresh cache so the next
-           restart is instant.
+           internal dicts directly from the pickle.
+        3. If the cache is missing, stale, or corrupt, fall back to scanning all
+           per-folder metadata.json files, then save a fresh cache.
 
-        Pass force=True to skip the cache check and always rebuild from JSON.
+        Pass force=True to skip the cache check and always rebuild from disk.
         """
         t0 = time.monotonic()
         live_fp = self._metadata_fingerprint()
@@ -220,17 +216,8 @@ class MediaIndex:
                 )
                 return len(self._by_id)
 
-        # Cache miss – parse metadata.json the slow way
-        entries: list = []
-        if self._metadata_file.exists():
-            try:
-                with open(self._metadata_file, 'r', encoding='utf-8') as fh:
-                    entries = json.load(fh)
-                if not isinstance(entries, list):
-                    entries = []
-            except Exception as exc:
-                print(f'[MediaIndex] WARNING – could not read metadata file: {exc}')
-                entries = []
+        # Cache miss – scan all per-folder metadata.json files
+        entries = self._load_all_folder_metadata()
 
         with self._lock:
             self._by_id.clear()
@@ -248,7 +235,7 @@ class MediaIndex:
         print(
             f'[MediaIndex] Built index: {self._entry_count} entries '
             f'across {len(self._dir_index)} directories '
-            f'in {elapsed_ms:.1f} ms'
+            f'from {len(entries)} metadata entries in {elapsed_ms:.1f} ms'
         )
 
         # Persist the freshly built index so the next restart is fast
@@ -384,12 +371,76 @@ class MediaIndex:
     # ── cache helpers ─────────────────────────────────────────────────────────
 
     def _metadata_fingerprint(self) -> Tuple[int, int]:
-        """Return (mtime_ns, size_bytes) for metadata.json, or (0, 0) if absent."""
-        try:
-            st = self._metadata_file.stat()
-            return (st.st_mtime_ns, st.st_size)
-        except OSError:
-            return (0, 0)
+        """Return a stable hash derived from all per-folder metadata.json files.
+
+        Scans images/, videos/, and audio/ directories for metadata.json files,
+        hashing each file's relative path + mtime + size into a composite
+        fingerprint.  Returns a (high64, low64) tuple of the 128-bit MD5 hash.
+        """
+        hasher = hashlib.md5()
+        for scan_root in ('images', 'videos', 'audio'):
+            root = self._output_dir / scan_root
+            if not root.exists() or not root.is_dir():
+                continue
+            for meta_file in sorted(root.rglob('metadata.json')):
+                try:
+                    rel = str(meta_file.relative_to(self._output_dir)).replace('\\', '/')
+                    st = meta_file.stat()
+                    hasher.update(f"{rel}|{st.st_mtime_ns}|{st.st_size}".encode('utf-8'))
+                except OSError:
+                    continue
+
+        # Fallback: if no per-folder files found, check the legacy metadata.json
+        # so a brand-new (empty) install still produces a stable fingerprint.
+        if self._metadata_file.exists():
+            try:
+                st = self._metadata_file.stat()
+                hasher.update(f"legacy_main|{st.st_mtime_ns}|{st.st_size}".encode('utf-8'))
+            except OSError:
+                pass
+
+        digest = hasher.hexdigest()
+        if len(digest) >= 32:
+            return (int(digest[:16], 16), int(digest[16:32], 16))
+        pad = digest.ljust(32, '0')
+        return (int(pad[:16], 16), int(pad[16:32], 16))
+
+    def _load_all_folder_metadata(self) -> List[dict]:
+        """Scan per-folder metadata.json files and return a combined list.
+
+        Looks in images/, videos/, and audio/ subdirectories of output_dir.
+        Falls back to the legacy outputs/metadata.json when no per-folder
+        files exist (supports first boot after migration).
+        """
+        entries: list = []
+        found_any = False
+
+        for scan_root in ('images', 'videos', 'audio'):
+            root = self._output_dir / scan_root
+            if not root.exists() or not root.is_dir():
+                continue
+            for meta_file in root.rglob('metadata.json'):
+                try:
+                    with open(meta_file, 'r', encoding='utf-8') as fh:
+                        batch = json.load(fh)
+                    if isinstance(batch, list):
+                        entries.extend(batch)
+                        found_any = True
+                except Exception as exc:
+                    print(f'[MediaIndex] WARNING – could not read {meta_file}: {exc}')
+
+        # Fallback: if no per-folder files found, load legacy metadata.json
+        if not found_any and self._metadata_file.exists():
+            try:
+                with open(self._metadata_file, 'r', encoding='utf-8') as fh:
+                    legacy = json.load(fh)
+                if isinstance(legacy, list):
+                    print(f'[MediaIndex] Loaded {len(legacy)} entries from legacy metadata.json')
+                    return legacy
+            except Exception as exc:
+                print(f'[MediaIndex] WARNING – could not read legacy metadata file: {exc}')
+
+        return entries
 
     def _save_cache(self, fingerprint: Tuple[int, int]) -> None:
         """

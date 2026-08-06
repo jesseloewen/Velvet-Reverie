@@ -14,6 +14,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 import uuid
 import re
 import mimetypes
@@ -511,16 +512,10 @@ def save_metadata(metadata):
 
     Callers that built the list themselves (e.g. TTS batch) pass it in;
     the index is rebuilt from that list so it stays consistent.
-    We write the file only when the index is dirty (state changed since last
-    save) or when the caller explicitly supplies a new list.
     """
     OUTPUT_DIR.mkdir(exist_ok=True)
-    # Re-index from the supplied list so the index matches exactly what is
-    # being persisted.  This handles callers that mutate the list directly
-    # (e.g. delete_metadata_entry which filters entries out of the list).
     media_index.rebuild_from_list(metadata)
-    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(metadata, f, indent=2)
+    _write_per_folder_metadata(metadata)
     media_index.mark_clean()
 
 
@@ -747,12 +742,129 @@ def delete_metadata_entry(file_path: str):
 
 
 def _flush_index_to_disk():
-    """Write the current index state to metadata.json without a full rebuild."""
+    """Write per-folder metadata.json files from the current index state.
+
+    Groups all entries by parent directory and writes a metadata.json
+    for each folder.  Removes stale metadata.json files in directories
+    that no longer have entries.
+    """
     OUTPUT_DIR.mkdir(exist_ok=True)
     entries = media_index.get_all()
-    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(entries, f, indent=2)
+    _write_per_folder_metadata(entries)
     media_index.mark_clean()
+
+
+def _write_per_folder_metadata(entries):
+    """Group entries by parent directory and write per-folder metadata.json files.
+
+    Stale metadata.json files (directories with zero entries) are removed
+    from images/, videos/, and audio/ trees.
+    """
+    if not entries:
+        return
+
+    # Group entries by parent directory (absolute, resolved)
+    groups: dict = {}
+    for entry in entries:
+        raw = (entry.get('path') or '').strip()
+        if not raw:
+            continue
+        abs_path = _resolve_metadata_path(raw)
+        if abs_path is None:
+            continue
+        parent = abs_path.parent
+        if parent not in groups:
+            groups[parent] = []
+        groups[parent].append(entry)
+
+    written_dirs = set()
+    for parent_dir, dir_entries in groups.items():
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        meta_file = parent_dir / 'metadata.json'
+        dir_entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        with open(meta_file, 'w', encoding='utf-8') as f:
+            json.dump(dir_entries, f, indent=2)
+        written_dirs.add(parent_dir.resolve())
+
+    # Clean up stale metadata.json files
+    for scan_root in ('images', 'videos', 'audio'):
+        root = OUTPUT_DIR / scan_root
+        if not root.exists() or not root.is_dir():
+            continue
+        for meta_file in root.rglob('metadata.json'):
+            if meta_file.parent.resolve() not in written_dirs:
+                try:
+                    meta_file.unlink()
+                except OSError:
+                    pass
+
+
+def _resolve_metadata_path(path_str: str) -> Optional[Path]:
+    """Resolve a metadata path string to an absolute Path under OUTPUT_DIR."""
+    p = Path(path_str)
+    if p.is_absolute():
+        try:
+            resolved = p.resolve()
+            resolved.relative_to(OUTPUT_DIR)
+            return resolved
+        except (ValueError, OSError):
+            pass
+        # Try re-rooting from old install location
+        for i, part in enumerate(p.parts):
+            if part.lower() == OUTPUT_DIR.name.lower():
+                rel_parts = p.parts[i + 1:]
+                if rel_parts:
+                    return (OUTPUT_DIR / Path(*rel_parts)).resolve()
+                break
+        return (OUTPUT_DIR / p.name).resolve()
+
+    parts = p.parts
+    if parts and parts[0].lower() in ('outputs', 'outputs/'):
+        p = Path(*parts[1:])
+    return (OUTPUT_DIR / p).resolve()
+
+
+def _write_single_folder_metadata(entry: dict):
+    """Incrementally write/update metadata.json for the folder containing *entry*.
+
+    Reads the existing metadata.json, replaces/inserts the entry (matched by id),
+    and writes back.  This avoids rewriting all folders on every single add.
+    """
+    raw = (entry.get('path') or '').strip()
+    if not raw:
+        return
+    abs_path = _resolve_metadata_path(raw)
+    if abs_path is None:
+        return
+    parent_dir = abs_path.parent
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    meta_file = parent_dir / 'metadata.json'
+
+    existing = []
+    if meta_file.exists():
+        try:
+            with open(meta_file, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+            if not isinstance(existing, list):
+                existing = []
+        except Exception:
+            existing = []
+
+    entry_id = entry.get('id')
+    updated = []
+    found = False
+    for e in existing:
+        if e.get('id') == entry_id:
+            updated.append(entry)
+            found = True
+        else:
+            updated.append(e)
+    if not found:
+        updated.append(entry)
+
+    updated.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    with open(meta_file, 'w', encoding='utf-8') as f:
+        json.dump(updated, f, indent=2)
 
 
 def load_chats():
@@ -996,7 +1108,10 @@ def attach_audio_to_session_message(session_type, session_id, message_id, relati
 
 
 def merge_tts_batch_for_session(batch_id, message_id, session_id, session_type='chat'):
-    """Merge TTS batch audio files and attach to a message in any conversation type."""
+    """Merge TTS batch audio files and attach to a message in any conversation type.
+
+    Merged output is placed in the batch's audio folder: audio/{batch_id}/merged.wav
+    """
     try:
         _, _, _, normalized_type = get_session_store(session_type)
         metadata = load_metadata()
@@ -1039,20 +1154,15 @@ def merge_tts_batch_for_session(batch_id, message_id, session_id, session_type='
         if not valid_files:
             return None
         
-        output_dir = OUTPUT_DIR / "audio" / f"{normalized_type}_merged"
-        output_prefix = f"{normalized_type}_merged_{str(batch_id)[:8]}"
-        output_path, reused_existing = ensure_merged_audio_file(
-            valid_files,
-            output_dir,
-            output_prefix,
-            extra_key=f"type:{normalized_type}|batch:{batch_id}"
-        )
-        if reused_existing:
-            print(f"[MERGE] Reusing existing merged file for batch {batch_id}: {output_path.name}")
+        batch_dir = OUTPUT_DIR / 'audio' / batch_id
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        output_path = batch_dir / 'merged.wav'
+        merge_audio_files_with_ffmpeg(valid_files, output_path, silence_seconds=0.1)
 
         relative_path = str(output_path.relative_to(OUTPUT_DIR))
         attach_audio_to_session_message(normalized_type, session_id, message_id, relative_path, batch_id)
 
+        print(f"[MERGE] Merged batch {batch_id[:8]} to {relative_path}")
         return relative_path
             
     except Exception as e:
@@ -1511,10 +1621,8 @@ def add_metadata_entry(image_path, prompt, width, height, steps, seed, file_pref
         entry["max_chars"] = chunk_size if chunk_size is not None else 300
         entry["silence_ms"] = 100  # Not used in Gradio API, but keep for compatibility
     
-        # Push into the index first (O(1), no disk I/O)
     media_index.add(entry)
-    # Persist to disk asynchronously so callers are not blocked by the write
-    _flush_index_to_disk()
+    _write_single_folder_metadata(entry)
     return entry
 
 
@@ -1817,7 +1925,7 @@ def process_queue():
                     
                     output_paths = []
                     metadata_entries = []  # Collect metadata entries without saving
-                    batch_token = (batch_id or str(job.get('id', '')) or str(uuid.uuid4()))[:8]
+                    batch_dir = OUTPUT_DIR / 'audio' / batch_id
                     
                     # Define worker function for parallel TTS generation
                     def generate_sentence(idx, sentence):
@@ -1826,27 +1934,18 @@ def process_queue():
                             # Determine output file extension based on audio_format
                             file_ext = audio_format if audio_format in ['wav', 'mp3'] else 'wav'
                             
-                            # For regenerations, use version suffix in filename
+                            # All sentences go into the same batch folder
+                            batch_dir.mkdir(parents=True, exist_ok=True)
+                            
                             if is_regeneration:
-                                version_suffix = f"_s{original_sentence_index}_v{version_number}"
-                                versioned_prefix = f"{file_prefix}{version_suffix}"
-                                # Thread-safe: Use unique prefix per sentence
-                                with queue_lock:  # Lock to prevent filename conflicts
-                                    relative_path, output_path = get_next_filename(versioned_prefix, subfolder, file_ext, 'audio')
+                                filename = f"s{original_sentence_index:04d}_v{version_number}.{file_ext}"
                                 actual_sentence_index = original_sentence_index
                             else:
-                                # Normal generation - include batch token to avoid overwriting files from older batches
-                                sentence_prefix = f"{file_prefix}_{batch_token}_s{idx:04d}"  # e.g., tts_a1b2c3d4_s0001
-                                # Thread-safe: Use unique prefix per sentence (no lock needed)
-                                if subfolder:
-                                    target_dir = OUTPUT_DIR / 'audio' / subfolder
-                                else:
-                                    target_dir = OUTPUT_DIR / 'audio'
-                                target_dir.mkdir(parents=True, exist_ok=True)
-                                filename = f"{sentence_prefix}.{file_ext}"
-                                output_path = target_dir / filename
-                                relative_path = output_path.relative_to(OUTPUT_DIR)
+                                filename = f"s{idx:04d}.{file_ext}"
                                 actual_sentence_index = idx
+                            
+                            output_path = batch_dir / filename
+                            relative_path = output_path.relative_to(OUTPUT_DIR)
                             
                             print(f"[TTS] [{idx + 1}/{total_sentences}] Starting: {sentence[:50]}...")
                             
@@ -1877,9 +1976,9 @@ def process_queue():
                             # Create metadata entry
                             entry = {
                                 "id": str(uuid.uuid4()),
-                                "filename": os.path.basename(output_path),
-                                "path": str(output_path),
-                                "subfolder": subfolder,
+                                "filename": filename,
+                                "path": str(relative_path),
+                                "subfolder": '',
                                 "timestamp": datetime.now().isoformat(),
                                 "prompt": sentence,
                                 "text": sentence,
@@ -1978,12 +2077,17 @@ def process_queue():
                         
                         print(f"[TTS] All sentences completed, saving metadata...")
                         
-                        # Save all metadata entries at once (single disk write)
+                        # Write per-batch metadata.json and add entries to index
                         if metadata_entries:
-                            metadata = load_metadata()
-                            metadata.extend(metadata_entries)
-                            save_metadata(metadata)
-                            print(f"[TTS] Saved {len(metadata_entries)} metadata entries")
+                            metadata_entries.sort(key=lambda e: e.get('sentence_index', 0))
+                            batch_dir.mkdir(parents=True, exist_ok=True)
+                            meta_file = batch_dir / 'metadata.json'
+                            with open(meta_file, 'w', encoding='utf-8') as f:
+                                json.dump(metadata_entries, f, indent=2)
+                            for entry in metadata_entries:
+                                media_index.add(entry)
+                            media_index.mark_clean()
+                            print(f"[TTS] Saved {len(metadata_entries)} entries to {meta_file}")
                         
                         # Cleanup TTS output folder once after all sentences
                         print(f"[TTS] Cleaning up TTS output folder...")
@@ -6622,7 +6726,11 @@ def copy_folder_to_input():
 
 @app.route('/api/move', methods=['POST'])
 def move_items():
-    """Move files and folders to a target directory"""
+    """Move files and folders to a target directory
+
+    When a folder is moved, all child files' metadata paths are updated
+    recursively so per-folder metadata.json files stay consistent.
+    """
     data = request.json
     items = data.get('items', [])  # List of paths
     target = data.get('target', '')  # Target folder path
@@ -6634,6 +6742,7 @@ def move_items():
     
     moved = []
     errors = []
+    path_updates = []  # (old_abs_str, new_abs_str) for batch index update
     
     for item_path in items:
         try:
@@ -6646,15 +6755,20 @@ def move_items():
             target_path = target_dir / source.name
             target_path = get_unique_filename(target_path)
             
+            # Collect old→new path mappings for metadata BEFORE the move
+            if source.is_file():
+                path_updates.append((str(source), str(target_path)))
+            elif source.is_dir():
+                for file_path in source.rglob('*'):
+                    if file_path.is_file():
+                        rel = file_path.relative_to(source)
+                        old_abs = str(file_path)
+                        new_abs = str(target_path / rel)
+                        path_updates.append((old_abs, new_abs))
+            
             # Move the file/folder
             import shutil
             shutil.move(str(source), str(target_path))
-            
-            # Update metadata if it's a file
-            if source.is_file():
-                old_path = str(source)
-                new_path = str(target_path)
-                update_metadata_path(old_path, new_path)
             
             moved.append({
                 'from': item_path,
@@ -6663,6 +6777,17 @@ def move_items():
             
         except Exception as e:
             errors.append(f"{item_path}: {str(e)}")
+    
+    # Batch-update the in-memory index for all path changes
+    updated_count = 0
+    for old_abs, new_abs in path_updates:
+        if media_index.update_path(old_abs, new_abs):
+            updated_count += 1
+    if path_updates:
+        print(f"[MOVE] Updated {updated_count}/{len(path_updates)} metadata paths")
+    
+    # Single disk flush writes all affected per-folder metadata.json files
+    _flush_index_to_disk()
     
     return jsonify({
         'success': len(errors) == 0,
