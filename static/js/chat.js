@@ -20,6 +20,7 @@ function initializeChat() {
     const closeChatParamsBtn = document.getElementById('closeChatParamsBtn');
     const chatSendBtn = document.getElementById('chatSendBtn');
     const chatInput = document.getElementById('chatInput');
+    const chatInputContainer = document.getElementById('chatInputContainer');
     const chatModelSelector = document.getElementById('chatModelSelector');
     const generateNameBtn = document.getElementById('generateSessionNameBtn');
     
@@ -31,6 +32,28 @@ function initializeChat() {
     if (chatSendBtn) chatSendBtn.addEventListener('click', () => sendChatMessage());
     if (chatModelSelector) chatModelSelector.addEventListener('change', updateCurrentSessionModel);
     if (generateNameBtn) generateNameBtn.addEventListener('click', generateSessionName);
+    
+    const chatExpandBtn = document.getElementById('chatExpandBtn');
+    if (chatExpandBtn && chatInputContainer) {
+        chatExpandBtn.addEventListener('click', () => {
+            chatInputContainer.classList.toggle('expanded');
+            const expandIcon = chatExpandBtn.querySelector('.expand-icon');
+            const collapseIcon = chatExpandBtn.querySelector('.collapse-icon');
+            if (chatInputContainer.classList.contains('expanded')) {
+                expandIcon.style.display = 'none';
+                collapseIcon.style.display = '';
+                chatExpandBtn.title = 'Collapse input';
+                if (window.syncExpandedViewHeight) window.syncExpandedViewHeight();
+                chatInput.focus();
+            } else {
+                expandIcon.style.display = '';
+                collapseIcon.style.display = 'none';
+                chatExpandBtn.title = 'Expand input';
+                chatInputContainer.style.height = '';
+                chatInput.focus();
+            }
+        });
+    }
     
     // Close sidebars when clicking backdrop (mobile)
     const chatSessionsSidebar = document.getElementById('chatSessionsSidebar');
@@ -56,6 +79,9 @@ function initializeChat() {
     if (chatInput) {
         chatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
+                if (chatInputContainer && chatInputContainer.classList.contains('expanded')) {
+                    return;
+                }
                 e.preventDefault();
                 sendChatMessage();
             }

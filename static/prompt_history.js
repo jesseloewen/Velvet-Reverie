@@ -79,8 +79,9 @@ const _promptHistoryDropdowns = new WeakMap();
  *
  * @param {HTMLTextAreaElement} textarea
  * @param {'image'|'video'|'chat'} category
+ * @param {HTMLElement} [companionEl] - optional element to place beside the history button (e.g. TTS toggle)
  */
-function attachPromptHistory(textarea, category) {
+function attachPromptHistory(textarea, category, companionEl) {
     if (!textarea) return;
 
     // Avoid double-attaching
@@ -95,6 +96,10 @@ function attachPromptHistory(textarea, category) {
     // Insert wrapper in place of textarea
     textarea.parentNode.insertBefore(wrapper, textarea);
     wrapper.appendChild(textarea);
+
+    // ── Build footer row (history button + optional companion) ──
+    const footerRow = document.createElement('div');
+    footerRow.className = 'ph-footer';
 
     // ── Build trigger button ──
     const btn = document.createElement('button');
@@ -111,7 +116,14 @@ function attachPromptHistory(textarea, category) {
         <svg class="ph-trigger-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="6 9 12 15 18 9"/>
         </svg>`;
-    wrapper.appendChild(btn);
+    footerRow.appendChild(btn);
+
+    // Append companion element if provided
+    if (companionEl) {
+        footerRow.appendChild(companionEl);
+    }
+
+    wrapper.appendChild(footerRow);
 
     // ── Build dropdown ──
     const dropdown = document.createElement('div');
@@ -258,6 +270,8 @@ function attachPromptHistory(textarea, category) {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isOpen) closeDropdown();
     });
+
+    return wrapper;
 }
 
 // ── Wire up all prompt textareas ──────────────────────────────────────────────
@@ -297,7 +311,21 @@ function initializePromptHistory() {
     ];
     chatPromptIds.forEach(id => {
         const el = document.getElementById(id);
-        if (el) attachPromptHistory(el, 'chat');
+        if (el) {
+            const expandBtn = el.nextElementSibling;
+            const ttsLabel = (expandBtn && expandBtn.classList.contains('chat-expand-btn')) ? expandBtn.nextElementSibling : el.nextElementSibling;
+            const companion = (ttsLabel && ttsLabel.classList.contains('chat-auto-tts-toggle')) ? ttsLabel : null;
+            const sendBtn = companion ? companion.nextElementSibling : null;
+            const wrapper = attachPromptHistory(el, 'chat', companion);
+            if (wrapper) {
+                if (expandBtn && expandBtn.classList.contains('chat-expand-btn')) {
+                    wrapper.appendChild(expandBtn);
+                }
+                if (sendBtn && sendBtn.classList.contains('chat-send-btn')) {
+                    wrapper.appendChild(sendBtn);
+                }
+            }
+        }
     });
 
     console.log('[PromptHistory] Initialized');

@@ -1140,9 +1140,30 @@ function initializeMobileKeyboardFix() {
         const activeInput = getActiveInputElement() || lastFocusedInput;
         if (!activeInput || typeof activeInput.scrollIntoView !== 'function') return;
 
+        if (activeInput.closest('.chat-input-container.expanded')) return;
+
         requestAnimationFrame(() => {
             activeInput.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
         });
+    }
+    
+    window.syncExpandedViewHeight = function() {
+        const expanded = document.querySelector('.chat-input-container.expanded');
+        if (!expanded) return;
+        if (window.visualViewport) {
+            const vp = window.visualViewport;
+            expanded.style.top = vp.offsetTop + 'px';
+            expanded.style.height = vp.height + 'px';
+            expanded.style.bottom = 'auto';
+        } else {
+            expanded.style.top = '0';
+            expanded.style.height = window.innerHeight + 'px';
+            expanded.style.bottom = 'auto';
+        }
+    };
+    
+    function syncExpandedViewHeight(currentVisualHeight) {
+        window.syncExpandedViewHeight();
     }
     
     function handleKeyboardStateChange() {
@@ -1157,6 +1178,8 @@ function initializeMobileKeyboardFix() {
         const keyboardInset = getKeyboardInset();
         document.documentElement.style.setProperty('--mobile-keyboard-offset', `${keyboardInset}px`);
         
+        syncExpandedViewHeight(currentVisualHeight);
+
         // Calculate height differences
         const windowHeightDiff = lastWindowHeight - currentWindowHeight;
         const visualHeightDiff = lastVisualHeight - currentVisualHeight;
@@ -1164,16 +1187,20 @@ function initializeMobileKeyboardFix() {
         // Keyboard likely opened (significant height decrease)
         if ((visualHeightDiff > 150 || windowHeightDiff > 150) && !keyboardOpen) {
             keyboardOpen = true;
-            cachePreKeyboardState(activeInput || lastFocusedInput);
+            
+            const isExpanded = (activeInput || lastFocusedInput)?.closest('.chat-input-container.expanded');
+            
+            if (!isExpanded) {
+                cachePreKeyboardState(activeInput || lastFocusedInput);
+            }
             document.body.classList.add('keyboard-open');
             
-            // Allow scrolling when keyboard is open
-            const backdrop = document.getElementById('sidebarBackdrop');
-            const sidebarOpen = backdrop && backdrop.classList.contains('active');
-            
-            // Only change overflow if no sidebar is open
-            if (!sidebarOpen) {
-                document.body.style.overflow = 'auto';
+            if (!isExpanded) {
+                const backdrop = document.getElementById('sidebarBackdrop');
+                const sidebarOpen = backdrop && backdrop.classList.contains('active');
+                if (!sidebarOpen) {
+                    document.body.style.overflow = 'auto';
+                }
             }
 
             keepFocusedInputVisible();

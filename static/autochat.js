@@ -105,6 +105,31 @@ function setupAutochatEventListeners() {
     document.getElementById('autochatManualInput')?.addEventListener('input', updateManualCharCount);
     document.getElementById('autochatManualSendBtn')?.addEventListener('click', sendManualMessage);
     
+    const autochatExpandBtn = document.getElementById('autochatExpandBtn');
+    const autochatManualSection = document.getElementById('autochatManualSection');
+    if (autochatExpandBtn) {
+        autochatExpandBtn.addEventListener('click', () => {
+            const inputContainer = autochatManualSection?.querySelector('.chat-input-container');
+            if (!inputContainer) return;
+            inputContainer.classList.toggle('expanded');
+            const expandIcon = autochatExpandBtn.querySelector('.expand-icon');
+            const collapseIcon = autochatExpandBtn.querySelector('.collapse-icon');
+            if (inputContainer.classList.contains('expanded')) {
+                expandIcon.style.display = 'none';
+                collapseIcon.style.display = '';
+                autochatExpandBtn.title = 'Collapse input';
+                if (window.syncExpandedViewHeight) window.syncExpandedViewHeight();
+                document.getElementById('autochatManualInput')?.focus();
+            } else {
+                expandIcon.style.display = '';
+                collapseIcon.style.display = 'none';
+                autochatExpandBtn.title = 'Expand input';
+                inputContainer.style.height = '';
+                document.getElementById('autochatManualInput')?.focus();
+            }
+        });
+    }
+    
     // Session name update
     document.getElementById('autochatSessionName')?.addEventListener('blur', updateAutochatSessionName);
     

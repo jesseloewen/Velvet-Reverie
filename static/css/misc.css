@@ -59,6 +59,16 @@
     width: 100%;
 }
 
+/* Footer row below textarea: history button + optional companion (e.g. TTS) */
+.ph-footer {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+.ph-footer .chat-auto-tts-toggle {
+    margin-left: auto;
+}
+
 /* The small "History" trigger button placed below the textarea */
 .ph-trigger-btn {
     display: inline-flex;

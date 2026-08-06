@@ -122,6 +122,7 @@ async function initializeStory() {
     const newStoryBtn = document.getElementById('newStoryBtn');
     const storySendBtn = document.getElementById('storySendBtn');
     const storyInput = document.getElementById('storyInput');
+    const storyInputContainer = document.getElementById('storyInputContainer');
     const storyModelSelector = document.getElementById('storyModelSelector');
     const storyScrollBottomBtn = document.getElementById('storyScrollBottomBtn');
     const manageCharactersBtn = document.getElementById('manageCharactersBtn');
@@ -138,6 +139,28 @@ async function initializeStory() {
     if (storyScrollBottomBtn) storyScrollBottomBtn.addEventListener('click', () => scrollStoryToBottom());
     if (manageCharactersBtn) manageCharactersBtn.addEventListener('click', () => openCharactersModal());
     if (manageLorebookBtn) manageLorebookBtn.addEventListener('click', () => openLorebookModal());
+    
+    const storyExpandBtn = document.getElementById('storyExpandBtn');
+    if (storyExpandBtn && storyInputContainer) {
+        storyExpandBtn.addEventListener('click', () => {
+            storyInputContainer.classList.toggle('expanded');
+            const expandIcon = storyExpandBtn.querySelector('.expand-icon');
+            const collapseIcon = storyExpandBtn.querySelector('.collapse-icon');
+            if (storyInputContainer.classList.contains('expanded')) {
+                expandIcon.style.display = 'none';
+                collapseIcon.style.display = '';
+                storyExpandBtn.title = 'Collapse input';
+                if (window.syncExpandedViewHeight) window.syncExpandedViewHeight();
+                storyInput.focus();
+            } else {
+                expandIcon.style.display = '';
+                collapseIcon.style.display = 'none';
+                storyExpandBtn.title = 'Expand input';
+                storyInputContainer.style.height = '';
+                storyInput.focus();
+            }
+        });
+    }
     
     // Toggle sidebars
     if (toggleStorySidebarBtn) {
@@ -177,11 +200,12 @@ async function initializeStory() {
         
         storyInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
-                // Enter sends message, Shift+Enter adds newline
+                if (storyInputContainer && storyInputContainer.classList.contains('expanded')) {
+                    return;
+                }
                 e.preventDefault();
                 sendStoryMessage();
             }
-            // Shift+Enter allows default behavior (newline)
         });
     }
     
