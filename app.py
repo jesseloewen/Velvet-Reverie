@@ -3391,6 +3391,13 @@ Session name:"""
             # Shutdown handling
             if auto_unload_mode == "shutdown_one":
                 def _delayed_shutdown_one():
+                    print("[SHUTDOWN] Unloading models before poweroff...")
+                    try:
+                        comfyui_client.unload_models()
+                        comfyui_client.clear_cache()
+                        print("[SHUTDOWN] Models unloaded")
+                    except Exception as e:
+                        print(f"[SHUTDOWN] Error unloading models: {e}")
                     print("[SHUTDOWN] Generation complete, waiting 10s before poweroff...")
                     time.sleep(10)
                     if pushover_mode != "off" and PUSHOVER_USER_KEY and PUSHOVER_APP_KEY:
@@ -3413,6 +3420,13 @@ Session name:"""
                 threading.Thread(target=_delayed_shutdown_one, daemon=True).start()
             elif auto_unload_mode == "shutdown_queue_empty":
                 def _delayed_shutdown_queue():
+                    print("[SHUTDOWN] Unloading models before poweroff...")
+                    try:
+                        comfyui_client.unload_models()
+                        comfyui_client.clear_cache()
+                        print("[SHUTDOWN] Models unloaded")
+                    except Exception as e:
+                        print(f"[SHUTDOWN] Error unloading models: {e}")
                     print("[SHUTDOWN] Queue empty, waiting 10s before poweroff...")
                     time.sleep(10)
                     if pushover_mode != "off" and PUSHOVER_USER_KEY and PUSHOVER_APP_KEY:
@@ -3674,21 +3688,11 @@ def get_story_instructions():
 @app.route('/api/settings/auto-unload', methods=['GET', 'POST'])
 def auto_unload_setting():
     """Get or update auto-unload models setting"""
-    global auto_unload_mode, queue_paused
+    global auto_unload_mode
     if request.method == 'GET':
         return jsonify({'auto_unload_mode': auto_unload_mode})
     data = request.json
     auto_unload_mode = data.get('mode', 'never')
-    if auto_unload_mode == "shutdown_one":
-        with queue_lock:
-            queue_paused = True
-        print("[SETTINGS] Shutdown after one generation — queue paused")
-    elif auto_unload_mode == "shutdown_queue_empty":
-        with queue_lock:
-            queue_paused = False
-    elif not data.get('_skip_pause', False):
-        # Switching away from shutdown mode, leave pause state as-is
-        pass
     print(f"[SETTINGS] Auto-unload mode: {auto_unload_mode}")
     return jsonify({'success': True, 'auto_unload_mode': auto_unload_mode})
 
