@@ -1228,20 +1228,6 @@ input[type="range"]:focus {
         transform: translateX(-100%);
     }
     
-    /* Collapse sidebars when keyboard is open to prevent blocking */
-    body.keyboard-open .tabs-sidebar:not(.collapsed) {
-        transform: translateX(-100%);
-    }
-    
-    body.keyboard-open .queue-sidebar:not(.collapsed) {
-        transform: translateX(100%);
-    }
-    
-    body.keyboard-open .sidebar-backdrop.active {
-        opacity: 0;
-        pointer-events: none;
-    }
-    
     /* Queue sidebar (right) - overlay on mobile */
     .queue-sidebar {
         position: fixed;
@@ -1362,11 +1348,6 @@ input[type="range"]:focus {
         bottom: calc(env(safe-area-inset-bottom, 0) + 7rem);
         padding: 0.55rem 0.9rem;
         font-size: 0.8rem;
-    }
-    
-    /* Hide scroll button when keyboard is open to prevent overlap */
-    body.keyboard-open .chat-scroll-bottom-btn {
-        display: none !important;
     }
     
     .gallery-toolbar {

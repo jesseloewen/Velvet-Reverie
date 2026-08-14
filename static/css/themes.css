@@ -3,7 +3,6 @@
 /* Theme: Velvet (Default) */
 :root,
 [data-theme="velvet"] {
-    --mobile-keyboard-offset: 0px;
     --bg-primary: #1d0632;
     --bg-secondary: #412355;
     --bg-tertiary: #472061;
@@ -129,23 +128,6 @@ body.media-blur-enabled video {
     filter: blur(128px);
 }
 
-/* Allow body scroll on mobile when keyboard is open */
-@media (max-width: 768px) {
-    body.keyboard-open {
-        overflow: auto !important;
-        -webkit-overflow-scrolling: touch;
-        position: relative;
-    }
-
-    body.keyboard-open .content-wrapper {
-        scroll-padding-bottom: calc(1rem + var(--mobile-keyboard-offset, 0px));
-    }
-    
-    body.keyboard-open .app-container {
-        min-height: 100vh;
-    }
-}
-
 .app-container {
     display: flex;
     height: 100vh;
@@ -159,11 +141,6 @@ body.media-blur-enabled video {
         .app-container {
             min-height: 100dvh;
             height: 100dvh;
-        }
-        
-        body.keyboard-open .app-container {
-            height: auto;
-            min-height: 100vh;
         }
     }
 }

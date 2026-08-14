@@ -3,7 +3,6 @@
 /* Theme: Velvet (Default) */
 :root,
 [data-theme="velvet"] {
-    --mobile-keyboard-offset: 0px;
     --bg-primary: #1d0632;
     --bg-secondary: #412355;
     --bg-tertiary: #472061;
@@ -129,23 +128,6 @@ body.media-blur-enabled video {
     filter: blur(128px);
 }
 
-/* Allow body scroll on mobile when keyboard is open */
-@media (max-width: 768px) {
-    body.keyboard-open {
-        overflow: auto !important;
-        -webkit-overflow-scrolling: touch;
-        position: relative;
-    }
-
-    body.keyboard-open .content-wrapper {
-        scroll-padding-bottom: calc(1rem + var(--mobile-keyboard-offset, 0px));
-    }
-    
-    body.keyboard-open .app-container {
-        min-height: 100vh;
-    }
-}
-
 .app-container {
     display: flex;
     height: 100vh;
@@ -159,11 +141,6 @@ body.media-blur-enabled video {
         .app-container {
             min-height: 100dvh;
             height: 100dvh;
-        }
-        
-        body.keyboard-open .app-container {
-            height: auto;
-            min-height: 100vh;
         }
     }
 }
@@ -904,21 +881,6 @@ body.media-blur-enabled video {
     min-height: 0;
     transition: margin-left 0.3s ease;
     position: relative; /* Establish positioning context */
-}
-
-/* Allow main content to scroll on mobile when keyboard is open */
-@media (max-width: 768px) {
-    body.keyboard-open .main-content {
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    
-    /* Ensure chat input areas remain accessible */
-    body.keyboard-open .chat-input-container,
-    body.keyboard-open .chat-input {
-        position: relative;
-        z-index: 1;
-    }
 }
 
 /* Collapsible Header Container */
@@ -3118,20 +3080,6 @@ video:-ms-fullscreen {
         transform: translateX(-100%);
     }
     
-    /* Collapse sidebars when keyboard is open to prevent blocking */
-    body.keyboard-open .tabs-sidebar:not(.collapsed) {
-        transform: translateX(-100%);
-    }
-    
-    body.keyboard-open .queue-sidebar:not(.collapsed) {
-        transform: translateX(100%);
-    }
-    
-    body.keyboard-open .sidebar-backdrop.active {
-        opacity: 0;
-        pointer-events: none;
-    }
-    
     /* Queue sidebar (right) - overlay on mobile */
     .queue-sidebar {
         position: fixed;
@@ -3252,11 +3200,6 @@ video:-ms-fullscreen {
         bottom: calc(env(safe-area-inset-bottom, 0) + 7rem);
         padding: 0.55rem 0.9rem;
         font-size: 0.8rem;
-    }
-    
-    /* Hide scroll button when keyboard is open to prevent overlap */
-    body.keyboard-open .chat-scroll-bottom-btn {
-        display: none !important;
     }
     
     .gallery-toolbar {
@@ -5717,12 +5660,6 @@ video:-ms-fullscreen {
     
     .chat-view {
         height: calc(100vh - 150px);
-    }
-    
-    /* Adjust height when keyboard is open */
-    body.keyboard-open .chat-view {
-        height: auto;
-        min-height: 300px;
     }
     
     .chat-message {

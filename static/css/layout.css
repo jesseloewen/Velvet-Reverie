@@ -737,21 +737,6 @@
     position: relative; /* Establish positioning context */
 }
 
-/* Allow main content to scroll on mobile when keyboard is open */
-@media (max-width: 768px) {
-    body.keyboard-open .main-content {
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    
-    /* Ensure chat input areas remain accessible */
-    body.keyboard-open .chat-input-container,
-    body.keyboard-open .chat-input {
-        position: relative;
-        z-index: 1;
-    }
-}
-
 /* Collapsible Header Container */
 .collapsible-header-container {
     transition: transform 0.3s ease, opacity 0.3s ease;

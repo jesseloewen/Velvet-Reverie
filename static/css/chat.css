@@ -767,12 +767,6 @@
         height: calc(100vh - 150px);
     }
     
-    /* Adjust height when keyboard is open */
-    body.keyboard-open .chat-view {
-        height: auto;
-        min-height: 300px;
-    }
-    
     .chat-message {
         max-width: 90%;
     }
