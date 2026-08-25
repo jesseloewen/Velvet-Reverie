@@ -1002,82 +1002,6 @@
     flex: 0 0 auto;
 }
 
-.chat-audio-autoplay-toggle {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    color: var(--text-muted);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    cursor: pointer;
-    user-select: none;
-}
-
-.chat-audio-autoplay-toggle input[type="checkbox"] {
-    position: absolute;
-    opacity: 0;
-    width: 1px;
-    height: 1px;
-    pointer-events: none;
-}
-
-.chat-audio-autoplay-slider {
-    position: relative;
-    width: 34px;
-    height: 18px;
-    border-radius: 999px;
-    border: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-    transition: background 0.2s ease, border-color 0.2s ease;
-    flex: 0 0 auto;
-}
-
-.chat-audio-autoplay-slider::after {
-    content: '';
-    position: absolute;
-    top: 1px;
-    left: 1px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.chat-audio-autoplay-toggle:hover .chat-audio-autoplay-slider {
-    border-color: var(--accent-primary);
-}
-
-.chat-audio-autoplay-toggle input[type="checkbox"]:checked + .chat-audio-autoplay-slider {
-    background: var(--accent-primary);
-    border-color: var(--accent-primary);
-}
-
-.chat-audio-autoplay-toggle input[type="checkbox"]:checked + .chat-audio-autoplay-slider::after {
-    transform: translateX(16px);
-    background: #ffffff;
-}
-
-.chat-audio-autoplay-toggle input[type="checkbox"]:focus-visible + .chat-audio-autoplay-slider {
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
-}
-
-.chat-audio-autoplay-toggle.is-disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-
-.chat-audio-autoplay-toggle.is-disabled .chat-audio-autoplay-slider {
-    border-color: var(--border-color);
-}
-
-.chat-audio-autoplay-text {
-    line-height: 1;
-}
-
 .chat-audio-control-btn {
     width: 2.1rem;
     height: 2.1rem;
@@ -2079,10 +2003,6 @@
         .chat-audio-controls {
         margin-left: auto;
         flex-wrap: nowrap;
-    }
-
-    .chat-audio-autoplay-text {
-        display: none;
     }
 
     .chat-audio-control-btn {

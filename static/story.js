@@ -709,7 +709,7 @@ function createStoryMessageElement(message, messageIndex = -1) {
     
     // Add thinking section for assistant messages if thinking content exists
     if (message.role === 'assistant') {
-        const hasThinking = message.thinking || (isLoading && message.role === 'assistant');
+        const hasThinking = message.thinking;
         if (hasThinking) {
             const thinkingSection = document.createElement('div');
             thinkingSection.className = 'chat-thinking-section';
@@ -734,7 +734,7 @@ function createStoryMessageElement(message, messageIndex = -1) {
             const thinkingContent = document.createElement('div');
             thinkingContent.className = 'chat-thinking-content';
             thinkingContent.style.display = 'none';
-            thinkingContent.innerHTML = message.thinking ? formatChatMessage(message.thinking) : '<em>Thinking...</em>';
+            thinkingContent.innerHTML = formatChatMessage(message.thinking);
             
             thinkingSection.appendChild(thinkingHeader);
             thinkingSection.appendChild(thinkingContent);

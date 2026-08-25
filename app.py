@@ -210,7 +210,7 @@ last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 't
 cancellation_requested = False
 
 # Global setting for auto-unload models (controlled via web UI)
-auto_unload_mode = "never"  # "never" | "always" | "queue_empty" | "shutdown_one" | "shutdown_queue_empty"
+auto_unload_mode = "queue_empty"  # "never" | "always" | "queue_empty" | "shutdown_one" | "shutdown_queue_empty"
 
 # Global setting for Pushover notifications (controlled via web UI)
 pushover_mode = "off"  # "off" | "every_completion" | "queue_empty"

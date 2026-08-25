@@ -417,7 +417,7 @@ const conversationAudioPlaybackStates = {
         position: -1,
         activePlayer: null,
         isPlaying: false,
-        autoPlayEnabled: false,
+        autoPlayEnabled: true,
         isDownloading: false
     },
     story: {
@@ -425,7 +425,7 @@ const conversationAudioPlaybackStates = {
         position: -1,
         activePlayer: null,
         isPlaying: false,
-        autoPlayEnabled: false,
+        autoPlayEnabled: true,
         isDownloading: false
     },
     autochat: {
@@ -433,7 +433,7 @@ const conversationAudioPlaybackStates = {
         position: -1,
         activePlayer: null,
         isPlaying: false,
-        autoPlayEnabled: false,
+        autoPlayEnabled: true,
         isDownloading: false
     }
 };
@@ -1979,8 +1979,13 @@ function updateUrlState(state) {
         if (hState.asub !== undefined) state.asub = hState.asub;
         if (hState.fs_source) state.fs_source = hState.fs_source;
     }
-    if (!('blur' in state) && hState && hState.blur) {
-        state.blur = hState.blur;
+    if (!('blur' in state)) {
+        if (hState && hState.blur) {
+            state.blur = hState.blur;
+        } else {
+            const urlBlur = new URLSearchParams(window.location.search).get('blur');
+            if (urlBlur) state.blur = urlBlur;
+        }
     }
     const url = buildUrl(state);
     if (window.history && window.history.pushState) {
@@ -2703,7 +2708,10 @@ function initializeMediaBlurToggle() {
         } else {
             url.searchParams.set('blur', 'off');
         }
-        window.history.replaceState(window.history.state, '', url.toString());
+        const currentState = window.history.state || {};
+        const newState = { ...currentState, blur: enabled ? undefined : 'off' };
+        if (newState.blur === undefined) delete newState.blur;
+        window.history.replaceState(newState, '', url.toString());
 
         showNotification(
             enabled ? 'All media is now blurred' : 'All media is now visible',

@@ -658,12 +658,6 @@ function getConversationAudioContainerId(conversationType) {
     return 'chatMessages';
 }
 
-function getConversationAudioAutoplayToggleId(conversationType) {
-    if (conversationType === 'story') return 'storyAudioAutoplayToggle';
-    if (conversationType === 'autochat') return 'autochatAudioAutoplayToggle';
-    return 'chatAudioAutoplayToggle';
-}
-
 function getConversationAudioDownloadButtonId(conversationType) {
     if (conversationType === 'story') return 'storyDownloadAllAudioBtn';
     if (conversationType === 'autochat') return 'autochatDownloadAllAudioBtn';
@@ -888,29 +882,6 @@ function scrollConversationAudioPlayerIntoView(player) {
     }
 }
 
-function updateConversationAutoplayToggleState(conversationType) {
-    const state = getConversationAudioState(conversationType);
-    const toggle = document.getElementById(getConversationAudioAutoplayToggleId(conversationType));
-    if (!toggle) return;
-
-    const session = getConversationAudioSession(conversationType);
-    const hasSession = !!(session && session.session_id);
-    const displayName = getConversationAudioDisplayName(conversationType);
-    const labelElement = toggle.closest('.chat-audio-autoplay-toggle');
-
-    toggle.checked = !!state.autoPlayEnabled;
-    toggle.disabled = !hasSession;
-    if (labelElement) {
-        labelElement.classList.toggle('is-disabled', !hasSession);
-    }
-
-    const label = state.autoPlayEnabled
-        ? `Auto play is on for ${displayName.toLowerCase()} audio. Next clip will play automatically.`
-        : `Enable auto play for ${displayName.toLowerCase()} audio`;
-    toggle.title = label;
-    toggle.setAttribute('aria-label', label);
-}
-
 function updateConversationDownloadButtonIcon(conversationType) {
     const state = getConversationAudioState(conversationType);
     const button = document.getElementById(getConversationAudioDownloadButtonId(conversationType));
@@ -943,7 +914,6 @@ function updateConversationAudioControlsState(conversationType) {
         downloadBtn.disabled = state.isDownloading || !hasSession || !hasAudio;
     }
 
-    updateConversationAutoplayToggleState(conversationType);
     updateConversationDownloadButtonIcon(conversationType);
 }
 
@@ -991,53 +961,6 @@ function stopAllConversationAudioPlayback(showStoppedNotice = false) {
     stopConversationAudioPlayback('chat', { showStoppedNotice, hard: true });
     stopConversationAudioPlayback('story', { showStoppedNotice, hard: true });
     stopConversationAudioPlayback('autochat', { showStoppedNotice, hard: true });
-}
-
-function setConversationAudioAutoPlay(conversationType, enabled) {
-    const session = getConversationAudioSession(conversationType);
-    const displayName = getConversationAudioDisplayName(conversationType);
-    const state = getConversationAudioState(conversationType);
-
-    if (!enabled) {
-        state.autoPlayEnabled = false;
-        state.activePlayer = null;
-        state.isPlaying = false;
-        state.queue = [];
-        state.position = -1;
-        showNotification(`${displayName} audio auto play disabled`, `${displayName} Audio`, 'info', 2500);
-        updateConversationAudioControlsState(conversationType);
-        return;
-    }
-
-    if (!session || !session.session_id) {
-        showNotification(`Please select a ${displayName.toLowerCase()} session first`, 'Info', 'warning', 3000);
-        state.autoPlayEnabled = false;
-        updateConversationAudioControlsState(conversationType);
-        return;
-    }
-
-    state.autoPlayEnabled = true;
-
-    const activePlayer = getConversationAudioPlayers(conversationType)
-        .find(player => !player.paused && !player.ended && player.currentTime > 0);
-    if (activePlayer) {
-        handleConversationAudioPlay(conversationType, activePlayer);
-    }
-
-    showNotification(`${displayName} audio auto play enabled`, `${displayName} Audio`, 'success', 2500);
-    updateConversationAudioControlsState(conversationType);
-}
-
-function setChatAudioAutoPlay(enabled) {
-    setConversationAudioAutoPlay('chat', enabled);
-}
-
-function setStoryAudioAutoPlay(enabled) {
-    setConversationAudioAutoPlay('story', enabled);
-}
-
-function setAutochatAudioAutoPlay(enabled) {
-    setConversationAudioAutoPlay('autochat', enabled);
 }
 
 function downloadMessageAudio(audioPath) {
@@ -1398,7 +1321,7 @@ function createChatMessageElement(message, messageIndex = -1, isLoading = false,
     
     // Add thinking section for assistant messages if thinking content exists
     if (message.role === 'assistant') {
-        const hasThinking = message.thinking || (isLoading && message.role === 'assistant');
+        const hasThinking = message.thinking;
         if (hasThinking) {
             const thinkingSection = document.createElement('div');
             thinkingSection.className = 'chat-thinking-section';
@@ -1423,7 +1346,7 @@ function createChatMessageElement(message, messageIndex = -1, isLoading = false,
             const thinkingContent = document.createElement('div');
             thinkingContent.className = 'chat-thinking-content';
             thinkingContent.style.display = 'none';
-            thinkingContent.innerHTML = message.thinking ? formatChatMessage(message.thinking) : '<em>Thinking...</em>';
+            thinkingContent.innerHTML = formatChatMessage(message.thinking);
             
             thinkingSection.appendChild(thinkingHeader);
             thinkingSection.appendChild(thinkingContent);
