@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import argparse
 import gc
+import io
 import os
+import subprocess
 import sys
 import random
-import tempfile
 import traceback
+import wave
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -125,31 +127,49 @@ def _unload_model_internal() -> None:
 def _encode_audio(waveform: torch.Tensor, sample_rate: int, fmt: str) -> bytes:
     """Encode a waveform tensor to WAV or MP3 bytes.
 
-    torchcodec (the torchaudio backend in newer versions) cannot write to a
-    BytesIO object – it requires a real file path.  We therefore write to a
-    temporary file and read the bytes back.
+    Uses Python's built-in wave module for WAV and ffmpeg subprocess for MP3,
+    avoiding the torchcodec/FFmpeg version incompatibility.
     """
-    suffix = ".mp3" if fmt == "mp3" else ".wav"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp_path = tmp.name
+    audio = waveform.detach().cpu().numpy()
+    if audio.ndim == 2:
+        audio = audio[0]
+    audio = audio.astype("<f4")
 
-    try:
-        if fmt == "mp3":
-            try:
-                torchaudio.save(tmp_path, waveform.cpu(), sample_rate, format="mp3")
-            except Exception:
-                # Fallback: save as WAV if MP3 backend unavailable
-                torchaudio.save(tmp_path, waveform.cpu(), sample_rate, format="wav")
-        else:
-            torchaudio.save(tmp_path, waveform.cpu(), sample_rate, format="wav")
+    audio_int16 = (audio * 32767).clip(-32768, 32767).astype("<i2")
 
-        with open(tmp_path, "rb") as f:
-            return f.read()
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    if fmt == "mp3":
+        return _encode_mp3(audio_int16, sample_rate)
+    else:
+        return _encode_wav(audio_int16, sample_rate)
+
+
+def _encode_wav(audio_int16, sample_rate: int) -> bytes:
+    with io.BytesIO() as buf:
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(audio_int16.tobytes())
+        return buf.getvalue()
+
+
+def _encode_mp3(audio_int16, sample_rate: int) -> bytes:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-f", "s16le",
+            "-ar", str(sample_rate),
+            "-ac", "1",
+            "-i", "pipe:0",
+            "-f", "mp3",
+            "-b:a", "128k",
+            "pipe:1",
+        ],
+        input=audio_int16.tobytes(),
+        capture_output=True,
+        check=True,
+    )
+    return proc.stdout
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
