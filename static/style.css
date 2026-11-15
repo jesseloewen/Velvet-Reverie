@@ -7048,6 +7048,10 @@ video:-ms-fullscreen {
    AUTO CHAT SPECIFIC STYLES
    ============================================================================ */
 
+.autochat-title-hidden {
+    display: none !important;
+}
+
 /* Manual message section styling */
 .autochat-manual-section {
     border-top: 2px solid rgba(255, 255, 255, 0.1);
@@ -7157,9 +7161,25 @@ video:-ms-fullscreen {
 
 /* Mobile responsive for Auto Chat */
 @media (max-width: 768px) {
-    .autochat-controls {
-        flex-wrap: wrap;
+    #autochatTab .chat-header {
+        flex-wrap: nowrap;
         gap: 0.25rem;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    #autochatTab .chat-audio-controls {
+        margin-left: 0;
+    }
+    
+    .autochat-controls-spacer {
+        display: none;
+    }
+    
+    .autochat-controls {
+        flex-wrap: nowrap;
+        gap: 0.25rem;
+        flex: 1;
+        justify-content: center;
     }
     
     .autochat-controls .btn {
@@ -7167,9 +7187,8 @@ video:-ms-fullscreen {
         font-size: 0.75rem;
     }
     
-    .autochat-flip-toggle {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
+    .autochat-controls .btn-text {
+        display: none;
     }
     
     .autochat-manual-section {

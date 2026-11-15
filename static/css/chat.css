@@ -1385,6 +1385,14 @@
     display: none;
 }
 
+/* Turn counter in context info bar */
+.chat-turn-display {
+    font-size: 0.75rem;
+    color: var(--accent-primary, #8b5cf6);
+    white-space: nowrap;
+    font-weight: 600;
+}
+
 /* Context Progress Bar */
 .chat-context-info {
     padding: 0 1rem 0.5rem 1rem;
@@ -1998,6 +2006,7 @@
         flex-direction: row;
         align-items: center;
         gap: 0.75rem;
+        flex-wrap: wrap;
     }
 
         .chat-audio-controls {
@@ -2021,6 +2030,25 @@
         font-size: 0.875rem;
         flex: 1;
         margin: 0 !important;
+    }
+    
+    .chat-context-info {
+        padding: 0 0.5rem 0.25rem 0.5rem;
+        gap: 0.35rem;
+    }
+    
+    .chat-context-label {
+        font-size: 0.65rem;
+        min-width: auto;
+    }
+    
+    .chat-turn-display {
+        font-size: 0.65rem;
+    }
+    
+    .chat-token-display {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
     }
     
     .chat-messages {
@@ -2291,6 +2319,10 @@
    ============================================================================ */
 
 /* Manual message section styling */
+.autochat-title-hidden {
+    display: none !important;
+}
+
 .autochat-manual-section {
     border-top: 2px solid rgba(255, 255, 255, 0.1);
     background: var(--bg-secondary);
@@ -2399,9 +2431,25 @@
 
 /* Mobile responsive for Auto Chat */
 @media (max-width: 768px) {
-    .autochat-controls {
-        flex-wrap: wrap;
+    #autochatTab .chat-header {
+        flex-wrap: nowrap;
         gap: 0.25rem;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    #autochatTab .chat-audio-controls {
+        margin-left: 0;
+    }
+    
+    .autochat-controls-spacer {
+        display: none;
+    }
+    
+    .autochat-controls {
+        flex-wrap: nowrap;
+        gap: 0.25rem;
+        flex: 1;
+        justify-content: center;
     }
     
     .autochat-controls .btn {
@@ -2409,9 +2457,8 @@
         font-size: 0.75rem;
     }
     
-    .autochat-flip-toggle {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
+    .autochat-controls .btn-text {
+        display: none;
     }
     
     .autochat-manual-section {
