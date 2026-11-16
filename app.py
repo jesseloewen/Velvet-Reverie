@@ -204,7 +204,7 @@ gradio_server = f"{GRADIO_HOST}:{GRADIO_PORT}"
 gradio_tts_client = GradioTTSClient(server_address=gradio_server)
 
 # Track last workflow type for model unloading
-last_workflow_type = None  # 'image_t2i', 'image_i2i', 'video', 'video_nsfw', 'tts'
+last_workflow_type = None  # 'image', 'video', 'video_nsfw', 'tts', 'chat:*', etc.
 
 # Track if cancellation was requested
 cancellation_requested = False
@@ -1802,6 +1802,16 @@ def process_queue():
                     relative_path, output_path = get_next_filename(file_prefix, subfolder, 'mp4', 'videos')
                     print(f"[VIDEO] Output path: {output_path}")
                     
+                    def video_progress(current, total):
+                        with queue_lock:
+                            if active_generation and active_generation.get('id') == job['id']:
+                                active_generation['progress_current'] = current
+                                active_generation['progress_total'] = total
+                            job['progress_current'] = current
+                            job['progress_total'] = total
+                        if current % 5 == 0 or current == total:
+                            print(f"[VIDEO] Generation step {current}/{total}")
+                    
                     comfyui_client.generate_video(
                         positive_prompt=job['prompt'],
                         image_filename=resolved_video_image,
@@ -1811,7 +1821,8 @@ def process_queue():
                         seed=seed,
                         output_path=str(output_path),
                         wait=True,
-                        nsfw=is_nsfw
+                        nsfw=is_nsfw,
+                        progress_callback=video_progress
                     )
                     
                     print(f"[VIDEO] Video generation completed")
@@ -3208,10 +3219,13 @@ Session name:"""
                         raise
                 
                 else:
-                    # Image generation
-                    # Distinguish between text-to-image and image-to-image workflows
+                    # Image generation.
+                    # Text-to-image and image-to-image share the same workflow
+                    # and model, differing only in a toggled input node. Keep
+                    # them as one workflow type so switching between them does
+                    # NOT unload the model (which otherwise forces a ~20s reload).
                     use_image = job.get('use_image', False)
-                    current_workflow = 'image_i2i' if use_image else 'image_t2i'
+                    current_workflow = 'image'
                     
                     # Unload models if switching workflow types (including from chat)
                     if last_workflow_type and last_workflow_type != current_workflow:
@@ -3239,6 +3253,16 @@ Session name:"""
                     if staged_image is not None:
                         staged_input_files.append(staged_image)
                     
+                    def image_progress(current, total):
+                        with queue_lock:
+                            if active_generation and active_generation.get('id') == job['id']:
+                                active_generation['progress_current'] = current
+                                active_generation['progress_total'] = total
+                            job['progress_current'] = current
+                            job['progress_total'] = total
+                        if current % 5 == 0 or current == total:
+                            print(f"[IMAGE] Generation step {current}/{total}")
+                    
                     comfyui_client.generate_image(
                         positive_prompt=job['prompt'],
                         width=job['width'],
@@ -3254,7 +3278,8 @@ Session name:"""
                         snofs_lora=job.get('snofs_lora', False),
                         male_lora=job.get('male_lora', False),
                         output_path=str(output_path),
-                        wait=True
+                        wait=True,
+                        progress_callback=image_progress
                     )
                     
                     # Calculate generation duration

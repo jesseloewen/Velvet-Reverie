@@ -293,7 +293,9 @@ function buildQueueRenderSignature(queue, active, completed) {
         job.job_type,
         job.relative_path,
         job.completed_sentences,
-        job.total_sentences
+        job.total_sentences,
+        job.progress_current,
+        job.progress_total
     ]);
     const activeRow = active ? [
         active.id,
@@ -301,7 +303,9 @@ function buildQueueRenderSignature(queue, active, completed) {
         active.job_type,
         active.completed_sentences,
         active.total_sentences,
-        active.start_time
+        active.start_time,
+        active.progress_current,
+        active.progress_total
     ] : null;
     const completedRows = (Array.isArray(completed) ? completed : []).map(job => [
         job.id,
@@ -462,8 +466,12 @@ function renderQueue(queue, active, completed) {
         const idsMatch = existingIds.length === newIds.length && 
                         existingIds.every((id, index) => id === newIds[index]);
         
-        // For active section with TTS jobs, always re-render to show progress
-        if (isActiveSection && jobs.length > 0 && jobs[0].job_type === 'tts') {
+        // For active section with a job that reports progress (TTS/step bars),
+        // always re-render to keep the progress bar moving.
+        const activeType = jobs.length > 0 ? jobs[0].job_type : null;
+        const hasProgress = isActiveSection && (activeType === 'tts' ||
+            (jobs[0].progress_total && jobs[0].progress_total > 0));
+        if (isActiveSection && jobs.length > 0 && hasProgress) {
             container.innerHTML = jobs.map(job => renderQueueItem(job, isActiveSection)).join('');
             return;
         }
@@ -528,6 +536,16 @@ function renderQueue(queue, active, completed) {
     if (queueEmpty.style.display !== targetEmptyDisplay) {
         queueEmpty.style.display = targetEmptyDisplay;
     }
+}
+
+function renderQueueProgressBar(current, total) {
+    const progress = total > 0 ? (current / total) * 100 : 0;
+    const clamped = Math.max(0, Math.min(100, progress));
+    return `
+        <div class="queue-progress-bar">
+            <div class="queue-progress-fill" style="width: ${clamped}%;"></div>
+        </div>
+    `;
 }
 
 function renderQueueItem(job, isActive) {
@@ -601,12 +619,7 @@ function renderQueueItem(job, isActive) {
         
         // Add progress bar for active TTS
         if (isActive && total > 0) {
-            const progress = (completed / total) * 100;
-            paramsHTML += `
-                <div class="tts-progress-bar" style="width: 100%; height: 4px; background: var(--bg-primary); border-radius: 2px; margin-top: 0.5rem; overflow: hidden;">
-                    <div style="height: 100%; background: var(--accent-primary); width: ${progress}%; transition: width 0.3s ease;"></div>
-                </div>
-            `;
+            paramsHTML += renderQueueProgressBar(completed, total);
         }
     } else if (isVideo) {
         paramsHTML = `
@@ -614,11 +627,31 @@ function renderQueueItem(job, isActive) {
             ${job.frames ? `<span class="param-badge">${job.frames} frames</span>` : ''}
             ${job.fps ? `<span class="param-badge">${job.fps} fps</span>` : ''}
         `;
+        
+        // Add step progress bar for active video
+        const current = job.progress_current || 0;
+        const total = job.progress_total || 0;
+        if (isActive && total > 0) {
+            paramsHTML += `
+                <span class="param-badge progress-step-badge">step ${current}/${total}</span>
+            `;
+            paramsHTML += renderQueueProgressBar(current, total);
+        }
     } else {
         paramsHTML = `
-            <span class="param-badge">${job.width || 0}x${job.height || 0}</span>
+            <span class="param-badge">${job.use_image_size ? 'Same as Source' : `${job.width || 0}×${job.height || 0}`}</span>
             <span class="param-badge">${job.steps || 0} steps</span>
         `;
+        
+        // Add step progress bar for active image
+        const current = job.progress_current || 0;
+        const total = job.progress_total || 0;
+        if (isActive && total > 0) {
+            paramsHTML += `
+                <span class="param-badge progress-step-badge">step ${current}/${total}</span>
+            `;
+            paramsHTML += renderQueueProgressBar(current, total);
+        }
     }
     
     // Add timer badge for active/completed jobs

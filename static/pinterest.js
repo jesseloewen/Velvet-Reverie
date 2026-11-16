@@ -475,7 +475,7 @@ function ptOpenInImageBatch() {
         return;
     }
     const subpath = 'pinterest/' + folderName;
-    // Set the Image Batch selected folder (global defined in script.js)
+    // Set the Image Batch selected folder (global defined in image.js)
     selectedImageBatchFolder = subpath;
     const display = document.getElementById('imageBatchFolderDisplay');
     if (display) display.textContent = subpath;
@@ -496,7 +496,7 @@ function ptOpenInVideoBatch() {
         return;
     }
     const subpath = 'pinterest/' + folderName;
-    // Set the Video Batch selected folder (global defined in script.js)
+    // Set the Video Batch selected folder (global defined in video.js)
     selectedVideoBatchFolder = subpath;
     const display = document.getElementById('videoBatchFolderDisplay');
     if (display) display.textContent = subpath;

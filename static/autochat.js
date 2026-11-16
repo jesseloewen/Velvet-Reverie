@@ -1024,7 +1024,7 @@ function autochatTTSNow(index) {
     
     const message = currentAutoSession.messages[index];
     const messageId = message.response_id || message.message_id;
-    // Use the chat TTS modal from script.js
+    // Use the chat TTS modal from tts.js
     showChatTTSModal(message.content, messageId);
 }
 
@@ -1154,7 +1154,7 @@ function handleAutochatScroll() {
         setAutochatScrollButtonVisibility(false);
         return;
     }
-    // Use same utility function from script.js
+    // Use same utility function from chat.js
     const atBottom = typeof isScrolledToBottom === 'function' ? isScrolledToBottom(container, 24) : 
         (container.scrollHeight - container.scrollTop - container.clientHeight < 24);
     if (atBottom) {

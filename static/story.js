@@ -81,7 +81,7 @@ function storyTTSNow(messageIndex) {
     
     const message = currentStorySession.messages[messageIndex];
     const messageId = message.response_id || message.message_id;
-    // Use the chat TTS modal from script.js
+    // Use the chat TTS modal from tts.js
     showChatTTSModal(message.content, messageId);
 }
 

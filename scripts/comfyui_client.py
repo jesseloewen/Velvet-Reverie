@@ -12,8 +12,13 @@ import random
 import time
 import shutil
 import os
+import base64
+import socket
+import ssl
+import struct
+import threading
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 
 
 class ComfyUIClient:
@@ -32,12 +37,186 @@ class ComfyUIClient:
         self.token = token
         self.workflows_dir = Path(workflows_dir)
         self.output_dir = Path(output_dir) if output_dir else Path('..') / 'comfy.git' / 'app' / 'output'
+
+        # Live progress tracking via ComfyUI WebSocket.
+        # ComfyUI only reports sampling step progress (value/max) over the
+        # WebSocket ("/ws"), not via the HTTP history endpoint while running.
+        self._progress_values = {}  # prompt_id -> (current_step, total_steps)
+        self._progress_lock = threading.Lock()
+        self._ws_thread = None
         
         # Load workflow filenames from environment or use defaults
         self.workflow_qwen = os.getenv('WORKFLOW_QWEN', 'Qwen_Full (API).json')
         self.workflow_video = os.getenv('WORKFLOW_VIDEO', 'Wan2.2 I2V (API).json')
         self.workflow_video_nsfw = os.getenv('WORKFLOW_VIDEO_NSFW', 'Wan2.2 I2V NSFW (API).json')
         
+    # ── WebSocket progress listener ──────────────────────────────────────────
+    def get_latest_progress(self, prompt_id: str) -> Optional[tuple]:
+        """Return the latest observed (current_step, total_steps) for a prompt, if any."""
+        with self._progress_lock:
+            return self._progress_values.get(prompt_id)
+
+    def _start_ws_listener(self) -> None:
+        """Start a background thread that reads progress events from ComfyUI's WebSocket."""
+        if self._ws_thread is not None and self._ws_thread.is_alive():
+            return
+        def _run():
+            while True:
+                try:
+                    self._listen_ws()
+                except socket.timeout:
+                    # Idle connection dropped; silently reconnect.
+                    pass
+                except (ConnectionError, OSError):
+                    # Connection lost; silently reconnect.
+                    pass
+                except Exception as e:
+                    print(f"[PROGRESS] WebSocket listener error: {e}; retrying in 3s...")
+                time.sleep(3)
+        self._ws_thread = threading.Thread(target=_run, daemon=True)
+        self._ws_thread.start()
+
+    def _listen_ws(self) -> None:
+        """Connect to the ComfyUI WebSocket and record progress events until the socket dies."""
+        host, port = self.server_address.split(':')
+        port = int(port)
+        ws_path = f"/ws?clientId={urllib.parse.quote(self.client_id)}"
+        if self.token:
+            ws_path += f"&token={urllib.parse.quote(self.token)}"
+
+        sock = socket.create_connection((host, port), timeout=15)
+        try:
+            if port == 443:
+                ctx = ssl.create_default_context()
+                sock = ctx.wrap_socket(sock, server_hostname=host)
+
+            key = base64.b64encode(os.urandom(16)).decode()
+            request = (
+                f"GET {ws_path} HTTP/1.1\r\n"
+                f"Host: {self.server_address}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {key}\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            )
+            sock.sendall(request.encode())
+
+            # Read handshake response
+            response = self._recv_until_headers(sock)
+            if b" 101 " not in response.split(b"\r\n", 1)[0]:
+                raise RuntimeError(f"WebSocket handshake failed: {response.split(b'\r\n', 1)[0]!r}")
+
+            sock.settimeout(60)
+            while True:
+                opcode, payload = self._read_ws_frame(sock)
+                if opcode == 0x1:  # text frame
+                    self._handle_ws_message(payload)
+                elif opcode == 0x8:  # close
+                    break
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _recv_until_headers(sock) -> bytes:
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        return data
+
+    @staticmethod
+    def _read_ws_frame(sock):
+        """Read a single WebSocket frame, returning (opcode, payload_bytes)."""
+        header = sock.recv(2)
+        if len(header) < 2:
+            raise ConnectionError("WebSocket closed")
+        b1, b2 = header[0], header[1]
+        opcode = b1 & 0x0F
+        length = b2 & 0x7F
+        if length == 126:
+            ext = sock.recv(2)
+            length = struct.unpack(">H", ext)[0]
+        elif length == 127:
+            ext = sock.recv(8)
+            length = struct.unpack(">Q", ext)[0]
+        masked = (b2 & 0x80) != 0
+        mask = sock.recv(4) if masked else None
+        payload = b""
+        while len(payload) < length:
+            chunk = sock.recv(length - len(payload))
+            if not chunk:
+                break
+            payload += chunk
+        if masked and mask:
+            payload = bytes(c ^ mask[i % 4] for i, c in enumerate(payload))
+        return opcode, payload
+
+    def _handle_ws_message(self, payload: bytes) -> None:
+        try:
+            msg = json.loads(payload)
+        except Exception:
+            return
+        msg_type = msg.get('type')
+        data = msg.get('data') or {}
+
+        if msg_type == 'progress':
+            # Legacy ComfyUI format: {"type":"progress","data":{"value":N,"max":M}}
+            prompt_id = msg.get('prompt_id')
+            value = data.get('value')
+            maximum = data.get('max')
+            self._record_progress(prompt_id, value, maximum)
+        elif msg_type == 'progress_state':
+            # New ComfyUI format:
+            #   {"type":"progress_state","data":{"prompt_id":...,"nodes":{
+            #       "<node_id>":{"value":N,"max":M,"state":"running",...}, ...}}}
+            prompt_id = data.get('prompt_id')
+            nodes = data.get('nodes') or {}
+            self._record_progress_state(prompt_id, nodes)
+
+    def _record_progress_state(self, prompt_id, nodes) -> None:
+        """Record sampling progress from the sampler node only.
+
+        The sampler node reports its progress with max == total steps
+        (e.g. 8, 20, 50) and value == current step. Every other node
+        (loaders/encoders/previewers) reports max == 1, which is useless for a
+        step bar, so we ignore them entirely.
+        """
+        if not prompt_id or not nodes:
+            return
+
+        # Only the sampler node reports real step progress with max == total
+        # steps (e.g. 8, 20, 50). Every other node (loaders/encoders) reports
+        # max == 1, which is meaningless for a step bar. Skip those entirely so
+        # the bar only appears once sampling actually begins.
+        for node in nodes.values():
+            maximum = node.get('max')
+            if maximum and maximum > 1:
+                self._record_progress(prompt_id, node.get('value'), maximum)
+                return
+
+    def _record_progress(self, prompt_id, value, maximum) -> None:
+        if not prompt_id or value is None or maximum is None or maximum <= 0:
+            return
+        int_value, int_max = int(value), int(maximum)
+        with self._progress_lock:
+            previous = self._progress_values.get(prompt_id)
+            # Guard against regressions: once we've seen a real sampler total
+            # (max > 1), ignore lower-max noise from other nodes in the graph.
+            if previous is not None:
+                prev_value, prev_max = previous
+                if prev_max > 1 and int_max <= 1:
+                    return
+                if prev_max == int_max and int_value < prev_value:
+                    return
+            self._progress_values[prompt_id] = (int_value, int_max)
+        if previous is None or previous[1] != int_max:
+            print(f"[PROGRESS] ComfyUI sampling step {int_max} total (via WebSocket) for {prompt_id}")
+
     def load_workflow(self, workflow_filename: str = None) -> Dict[str, Any]:
         """
         Load workflow from JSON file
@@ -167,18 +346,21 @@ class ComfyUIClient:
             print(f"Error getting history: {e}")
             raise
     
-    def wait_for_completion(self, prompt_id: str, timeout: int = None) -> Dict[str, Any]:
+    def wait_for_completion(self, prompt_id: str, timeout: int = None, progress_callback: Optional[Callable[[int, int], None]] = None) -> Dict[str, Any]:
         """
         Wait for a prompt to complete execution
         
         Args:
             prompt_id: The prompt ID to wait for
             timeout: Maximum time to wait in seconds (None for no timeout)
+            progress_callback: Optional callback invoked as (current_step, total_steps)
+                each time sampling progress is observed.
             
         Returns:
             History data when completed
         """
         start_time = time.time()
+        self._start_ws_listener()
         
         while True:
             # Check timeout if specified
@@ -190,7 +372,41 @@ class ComfyUIClient:
             if prompt_id in history:
                 return history[prompt_id]
             
+            if progress_callback is not None:
+                # Prefer live WebSocket progress; fall back to history messages.
+                latest = self.get_latest_progress(prompt_id)
+                if latest is not None:
+                    current, total = latest
+                    progress_callback(current, total)
+                else:
+                    self._report_progress(history, prompt_id, progress_callback)
+            
             time.sleep(1)
+    
+    @staticmethod
+    def _report_progress(history: Dict[str, Any], prompt_id: str, progress_callback: Callable[[int, int], None]) -> None:
+        """
+        Extract the latest sampling progress from a ComfyUI history response and
+        forward it to the callback as (current_step, total_steps).
+
+        ComfyUI reports progress via status.messages entries of the form:
+            {"type": "progress", "data": {"value": <current>, "max": <total>}}
+        """
+        try:
+            entry = history.get(prompt_id)
+            if not entry:
+                return
+            messages = entry.get('status', {}).get('messages', [])
+            for message in reversed(messages):
+                if message.get('type') == 'progress':
+                    data = message.get('data') or {}
+                    value = data.get('value')
+                    maximum = data.get('max')
+                    if value is not None and maximum is not None and maximum > 0:
+                        progress_callback(int(value), int(maximum))
+                    return
+        except Exception as e:
+            print(f"Error parsing ComfyUI progress: {e}")
     
     def modify_workflow(
         self,
@@ -324,7 +540,8 @@ class ComfyUIClient:
         snofs_lora: bool = False,
         male_lora: bool = False,
         output_path: Optional[str] = None,
-        wait: bool = True
+        wait: bool = True,
+        progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Optional[str]:
         """
         Generate an image using the workflow
@@ -345,6 +562,7 @@ class ComfyUIClient:
             male_lora: Enable Male LoRA
             output_path: Path to save the image (None to not save)
             wait: Whether to wait for completion
+            progress_callback: Optional callback invoked as (current_step, total_steps)
             
         Returns:
             Path to saved image if output_path provided and wait=True, else None
@@ -368,6 +586,9 @@ class ComfyUIClient:
             male_lora=male_lora
         )
         
+        # Ensure the progress WebSocket is listening before we queue.
+        self._start_ws_listener()
+
         # Queue the prompt
         response = self.queue_prompt(modified_workflow)
         prompt_id = response['prompt_id']
@@ -378,7 +599,7 @@ class ComfyUIClient:
         
         # Wait for completion
         print("Waiting for generation to complete...")
-        history = self.wait_for_completion(prompt_id)
+        history = self.wait_for_completion(prompt_id, progress_callback=progress_callback)
         
         # Get the output images
         outputs = history['outputs']
@@ -426,7 +647,8 @@ class ComfyUIClient:
         seed: Optional[int] = None,
         output_path: Optional[str] = None,
         wait: bool = True,
-        nsfw: bool = False
+        nsfw: bool = False,
+        progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Optional[str]:
         """
         Generate a video using the Wan2.2 I2V workflow
@@ -441,6 +663,7 @@ class ComfyUIClient:
             output_path: Path to save the video (None to not save)
             wait: Whether to wait for completion
             nsfw: Use NSFW workflow (default: False)
+            progress_callback: Optional callback invoked as (current_step, total_steps)
             
         Returns:
             Path to saved video if output_path provided and wait=True, else None
@@ -469,6 +692,9 @@ class ComfyUIClient:
         workflow["116:94"]["inputs"]["fps"] = fps
         workflow["116:86"]["inputs"]["noise_seed"] = seed
         
+        # Ensure the progress WebSocket is listening before we queue.
+        self._start_ws_listener()
+
         # Queue the prompt
         response = self.queue_prompt(workflow)
         prompt_id = response['prompt_id']
@@ -479,7 +705,7 @@ class ComfyUIClient:
         
         # Wait for completion
         print("Waiting for video generation to complete...")
-        history = self.wait_for_completion(prompt_id)
+        history = self.wait_for_completion(prompt_id, progress_callback=progress_callback)
         
         # Get the output videos
         outputs = history['outputs']

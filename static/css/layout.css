@@ -720,6 +720,28 @@
     border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
+.progress-step-badge {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    font-weight: 600;
+}
+
+.queue-progress-bar {
+    width: 100%;
+    flex-basis: 100%;
+    height: 4px;
+    background: var(--bg-primary);
+    border-radius: 2px;
+    margin-top: 0.5rem;
+    overflow: hidden;
+}
+
+.queue-progress-fill {
+    height: 100%;
+    background: var(--accent-primary);
+    transition: width 0.3s ease;
+}
+
 .queue-empty {
     text-align: center;
     padding: 2rem;
